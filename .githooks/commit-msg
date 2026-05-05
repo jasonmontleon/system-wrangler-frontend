@@ -1,0 +1,20 @@
+#!/usr/bin/env bash
+# SPDX-License-Identifier: AGPL-3.0-or-later
+set -e
+
+msg_file="$1"
+
+if grep -qE '^Signed-off-by: .+' "$msg_file"; then
+  exit 0
+fi
+
+cat >&2 <<'EOF'
+ERROR: commit message is missing a Signed-off-by line.
+
+DCO sign-off is required for all commits. Use:
+  git commit -s
+
+To fix the most recent commit:
+  git commit --amend -s --no-edit
+EOF
+exit 1
