@@ -6,6 +6,8 @@ import App from './App'
 
 describe('App', () => {
   beforeEach(() => {
+    localStorage.clear()
+    document.documentElement.classList.remove('pf-v6-theme-dark')
     vi.stubGlobal(
       'fetch',
       vi.fn((input: RequestInfo | URL) => {
@@ -25,6 +27,7 @@ describe('App', () => {
 
   afterEach(() => {
     vi.unstubAllGlobals()
+    document.documentElement.classList.remove('pf-v6-theme-dark')
   })
 
   it('renders the dashboard heading', () => {
@@ -54,5 +57,18 @@ describe('App', () => {
     await waitFor(() => {
       expect(screen.getByRole('heading', { name: /^hosts$/i })).toBeInTheDocument()
     })
+  })
+
+  it('starts in dark mode and toggles to light on button click', () => {
+    render(<App />)
+    expect(document.documentElement.classList.contains('pf-v6-theme-dark')).toBe(true)
+
+    fireEvent.click(screen.getByRole('button', { name: /switch to light mode/i }))
+    expect(document.documentElement.classList.contains('pf-v6-theme-dark')).toBe(false)
+    expect(localStorage.getItem('cw-theme')).toBe('light')
+
+    fireEvent.click(screen.getByRole('button', { name: /switch to dark mode/i }))
+    expect(document.documentElement.classList.contains('pf-v6-theme-dark')).toBe(true)
+    expect(localStorage.getItem('cw-theme')).toBe('dark')
   })
 })

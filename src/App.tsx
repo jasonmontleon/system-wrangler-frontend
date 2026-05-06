@@ -2,6 +2,7 @@
 
 import { useState } from 'react'
 import {
+  Button,
   Masthead,
   MastheadBrand,
   MastheadContent,
@@ -17,8 +18,10 @@ import {
   ToolbarContent,
   ToolbarItem,
 } from '@patternfly/react-core'
+import { MoonIcon, SunIcon } from '@patternfly/react-icons'
 import DashboardPage from './pages/DashboardPage'
 import HostsPage from './pages/HostsPage'
+import { useTheme } from './hooks/useTheme'
 
 // AGPL §13 requires running instances to prominently offer source to remote
 // users. Override at build time via VITE_SOURCE_URL; the default points at
@@ -30,6 +33,8 @@ type PageKey = 'dashboard' | 'hosts'
 
 export default function App() {
   const [page, setPage] = useState<PageKey>('dashboard')
+  const [theme, setTheme] = useTheme()
+  const isDark = theme === 'dark'
 
   const masthead = (
     <Masthead>
@@ -42,6 +47,16 @@ export default function App() {
         <Toolbar>
           <ToolbarContent>
             <ToolbarItem align={{ default: 'alignEnd' }}>
+              <Button
+                variant="plain"
+                aria-label={
+                  isDark ? 'Switch to light mode' : 'Switch to dark mode'
+                }
+                onClick={() => setTheme(isDark ? 'light' : 'dark')}
+                icon={isDark ? <SunIcon /> : <MoonIcon />}
+              />
+            </ToolbarItem>
+            <ToolbarItem>
               <a href={SOURCE_URL} target="_blank" rel="noreferrer">
                 Source
               </a>
