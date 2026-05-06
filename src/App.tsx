@@ -2,6 +2,8 @@
 
 import { useState } from 'react'
 import {
+  Alert,
+  Bullseye,
   Button,
   Masthead,
   MastheadBrand,
@@ -14,6 +16,8 @@ import {
   Page,
   PageSidebar,
   PageSidebarBody,
+  PageSection,
+  Spinner,
   Toolbar,
   ToolbarContent,
   ToolbarItem,
@@ -21,6 +25,9 @@ import {
 import { MoonIcon, SunIcon } from '@patternfly/react-icons'
 import DashboardPage from './pages/DashboardPage'
 import HostsPage from './pages/HostsPage'
+import LoginForm from './components/LoginForm'
+import SetupForm from './components/SetupForm'
+import { useAuth } from './hooks/useAuth'
 import { useTheme } from './hooks/useTheme'
 
 // AGPL §13 requires running instances to prominently offer source to remote
@@ -32,9 +39,47 @@ const SOURCE_URL =
 type PageKey = 'dashboard' | 'hosts'
 
 export default function App() {
+  const auth = useAuth()
   const [page, setPage] = useState<PageKey>('dashboard')
   const [theme, setTheme] = useTheme()
   const isDark = theme === 'dark'
+
+  const themeButton = (
+    <Button
+      variant="plain"
+      aria-label={isDark ? 'Switch to light mode' : 'Switch to dark mode'}
+      onClick={() => setTheme(isDark ? 'light' : 'dark')}
+      icon={isDark ? <SunIcon /> : <MoonIcon />}
+    />
+  )
+
+  if (auth.state.kind === 'loading') {
+    return (
+      <Bullseye style={{ height: '100vh' }}>
+        <Spinner />
+      </Bullseye>
+    )
+  }
+
+  if (auth.state.kind === 'error') {
+    return (
+      <PageSection>
+        <Alert variant="danger" title="Could not reach backend" isInline>
+          {auth.state.message}
+        </Alert>
+      </PageSection>
+    )
+  }
+
+  const status = auth.state.status
+
+  if (status.setupRequired) {
+    return <SetupForm onSetup={auth.setup} />
+  }
+
+  if (!status.authenticated) {
+    return <LoginForm onLogin={auth.login} />
+  }
 
   const masthead = (
     <Masthead>
@@ -46,20 +91,21 @@ export default function App() {
       <MastheadContent>
         <Toolbar>
           <ToolbarContent>
-            <ToolbarItem align={{ default: 'alignEnd' }}>
-              <Button
-                variant="plain"
-                aria-label={
-                  isDark ? 'Switch to light mode' : 'Switch to dark mode'
-                }
-                onClick={() => setTheme(isDark ? 'light' : 'dark')}
-                icon={isDark ? <SunIcon /> : <MoonIcon />}
-              />
-            </ToolbarItem>
+            <ToolbarItem align={{ default: 'alignEnd' }}>{themeButton}</ToolbarItem>
             <ToolbarItem>
               <a href={SOURCE_URL} target="_blank" rel="noreferrer">
                 Source
               </a>
+            </ToolbarItem>
+            {status.user && (
+              <ToolbarItem>
+                <span aria-label="signed in as">{status.user.username}</span>
+              </ToolbarItem>
+            )}
+            <ToolbarItem>
+              <Button variant="link" onClick={() => void auth.logout()}>
+                Sign out
+              </Button>
             </ToolbarItem>
           </ToolbarContent>
         </Toolbar>
