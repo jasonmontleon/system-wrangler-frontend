@@ -1,11 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
 import {
-  Bullseye,
-  Card,
-  CardBody,
-  CardTitle,
   Masthead,
   MastheadBrand,
   MastheadContent,
@@ -15,15 +11,14 @@ import {
   NavItem,
   NavList,
   Page,
-  PageSection,
   PageSidebar,
   PageSidebarBody,
-  Spinner,
-  Title,
   Toolbar,
   ToolbarContent,
   ToolbarItem,
 } from '@patternfly/react-core'
+import DashboardPage from './pages/DashboardPage'
+import HostsPage from './pages/HostsPage'
 
 // AGPL §13 requires running instances to prominently offer source to remote
 // users. Override at build time via VITE_SOURCE_URL; the default points at
@@ -31,18 +26,10 @@ import {
 const SOURCE_URL =
   import.meta.env.VITE_SOURCE_URL ?? 'https://github.com/example/cat-wrangler'
 
-type Health = { status: string }
+type PageKey = 'dashboard' | 'hosts'
 
 export default function App() {
-  const [health, setHealth] = useState<Health | null>(null)
-  const [error, setError] = useState<string | null>(null)
-
-  useEffect(() => {
-    fetch('/api/health')
-      .then((r) => r.json())
-      .then(setHealth)
-      .catch((e) => setError(String(e)))
-  }, [])
+  const [page, setPage] = useState<PageKey>('dashboard')
 
   const masthead = (
     <Masthead>
@@ -70,9 +57,20 @@ export default function App() {
       <PageSidebarBody>
         <Nav>
           <NavList>
-            <NavItem isActive>Dashboard</NavItem>
-            <NavItem>Hosts</NavItem>
-            <NavItem>Updates</NavItem>
+            <NavItem
+              isActive={page === 'dashboard'}
+              onClick={() => setPage('dashboard')}
+              to="#"
+            >
+              Dashboard
+            </NavItem>
+            <NavItem
+              isActive={page === 'hosts'}
+              onClick={() => setPage('hosts')}
+              to="#"
+            >
+              Hosts
+            </NavItem>
           </NavList>
         </Nav>
       </PageSidebarBody>
@@ -81,23 +79,8 @@ export default function App() {
 
   return (
     <Page masthead={masthead} sidebar={sidebar}>
-      <PageSection>
-        <Title headingLevel="h1">Dashboard</Title>
-      </PageSection>
-      <PageSection>
-        <Card>
-          <CardTitle>Backend health</CardTitle>
-          <CardBody>
-            {error && <span>error: {error}</span>}
-            {!error && !health && (
-              <Bullseye>
-                <Spinner />
-              </Bullseye>
-            )}
-            {health && <span>status: {health.status}</span>}
-          </CardBody>
-        </Card>
-      </PageSection>
+      {page === 'dashboard' && <DashboardPage />}
+      {page === 'hosts' && <HostsPage />}
     </Page>
   )
 }

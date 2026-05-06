@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-import { render, screen, waitFor } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import App from './App'
 
@@ -8,11 +8,18 @@ describe('App', () => {
   beforeEach(() => {
     vi.stubGlobal(
       'fetch',
-      vi.fn(() =>
-        Promise.resolve(
-          new Response(JSON.stringify({ status: 'ok' }), { status: 200 }),
-        ),
-      ),
+      vi.fn((input: RequestInfo | URL) => {
+        const url = typeof input === 'string' ? input : input.toString()
+        if (url.endsWith('/api/health')) {
+          return Promise.resolve(
+            new Response(JSON.stringify({ status: 'ok' }), { status: 200 }),
+          )
+        }
+        if (url.endsWith('/api/hosts')) {
+          return Promise.resolve(new Response(JSON.stringify([]), { status: 200 }))
+        }
+        return Promise.resolve(new Response('', { status: 404 }))
+      }),
     )
   })
 
@@ -38,6 +45,14 @@ describe('App', () => {
     render(<App />)
     await waitFor(() => {
       expect(screen.getByText(/status: ok/i)).toBeInTheDocument()
+    })
+  })
+
+  it('switches to the Hosts page when the Hosts nav item is clicked', async () => {
+    render(<App />)
+    fireEvent.click(screen.getByText('Hosts'))
+    await waitFor(() => {
+      expect(screen.getByRole('heading', { name: /^hosts$/i })).toBeInTheDocument()
     })
   })
 })
