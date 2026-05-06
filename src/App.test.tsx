@@ -13,7 +13,7 @@ type Routes = {
   authLogin?: (init: FetchInit) => Response
   authLogout?: () => Response
   health?: () => Response
-  hosts?: () => Response
+  systems?: () => Response
 }
 
 function jsonResponse(body: unknown, status = 200): Response {
@@ -47,8 +47,8 @@ function installFetch(routes: Routes) {
     if (url.endsWith('/api/health')) {
       return routes.health ? routes.health() : jsonResponse({ status: 'ok' })
     }
-    if (url.endsWith('/api/hosts')) {
-      return routes.hosts ? routes.hosts() : jsonResponse([])
+    if (url.endsWith('/api/systems')) {
+      return routes.systems ? routes.systems() : jsonResponse([])
     }
     return new Response('', { status: 404 })
   })
@@ -95,13 +95,13 @@ describe('App', () => {
       })
     })
 
-    it('switches to the Hosts page when the Hosts nav item is clicked', async () => {
+    it('switches to the Systems page when the Systems nav item is clicked', async () => {
       render(<App />)
-      const hostsNav = await screen.findByText('Hosts')
-      fireEvent.click(hostsNav)
+      const systemsNav = await screen.findByText('Systems')
+      fireEvent.click(systemsNav)
       await waitFor(() => {
         expect(
-          screen.getByRole('heading', { name: /^hosts$/i }),
+          screen.getByRole('heading', { name: /^systems$/i }),
         ).toBeInTheDocument()
       })
     })

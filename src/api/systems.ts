@@ -1,17 +1,17 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-export type HostStatus = 'unprobed' | 'reachable' | 'unreachable'
+export type SystemStatus = 'unprobed' | 'reachable' | 'unreachable'
 
-export type Host = {
+export type System = {
   id: string
   name: string
   hostname: string
   createdAt: string
-  status: HostStatus
+  status: SystemStatus
   lastSeen?: string
 }
 
-export type HostInput = {
+export type SystemInput = {
   name: string
   hostname: string
 }
@@ -36,24 +36,24 @@ async function parseError(resp: Response): Promise<string> {
   return resp.statusText || `HTTP ${resp.status}`
 }
 
-export async function listHosts(): Promise<Host[]> {
-  const resp = await fetch('/api/hosts')
+export async function listSystems(): Promise<System[]> {
+  const resp = await fetch('/api/systems')
   if (!resp.ok) throw new ApiError(resp.status, await parseError(resp))
-  return (await resp.json()) as Host[]
+  return (await resp.json()) as System[]
 }
 
-export async function createHost(input: HostInput): Promise<Host> {
-  const resp = await fetch('/api/hosts', {
+export async function createSystem(input: SystemInput): Promise<System> {
+  const resp = await fetch('/api/systems', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(input),
   })
   if (!resp.ok) throw new ApiError(resp.status, await parseError(resp))
-  return (await resp.json()) as Host
+  return (await resp.json()) as System
 }
 
-export async function deleteHost(id: string): Promise<void> {
-  const resp = await fetch(`/api/hosts/${encodeURIComponent(id)}`, {
+export async function deleteSystem(id: string): Promise<void> {
+  const resp = await fetch(`/api/systems/${encodeURIComponent(id)}`, {
     method: 'DELETE',
   })
   if (!resp.ok) throw new ApiError(resp.status, await parseError(resp))

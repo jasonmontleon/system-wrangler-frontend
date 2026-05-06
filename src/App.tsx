@@ -24,7 +24,7 @@ import {
 } from '@patternfly/react-core'
 import { MoonIcon, SunIcon } from '@patternfly/react-icons'
 import DashboardPage from './pages/DashboardPage'
-import HostsPage from './pages/HostsPage'
+import SystemsPage from './pages/SystemsPage'
 import LoginForm from './components/LoginForm'
 import SetupForm from './components/SetupForm'
 import { useAuth } from './hooks/useAuth'
@@ -36,7 +36,7 @@ import { useTheme } from './hooks/useTheme'
 const SOURCE_URL =
   import.meta.env.VITE_SOURCE_URL ?? 'https://github.com/example/system-wrangler'
 
-type PageKey = 'dashboard' | 'hosts'
+type PageKey = 'dashboard' | 'systems'
 
 export default function App() {
   const auth = useAuth()
@@ -126,11 +126,11 @@ export default function App() {
               Dashboard
             </NavItem>
             <NavItem
-              isActive={page === 'hosts'}
-              onClick={() => setPage('hosts')}
+              isActive={page === 'systems'}
+              onClick={() => setPage('systems')}
               to="#"
             >
-              Hosts
+              Systems
             </NavItem>
           </NavList>
         </Nav>
@@ -141,7 +141,7 @@ export default function App() {
   return (
     <Page masthead={masthead} sidebar={sidebar}>
       {page === 'dashboard' && <DashboardPage />}
-      {page === 'hosts' && <HostsPage />}
+      {page === 'systems' && <SystemsPage />}
     </Page>
   )
 }

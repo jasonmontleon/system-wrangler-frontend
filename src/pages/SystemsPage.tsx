@@ -25,15 +25,15 @@ import {
 import { Table, Tbody, Td, Th, Thead, Tr } from '@patternfly/react-table'
 import {
   ApiError,
-  createHost,
-  deleteHost,
-  listHosts,
-  type Host,
-  type HostStatus,
-} from '../api/hosts'
+  createSystem,
+  deleteSystem,
+  listSystems,
+  type System,
+  type SystemStatus,
+} from '../api/systems'
 
 const STATUS_LABELS: Record<
-  HostStatus,
+  SystemStatus,
   { color: 'green' | 'red' | 'grey'; text: string }
 > = {
   reachable: { color: 'green', text: 'Reachable' },
@@ -47,15 +47,15 @@ function formatLastSeen(iso: string | undefined): string {
   return Number.isNaN(d.getTime()) ? '—' : d.toLocaleString()
 }
 
-export default function HostsPage() {
-  const [hosts, setHosts] = useState<Host[] | null>(null)
+export default function SystemsPage() {
+  const [systems, setSystems] = useState<System[] | null>(null)
   const [loadError, setLoadError] = useState<string | null>(null)
   const [isAddOpen, setAddOpen] = useState(false)
 
   const refresh = useCallback(async () => {
     try {
-      const data = await listHosts()
-      setHosts(data)
+      const data = await listSystems()
+      setSystems(data)
       setLoadError(null)
     } catch (e) {
       setLoadError(e instanceof Error ? e.message : String(e))
@@ -68,7 +68,7 @@ export default function HostsPage() {
 
   const onDelete = async (id: string) => {
     try {
-      await deleteHost(id)
+      await deleteSystem(id)
       await refresh()
     } catch (err) {
       setLoadError(err instanceof Error ? err.message : String(err))
@@ -81,11 +81,11 @@ export default function HostsPage() {
         <Toolbar>
           <ToolbarContent>
             <ToolbarItem>
-              <Title headingLevel="h1">Hosts</Title>
+              <Title headingLevel="h1">Systems</Title>
             </ToolbarItem>
             <ToolbarItem align={{ default: 'alignEnd' }}>
               <Button variant="primary" onClick={() => setAddOpen(true)}>
-                Add host
+                Add system
               </Button>
             </ToolbarItem>
           </ToolbarContent>
@@ -94,24 +94,24 @@ export default function HostsPage() {
 
       <PageSection>
         {loadError && (
-          <Alert variant="danger" title="Could not load hosts" isInline>
+          <Alert variant="danger" title="Could not load systems" isInline>
             {loadError}
           </Alert>
         )}
-        {!loadError && hosts === null && (
+        {!loadError && systems === null && (
           <Bullseye>
             <Spinner />
           </Bullseye>
         )}
-        {hosts !== null && hosts.length === 0 && (
-          <EmptyState titleText="No hosts yet" headingLevel="h2">
+        {systems !== null && systems.length === 0 && (
+          <EmptyState titleText="No systems yet" headingLevel="h2">
             <EmptyStateBody>
-              Add your first host with the button in the toolbar above.
+              Add your first system with the button in the toolbar above.
             </EmptyStateBody>
           </EmptyState>
         )}
-        {hosts !== null && hosts.length > 0 && (
-          <Table aria-label="Hosts" variant="compact">
+        {systems !== null && systems.length > 0 && (
+          <Table aria-label="Systems" variant="compact">
             <Thead>
               <Tr>
                 <Th width={25}>Name</Th>
@@ -123,31 +123,31 @@ export default function HostsPage() {
               </Tr>
             </Thead>
             <Tbody>
-              {hosts.map((h) => {
-                const label = STATUS_LABELS[h.status] ?? STATUS_LABELS.unprobed
+              {systems.map((s) => {
+                const label = STATUS_LABELS[s.status] ?? STATUS_LABELS.unprobed
                 return (
-                  <Tr key={h.id}>
+                  <Tr key={s.id}>
                     <Td dataLabel="Name" modifier="truncate">
-                      {h.name}
+                      {s.name}
                     </Td>
                     <Td dataLabel="Hostname" modifier="truncate">
-                      {h.hostname}
+                      {s.hostname}
                     </Td>
                     <Td dataLabel="Status">
                       <Label color={label.color} isCompact>
                         {label.text}
                       </Label>
                     </Td>
-                    <Td dataLabel="Last seen">{formatLastSeen(h.lastSeen)}</Td>
+                    <Td dataLabel="Last seen">{formatLastSeen(s.lastSeen)}</Td>
                     <Td dataLabel="Added">
-                      {new Date(h.createdAt).toLocaleString()}
+                      {new Date(s.createdAt).toLocaleString()}
                     </Td>
                     <Td dataLabel="Actions" isActionCell>
                       <Button
                         variant="link"
                         isDanger
-                        onClick={() => void onDelete(h.id)}
-                        aria-label={`Remove ${h.name}`}
+                        onClick={() => void onDelete(s.id)}
+                        aria-label={`Remove ${s.name}`}
                       >
                         Remove
                       </Button>
@@ -160,7 +160,7 @@ export default function HostsPage() {
         )}
       </PageSection>
 
-      <AddHostModal
+      <AddSystemModal
         isOpen={isAddOpen}
         onClose={() => setAddOpen(false)}
         onCreated={async () => {
@@ -172,13 +172,13 @@ export default function HostsPage() {
   )
 }
 
-type AddHostModalProps = {
+type AddSystemModalProps = {
   isOpen: boolean
   onClose: () => void
   onCreated: () => void | Promise<void>
 }
 
-function AddHostModal({ isOpen, onClose, onCreated }: AddHostModalProps) {
+function AddSystemModal({ isOpen, onClose, onCreated }: AddSystemModalProps) {
   const [hostname, setHostname] = useState('')
   const [name, setName] = useState('')
   const [nameEdited, setNameEdited] = useState(false)
@@ -211,7 +211,7 @@ function AddHostModal({ isOpen, onClose, onCreated }: AddHostModalProps) {
     setSubmitting(true)
     setSubmitError(null)
     try {
-      await createHost({ name, hostname })
+      await createSystem({ name, hostname })
       await onCreated()
     } catch (err) {
       const msg =
@@ -231,14 +231,14 @@ function AddHostModal({ isOpen, onClose, onCreated }: AddHostModalProps) {
       variant="small"
       isOpen={isOpen}
       onClose={onClose}
-      aria-labelledby="add-host-title"
+      aria-labelledby="add-system-title"
     >
-      <ModalHeader title="Add host" labelId="add-host-title" />
+      <ModalHeader title="Add system" labelId="add-system-title" />
       <ModalBody>
-        <Form id="add-host-form" onSubmit={onSubmit}>
-          <FormGroup label="Hostname" fieldId="host-hostname" isRequired>
+        <Form id="add-system-form" onSubmit={onSubmit}>
+          <FormGroup label="Hostname" fieldId="add-system-hostname" isRequired>
             <TextInput
-              id="host-hostname"
+              id="add-system-hostname"
               value={hostname}
               onChange={(_, v) => onHostnameChange(v)}
               isRequired
@@ -247,9 +247,9 @@ function AddHostModal({ isOpen, onClose, onCreated }: AddHostModalProps) {
               placeholder="server.example.com or 10.0.0.5"
             />
           </FormGroup>
-          <FormGroup label="Name" fieldId="host-name" isRequired>
+          <FormGroup label="Name" fieldId="add-system-name" isRequired>
             <TextInput
-              id="host-name"
+              id="add-system-name"
               value={name}
               onChange={(_, v) => onNameChange(v)}
               isRequired
@@ -258,7 +258,7 @@ function AddHostModal({ isOpen, onClose, onCreated }: AddHostModalProps) {
             />
           </FormGroup>
           {submitError && (
-            <Alert variant="danger" title="Could not add host" isInline>
+            <Alert variant="danger" title="Could not add system" isInline>
               {submitError}
             </Alert>
           )}
@@ -267,7 +267,7 @@ function AddHostModal({ isOpen, onClose, onCreated }: AddHostModalProps) {
       <ModalFooter>
         <Button
           type="submit"
-          form="add-host-form"
+          form="add-system-form"
           variant="primary"
           isLoading={submitting}
           isDisabled={submitting || !hostname || !name}

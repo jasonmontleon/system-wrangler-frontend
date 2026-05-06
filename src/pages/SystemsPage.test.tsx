@@ -2,7 +2,7 @@
 
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import HostsPage from './HostsPage'
+import SystemsPage from './SystemsPage'
 
 type FetchInit = RequestInit | undefined
 
@@ -13,10 +13,10 @@ function jsonResponse(body: unknown, status = 200): Response {
   })
 }
 
-function host(overrides: Partial<{ id: string; name: string; hostname: string; status: string; lastSeen: string }> = {}) {
+function system(overrides: Partial<{ id: string; name: string; hostname: string; status: string; lastSeen: string }> = {}) {
   return {
     id: '1',
-    name: 'host-1',
+    name: 'sys-1',
     hostname: '10.0.0.1',
     createdAt: '2026-01-01T00:00:00Z',
     status: 'unprobed' as const,
@@ -24,7 +24,7 @@ function host(overrides: Partial<{ id: string; name: string; hostname: string; s
   }
 }
 
-describe('HostsPage', () => {
+describe('SystemsPage', () => {
   let fetchMock: ReturnType<typeof vi.fn>
 
   beforeEach(() => {
@@ -38,22 +38,22 @@ describe('HostsPage', () => {
 
   it('shows empty state with prompt to use the toolbar button', async () => {
     fetchMock.mockResolvedValueOnce(jsonResponse([]))
-    render(<HostsPage />)
-    expect(await screen.findByText(/no hosts yet/i)).toBeInTheDocument()
+    render(<SystemsPage />)
+    expect(await screen.findByText(/no systems yet/i)).toBeInTheDocument()
     expect(
-      screen.getByText(/add your first host with the button/i),
+      screen.getByText(/add your first system with the button/i),
     ).toBeInTheDocument()
   })
 
-  it('renders status labels and last-seen for each host', async () => {
+  it('renders status labels and last-seen for each system', async () => {
     fetchMock.mockResolvedValueOnce(
       jsonResponse([
-        host({ id: '1', name: 'up', hostname: '10.0.0.1', status: 'reachable', lastSeen: '2026-05-05T12:00:00Z' }),
-        host({ id: '2', name: 'down', hostname: '10.0.0.2', status: 'unreachable' }),
-        host({ id: '3', name: 'fresh', hostname: '10.0.0.3', status: 'unprobed' }),
+        system({ id: '1', name: 'up', hostname: '10.0.0.1', status: 'reachable', lastSeen: '2026-05-05T12:00:00Z' }),
+        system({ id: '2', name: 'down', hostname: '10.0.0.2', status: 'unreachable' }),
+        system({ id: '3', name: 'fresh', hostname: '10.0.0.3', status: 'unprobed' }),
       ]),
     )
-    render(<HostsPage />)
+    render(<SystemsPage />)
     const upRow = (await screen.findByText('up')).closest('tr')!
     expect(within(upRow).getByText('Reachable')).toBeInTheDocument()
     const downRow = screen.getByText('down').closest('tr')!
@@ -68,16 +68,16 @@ describe('HostsPage', () => {
     fetchMock
       .mockResolvedValueOnce(jsonResponse([])) // initial list
       .mockResolvedValueOnce(
-        jsonResponse(host({ id: '1', name: 'srv.example.com', hostname: 'srv.example.com' }), 201),
+        jsonResponse(system({ id: '1', name: 'srv.example.com', hostname: 'srv.example.com' }), 201),
       )
       .mockResolvedValueOnce(
-        jsonResponse([host({ id: '1', name: 'srv.example.com', hostname: 'srv.example.com' })]),
+        jsonResponse([system({ id: '1', name: 'srv.example.com', hostname: 'srv.example.com' })]),
       )
 
-    render(<HostsPage />)
-    await waitFor(() => expect(screen.getByText(/no hosts yet/i)).toBeInTheDocument())
+    render(<SystemsPage />)
+    await waitFor(() => expect(screen.getByText(/no systems yet/i)).toBeInTheDocument())
 
-    fireEvent.click(screen.getByRole('button', { name: /add host/i }))
+    fireEvent.click(screen.getByRole('button', { name: /add system/i }))
 
     const modal = await screen.findByRole('dialog')
     const hostnameInput = within(modal).getByLabelText(/hostname/i) as HTMLInputElement
@@ -94,7 +94,7 @@ describe('HostsPage', () => {
     expect(matches.length).toBeGreaterThanOrEqual(1)
 
     const postCall = fetchMock.mock.calls[1] as [string, FetchInit]
-    expect(postCall[0]).toBe('/api/hosts')
+    expect(postCall[0]).toBe('/api/systems')
     expect(postCall[1]?.method).toBe('POST')
     expect(JSON.parse(postCall[1]?.body as string)).toEqual({
       name: 'srv.example.com',
@@ -106,16 +106,16 @@ describe('HostsPage', () => {
     fetchMock
       .mockResolvedValueOnce(jsonResponse([]))
       .mockResolvedValueOnce(
-        jsonResponse(host({ id: '1', name: 'web prod', hostname: '10.0.0.5' }), 201),
+        jsonResponse(system({ id: '1', name: 'web prod', hostname: '10.0.0.5' }), 201),
       )
       .mockResolvedValueOnce(
-        jsonResponse([host({ id: '1', name: 'web prod', hostname: '10.0.0.5' })]),
+        jsonResponse([system({ id: '1', name: 'web prod', hostname: '10.0.0.5' })]),
       )
 
-    render(<HostsPage />)
-    await waitFor(() => expect(screen.getByText(/no hosts yet/i)).toBeInTheDocument())
+    render(<SystemsPage />)
+    await waitFor(() => expect(screen.getByText(/no systems yet/i)).toBeInTheDocument())
 
-    fireEvent.click(screen.getByRole('button', { name: /add host/i }))
+    fireEvent.click(screen.getByRole('button', { name: /add system/i }))
     const modal = await screen.findByRole('dialog')
     const hostnameInput = within(modal).getByLabelText(/hostname/i)
     const nameInput = within(modal).getByLabelText(/^name/i) as HTMLInputElement
@@ -138,10 +138,10 @@ describe('HostsPage', () => {
       .mockResolvedValueOnce(jsonResponse([]))
       .mockResolvedValueOnce(jsonResponse({ error: 'hostname is required' }, 400))
 
-    render(<HostsPage />)
-    await waitFor(() => expect(screen.getByText(/no hosts yet/i)).toBeInTheDocument())
+    render(<SystemsPage />)
+    await waitFor(() => expect(screen.getByText(/no systems yet/i)).toBeInTheDocument())
 
-    fireEvent.click(screen.getByRole('button', { name: /add host/i }))
+    fireEvent.click(screen.getByRole('button', { name: /add system/i }))
     const modal = await screen.findByRole('dialog')
     fireEvent.change(within(modal).getByLabelText(/hostname/i), { target: { value: 'x' } })
     fireEvent.change(within(modal).getByLabelText(/^name/i), { target: { value: 'x' } })
@@ -152,30 +152,30 @@ describe('HostsPage', () => {
     expect(screen.queryByRole('dialog')).toBeInTheDocument()
   })
 
-  it('removes a host via the row delete button', async () => {
+  it('removes a system via the row delete button', async () => {
     fetchMock
       .mockResolvedValueOnce(
-        jsonResponse([host({ id: '1', name: 'doomed', hostname: '1.1.1.1' })]),
+        jsonResponse([system({ id: '1', name: 'doomed', hostname: '1.1.1.1' })]),
       )
       .mockResolvedValueOnce(new Response(null, { status: 204 }))
       .mockResolvedValueOnce(jsonResponse([]))
 
-    render(<HostsPage />)
+    render(<SystemsPage />)
     const row = (await screen.findByText('doomed')).closest('tr')!
     fireEvent.click(within(row).getByRole('button', { name: /remove doomed/i }))
 
     await waitFor(() =>
-      expect(screen.getByText(/no hosts yet/i)).toBeInTheDocument(),
+      expect(screen.getByText(/no systems yet/i)).toBeInTheDocument(),
     )
 
     const deleteCall = fetchMock.mock.calls[1] as [string, FetchInit]
-    expect(deleteCall[0]).toBe('/api/hosts/1')
+    expect(deleteCall[0]).toBe('/api/systems/1')
     expect(deleteCall[1]?.method).toBe('DELETE')
   })
 
   it('shows a load error when the list request fails', async () => {
     fetchMock.mockResolvedValueOnce(jsonResponse({ error: 'boom' }, 500))
-    render(<HostsPage />)
-    expect(await screen.findByText(/could not load hosts/i)).toBeInTheDocument()
+    render(<SystemsPage />)
+    expect(await screen.findByText(/could not load systems/i)).toBeInTheDocument()
   })
 })

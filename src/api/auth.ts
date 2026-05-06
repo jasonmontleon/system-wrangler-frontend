@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-import { ApiError } from './hosts'
+import { ApiError } from './systems'
 
 export type AuthUser = {
   id: string
