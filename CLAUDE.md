@@ -42,6 +42,7 @@ source files written by Claude Code; no setup required.
 npm run build              # includes tsc -b — type errors fail here
 npm run lint               # once configured
 npm test -- --run          # vitest, non-watch
+gitleaks protect --staged --redact --verbose    # secret scan on staged changes
 ```
 
 ## Tests & coverage

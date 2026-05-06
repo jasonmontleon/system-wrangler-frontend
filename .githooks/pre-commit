@@ -10,3 +10,10 @@ npm run --silent lint
 
 echo "==> test"
 npm test --silent -- --run
+
+if command -v gitleaks >/dev/null 2>&1; then
+  echo "==> gitleaks"
+  gitleaks protect --staged --redact --verbose
+else
+  echo "(skipping gitleaks: not installed — see https://github.com/gitleaks/gitleaks#installing)" >&2
+fi
