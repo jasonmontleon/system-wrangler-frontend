@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react'
 
 export type Theme = 'light' | 'dark'
 
-const STORAGE_KEY = 'cw-theme'
+const STORAGE_KEY = 'sw-theme'
 const DARK_CLASS = 'pf-v6-theme-dark'
 
 function readStored(): Theme {

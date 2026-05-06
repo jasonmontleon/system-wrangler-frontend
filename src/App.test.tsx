@@ -65,10 +65,10 @@ describe('App', () => {
 
     fireEvent.click(screen.getByRole('button', { name: /switch to light mode/i }))
     expect(document.documentElement.classList.contains('pf-v6-theme-dark')).toBe(false)
-    expect(localStorage.getItem('cw-theme')).toBe('light')
+    expect(localStorage.getItem('sw-theme')).toBe('light')
 
     fireEvent.click(screen.getByRole('button', { name: /switch to dark mode/i }))
     expect(document.documentElement.classList.contains('pf-v6-theme-dark')).toBe(true)
-    expect(localStorage.getItem('cw-theme')).toBe('dark')
+    expect(localStorage.getItem('sw-theme')).toBe('dark')
   })
 })

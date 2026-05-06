@@ -1,7 +1,7 @@
-# Cat Wrangler — Frontend
+# System Wrangler — Frontend
 
-React/TypeScript SPA for Cat Wrangler. Builds to static `dist/` which the Go
-backend (sibling repo `cat-wrangler-backend`) embeds and serves. **There is no
+React/TypeScript SPA for System Wrangler. Builds to static `dist/` which the Go
+backend (sibling repo `system-wrangler-backend`) embeds and serves. **There is no
 Node runtime in production.** The dev server proxies `/api/*` to
 `localhost:8080`.
 

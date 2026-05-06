@@ -3,13 +3,13 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Cat Wrangler</title>
+    <title>System Wrangler</title>
     <script>
       // Apply theme class before paint so dark mode never flashes light on
-      // load. Default is dark; localStorage 'cw-theme' overrides if 'light'.
+      // load. Default is dark; localStorage 'sw-theme' overrides if 'light'.
       (function () {
         try {
-          if (localStorage.getItem('cw-theme') !== 'light') {
+          if (localStorage.getItem('sw-theme') !== 'light') {
             document.documentElement.classList.add('pf-v6-theme-dark')
           }
         } catch (e) {

@@ -20,11 +20,11 @@ describe('useTheme', () => {
     const { result } = renderHook(() => useTheme())
     expect(result.current[0]).toBe('dark')
     expect(document.documentElement.classList.contains(DARK_CLASS)).toBe(true)
-    expect(localStorage.getItem('cw-theme')).toBe('dark')
+    expect(localStorage.getItem('sw-theme')).toBe('dark')
   })
 
   it('reads stored preference', () => {
-    localStorage.setItem('cw-theme', 'light')
+    localStorage.setItem('sw-theme', 'light')
     const { result } = renderHook(() => useTheme())
     expect(result.current[0]).toBe('light')
     expect(document.documentElement.classList.contains(DARK_CLASS)).toBe(false)
@@ -35,15 +35,15 @@ describe('useTheme', () => {
     act(() => result.current[1]('light'))
     expect(result.current[0]).toBe('light')
     expect(document.documentElement.classList.contains(DARK_CLASS)).toBe(false)
-    expect(localStorage.getItem('cw-theme')).toBe('light')
+    expect(localStorage.getItem('sw-theme')).toBe('light')
 
     act(() => result.current[1]('dark'))
     expect(document.documentElement.classList.contains(DARK_CLASS)).toBe(true)
-    expect(localStorage.getItem('cw-theme')).toBe('dark')
+    expect(localStorage.getItem('sw-theme')).toBe('dark')
   })
 
   it('ignores stored values that are not "light" or "dark"', () => {
-    localStorage.setItem('cw-theme', 'rainbow')
+    localStorage.setItem('sw-theme', 'rainbow')
     const { result } = renderHook(() => useTheme())
     expect(result.current[0]).toBe('dark')
   })

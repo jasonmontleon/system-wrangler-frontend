@@ -27,7 +27,7 @@ import { useTheme } from './hooks/useTheme'
 // users. Override at build time via VITE_SOURCE_URL; the default points at
 // the upstream project so forks must update it.
 const SOURCE_URL =
-  import.meta.env.VITE_SOURCE_URL ?? 'https://github.com/example/cat-wrangler'
+  import.meta.env.VITE_SOURCE_URL ?? 'https://github.com/example/system-wrangler'
 
 type PageKey = 'dashboard' | 'hosts'
 
@@ -40,7 +40,7 @@ export default function App() {
     <Masthead>
       <MastheadMain>
         <MastheadBrand>
-          <MastheadLogo>Cat Wrangler</MastheadLogo>
+          <MastheadLogo>System Wrangler</MastheadLogo>
         </MastheadBrand>
       </MastheadMain>
       <MastheadContent>
