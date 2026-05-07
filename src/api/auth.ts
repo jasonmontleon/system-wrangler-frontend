@@ -5,7 +5,14 @@ import { ApiError } from './systems'
 export type AuthUser = {
   id: string
   username: string
+  email: string
+  theme: string
   createdAt: string
+}
+
+export type ProfileUpdate = {
+  email: string
+  theme: string
 }
 
 export type AuthStatus = {
@@ -58,5 +65,27 @@ export async function login(
 
 export async function logout(): Promise<void> {
   const resp = await fetch('/api/auth/logout', { method: 'POST' })
+  if (!resp.ok) throw new ApiError(resp.status, await parseError(resp))
+}
+
+export async function updateProfile(update: ProfileUpdate): Promise<AuthUser> {
+  const resp = await fetch('/api/auth/profile', {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(update),
+  })
+  if (!resp.ok) throw new ApiError(resp.status, await parseError(resp))
+  return (await resp.json()) as AuthUser
+}
+
+export async function changePassword(
+  currentPassword: string,
+  newPassword: string,
+): Promise<void> {
+  const resp = await fetch('/api/auth/password', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ currentPassword, newPassword }),
+  })
   if (!resp.ok) throw new ApiError(resp.status, await parseError(resp))
 }

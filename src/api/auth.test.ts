@@ -3,10 +3,12 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { ApiError } from './systems'
 import {
+  changePassword,
   getAuthStatus,
   login,
   logout,
   setupAdmin,
+  updateProfile,
   type AuthStatus,
 } from './auth'
 
@@ -100,5 +102,50 @@ describe('api/auth', () => {
   it('logout throws on non-ok', async () => {
     fetchMock.mockResolvedValueOnce(jsonResponse({ error: 'no' }, 500))
     await expect(logout()).rejects.toBeInstanceOf(ApiError)
+  })
+
+  it('updateProfile sends a PATCH and returns the updated user', async () => {
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse({
+        id: 'u1',
+        username: 'admin',
+        email: 'a@b.c',
+        theme: 'light',
+        createdAt: '2026-05-06T12:00:00Z',
+      }),
+    )
+    const u = await updateProfile({ email: 'a@b.c', theme: 'light' })
+    expect(u.email).toBe('a@b.c')
+    expect(u.theme).toBe('light')
+    expect(fetchMock).toHaveBeenCalledWith(
+      '/api/auth/profile',
+      expect.objectContaining({ method: 'PATCH' }),
+    )
+  })
+
+  it('updateProfile throws on backend error', async () => {
+    fetchMock.mockResolvedValueOnce(jsonResponse({ error: 'invalid theme' }, 400))
+    await expect(updateProfile({ email: '', theme: 'neon' })).rejects.toBeInstanceOf(
+      ApiError,
+    )
+  })
+
+  it('changePassword posts both passwords and resolves on 204', async () => {
+    fetchMock.mockResolvedValueOnce(new Response(null, { status: 204 }))
+    await expect(changePassword('old', 'newsecretpw')).resolves.toBeUndefined()
+    const init = fetchMock.mock.calls[0][1] as RequestInit
+    expect(JSON.parse(String(init.body))).toEqual({
+      currentPassword: 'old',
+      newPassword: 'newsecretpw',
+    })
+  })
+
+  it('changePassword surfaces 401 from server', async () => {
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse({ error: 'current password incorrect' }, 401),
+    )
+    await expect(changePassword('wrong', 'newsecretpw')).rejects.toThrow(
+      /current password incorrect/,
+    )
   })
 })

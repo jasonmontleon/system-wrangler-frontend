@@ -23,23 +23,27 @@ function jsonResponse(body: unknown, status = 200): Response {
   })
 }
 
+const sampleUser = {
+  id: 'u1',
+  username: 'admin',
+  email: '',
+  theme: '',
+  createdAt: '2026-05-06T12:00:00Z',
+}
+
 function installFetch(routes: Routes) {
   const handler = vi.fn(async (input: FetchInput, init?: FetchInit) => {
     const url = typeof input === 'string' ? input : input.toString()
     if (url.endsWith('/api/auth/status')) {
       return routes.authStatus
         ? routes.authStatus()
-        : jsonResponse({ setupRequired: false, authenticated: true, user: { id: 'u1', username: 'admin', createdAt: '2026-05-06T12:00:00Z' } })
+        : jsonResponse({ setupRequired: false, authenticated: true, user: sampleUser })
     }
     if (url.endsWith('/api/auth/setup')) {
-      return routes.authSetup
-        ? routes.authSetup(init)
-        : jsonResponse({ id: 'u1', username: 'admin', createdAt: '2026-05-06T12:00:00Z' }, 201)
+      return routes.authSetup ? routes.authSetup(init) : jsonResponse(sampleUser, 201)
     }
     if (url.endsWith('/api/auth/login')) {
-      return routes.authLogin
-        ? routes.authLogin(init)
-        : jsonResponse({ id: 'u1', username: 'admin', createdAt: '2026-05-06T12:00:00Z' })
+      return routes.authLogin ? routes.authLogin(init) : jsonResponse(sampleUser)
     }
     if (url.endsWith('/api/auth/logout')) {
       return routes.authLogout ? routes.authLogout() : new Response(null, { status: 204 })
@@ -106,35 +110,57 @@ describe('App', () => {
       })
     })
 
-    it('starts in dark mode and toggles to light on button click', async () => {
+    it('does not expose the theme toggle from the masthead', async () => {
       render(<App />)
-      await waitFor(() => {
-        expect(
-          screen.getByRole('button', { name: /switch to light mode/i }),
-        ).toBeInTheDocument()
-      })
+      await screen.findByRole('button', { name: /user menu/i })
       expect(
-        document.documentElement.classList.contains('pf-v6-theme-dark'),
-      ).toBe(true)
-
-      fireEvent.click(
-        screen.getByRole('button', { name: /switch to light mode/i }),
-      )
+        screen.queryByRole('button', { name: /switch to light mode/i }),
+      ).toBeNull()
       expect(
-        document.documentElement.classList.contains('pf-v6-theme-dark'),
-      ).toBe(false)
-      expect(localStorage.getItem('sw-theme')).toBe('light')
+        screen.queryByRole('button', { name: /switch to dark mode/i }),
+      ).toBeNull()
     })
 
-    it('exposes a sign-out button that calls logout', async () => {
+    it('signs out via the user dropdown menu', async () => {
       const fetchMock = installFetch({})
       render(<App />)
-      const signOut = await screen.findByRole('button', { name: /sign out/i })
+      const menuToggle = await screen.findByRole('button', { name: /user menu/i })
+      fireEvent.click(menuToggle)
+      const signOut = await screen.findByRole('menuitem', { name: /sign out/i })
       fireEvent.click(signOut)
       await waitFor(() => {
         const calls = fetchMock.mock.calls.map((c) => String(c[0]))
         expect(calls).toContain('/api/auth/logout')
       })
+    })
+
+    it('navigates to the profile page from the user dropdown menu', async () => {
+      render(<App />)
+      const menuToggle = await screen.findByRole('button', { name: /user menu/i })
+      fireEvent.click(menuToggle)
+      const profile = await screen.findByRole('menuitem', { name: /profile/i })
+      fireEvent.click(profile)
+      await waitFor(() => {
+        expect(
+          screen.getByRole('heading', { name: /^profile$/i }),
+        ).toBeInTheDocument()
+      })
+    })
+
+    it("applies the user's stored theme preference on load", async () => {
+      installFetch({
+        authStatus: () =>
+          jsonResponse({
+            setupRequired: false,
+            authenticated: true,
+            user: { ...sampleUser, theme: 'light' },
+          }),
+      })
+      render(<App />)
+      await screen.findByRole('button', { name: /user menu/i })
+      expect(
+        document.documentElement.classList.contains('pf-v6-theme-dark'),
+      ).toBe(false)
     })
   })
 

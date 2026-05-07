@@ -4,12 +4,16 @@ import { useState } from 'react'
 import {
   Alert,
   Bullseye,
-  Button,
+  Dropdown,
+  DropdownItem,
+  DropdownList,
   Masthead,
   MastheadBrand,
   MastheadContent,
   MastheadLogo,
   MastheadMain,
+  MenuToggle,
+  type MenuToggleElement,
   Nav,
   NavItem,
   NavList,
@@ -22,8 +26,8 @@ import {
   ToolbarContent,
   ToolbarItem,
 } from '@patternfly/react-core'
-import { MoonIcon, SunIcon } from '@patternfly/react-icons'
 import DashboardPage from './pages/DashboardPage'
+import ProfilePage from './pages/ProfilePage'
 import SystemsPage from './pages/SystemsPage'
 import LoginForm from './components/LoginForm'
 import SetupForm from './components/SetupForm'
@@ -36,22 +40,16 @@ import { useTheme } from './hooks/useTheme'
 const SOURCE_URL =
   import.meta.env.VITE_SOURCE_URL ?? 'https://github.com/example/system-wrangler'
 
-type PageKey = 'dashboard' | 'systems'
+type PageKey = 'dashboard' | 'systems' | 'profile'
 
 export default function App() {
   const auth = useAuth()
   const [page, setPage] = useState<PageKey>('dashboard')
-  const [theme, setTheme] = useTheme()
-  const isDark = theme === 'dark'
+  const [menuOpen, setMenuOpen] = useState(false)
 
-  const themeButton = (
-    <Button
-      variant="plain"
-      aria-label={isDark ? 'Switch to light mode' : 'Switch to dark mode'}
-      onClick={() => setTheme(isDark ? 'light' : 'dark')}
-      icon={isDark ? <SunIcon /> : <MoonIcon />}
-    />
-  )
+  const serverTheme =
+    auth.state.kind === 'ready' ? auth.state.status.user?.theme : undefined
+  useTheme(serverTheme)
 
   if (auth.state.kind === 'loading') {
     return (
@@ -77,9 +75,50 @@ export default function App() {
     return <SetupForm onSetup={auth.setup} />
   }
 
-  if (!status.authenticated) {
+  if (!status.authenticated || !status.user) {
     return <LoginForm onLogin={auth.login} />
   }
+
+  const user = status.user
+
+  const onSelectMenu = (
+    _event?: React.MouseEvent<Element, MouseEvent>,
+    value?: string | number,
+  ) => {
+    setMenuOpen(false)
+    if (value === 'profile') {
+      setPage('profile')
+    } else if (value === 'logout') {
+      void auth.logout()
+    }
+  }
+
+  const userMenu = (
+    <Dropdown
+      isOpen={menuOpen}
+      onSelect={onSelectMenu}
+      onOpenChange={(open: boolean) => setMenuOpen(open)}
+      toggle={(ref: React.Ref<MenuToggleElement>) => (
+        <MenuToggle
+          ref={ref}
+          isExpanded={menuOpen}
+          onClick={() => setMenuOpen((o) => !o)}
+          aria-label="User menu"
+        >
+          {user.username}
+        </MenuToggle>
+      )}
+    >
+      <DropdownList>
+        <DropdownItem value="profile" key="profile">
+          Profile
+        </DropdownItem>
+        <DropdownItem value="logout" key="logout">
+          Sign out
+        </DropdownItem>
+      </DropdownList>
+    </Dropdown>
+  )
 
   const masthead = (
     <Masthead>
@@ -91,22 +130,12 @@ export default function App() {
       <MastheadContent>
         <Toolbar>
           <ToolbarContent>
-            <ToolbarItem align={{ default: 'alignEnd' }}>{themeButton}</ToolbarItem>
-            <ToolbarItem>
+            <ToolbarItem align={{ default: 'alignEnd' }}>
               <a href={SOURCE_URL} target="_blank" rel="noreferrer">
                 Source
               </a>
             </ToolbarItem>
-            {status.user && (
-              <ToolbarItem>
-                <span aria-label="signed in as">{status.user.username}</span>
-              </ToolbarItem>
-            )}
-            <ToolbarItem>
-              <Button variant="link" onClick={() => void auth.logout()}>
-                Sign out
-              </Button>
-            </ToolbarItem>
+            <ToolbarItem>{userMenu}</ToolbarItem>
           </ToolbarContent>
         </Toolbar>
       </MastheadContent>
@@ -142,6 +171,14 @@ export default function App() {
     <Page masthead={masthead} sidebar={sidebar}>
       {page === 'dashboard' && <DashboardPage />}
       {page === 'systems' && <SystemsPage />}
+      {page === 'profile' && (
+        <ProfilePage
+          user={user}
+          onProfileUpdate={() => {
+            void auth.refresh()
+          }}
+        />
+      )}
     </Page>
   )
 }

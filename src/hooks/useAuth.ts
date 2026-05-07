@@ -20,6 +20,7 @@ export type UseAuth = {
   setup: (username: string, password: string) => Promise<AuthUser>
   login: (username: string, password: string) => Promise<AuthUser>
   logout: () => Promise<void>
+  refresh: () => Promise<void>
 }
 
 export function useAuth(): UseAuth {
@@ -64,5 +65,5 @@ export function useAuth(): UseAuth {
     await refresh()
   }, [refresh])
 
-  return { state, setup, login, logout }
+  return { state, setup, login, logout, refresh }
 }
