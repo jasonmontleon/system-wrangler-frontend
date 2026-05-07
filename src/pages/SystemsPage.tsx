@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import {
   Alert,
   Button,
@@ -31,6 +31,7 @@ import {
   type System,
   type SystemStatus,
 } from '../api/systems'
+import { useEventStream } from '../hooks/useEventStream'
 
 const STATUS_LABELS: Record<
   SystemStatus,
@@ -65,6 +66,27 @@ export default function SystemsPage() {
   useEffect(() => {
     void refresh()
   }, [refresh])
+
+  // Debounced re-fetch on server events. Bursts (e.g. several systems
+  // added in quick succession) collapse into one refetch.
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
+  useEventStream(
+    useCallback(
+      (event) => {
+        if (event.type !== 'systems.changed') return
+        if (debounceRef.current) clearTimeout(debounceRef.current)
+        debounceRef.current = setTimeout(() => {
+          void refresh()
+        }, 200)
+      },
+      [refresh],
+    ),
+  )
+  useEffect(() => {
+    return () => {
+      if (debounceRef.current) clearTimeout(debounceRef.current)
+    }
+  }, [])
 
   const onDelete = async (id: string) => {
     try {

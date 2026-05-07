@@ -24,12 +24,34 @@ function system(overrides: Partial<{ id: string; name: string; hostname: string;
   }
 }
 
+class FakeEventSource {
+  static instances: FakeEventSource[] = []
+  private listeners: Record<string, ((e: MessageEvent) => void)[]> = {}
+  constructor(public url: string) {
+    FakeEventSource.instances.push(this)
+  }
+  addEventListener(type: string, fn: (e: MessageEvent) => void) {
+    if (!this.listeners[type]) this.listeners[type] = []
+    this.listeners[type].push(fn)
+  }
+  removeEventListener(type: string, fn: (e: MessageEvent) => void) {
+    this.listeners[type] = (this.listeners[type] ?? []).filter((x) => x !== fn)
+  }
+  close() {}
+  emit(type: string, data: unknown) {
+    const e = new MessageEvent(type, { data: JSON.stringify(data) })
+    ;(this.listeners[type] ?? []).forEach((fn) => fn(e))
+  }
+}
+
 describe('SystemsPage', () => {
   let fetchMock: ReturnType<typeof vi.fn>
 
   beforeEach(() => {
     fetchMock = vi.fn()
     vi.stubGlobal('fetch', fetchMock)
+    FakeEventSource.instances = []
+    vi.stubGlobal('EventSource', FakeEventSource)
   })
 
   afterEach(() => {
@@ -171,6 +193,57 @@ describe('SystemsPage', () => {
     const deleteCall = fetchMock.mock.calls[1] as [string, FetchInit]
     expect(deleteCall[0]).toBe('/api/systems/1')
     expect(deleteCall[1]?.method).toBe('DELETE')
+  })
+
+  it('refetches when a systems.changed event arrives', async () => {
+    fetchMock
+      .mockResolvedValueOnce(jsonResponse([])) // initial: empty
+      .mockResolvedValueOnce(
+        jsonResponse([system({ id: '99', name: 'late-arrival', hostname: '10.0.0.99' })]),
+      )
+
+    render(<SystemsPage />)
+    expect(await screen.findByText(/no systems yet/i)).toBeInTheDocument()
+
+    // Simulate the backend pushing a systems.changed event.
+    FakeEventSource.instances[0].emit('message', { type: 'systems.changed' })
+
+    expect(await screen.findByText('late-arrival')).toBeInTheDocument()
+    // Two GET /api/systems calls: initial + after event.
+    expect(fetchMock.mock.calls.filter((c) => c[0] === '/api/systems')).toHaveLength(2)
+  })
+
+  it('debounces bursts of events into a single refetch', async () => {
+    fetchMock.mockResolvedValue(jsonResponse([]))
+    render(<SystemsPage />)
+    await waitFor(() => expect(screen.getByText(/no systems yet/i)).toBeInTheDocument())
+
+    const initialCalls = fetchMock.mock.calls.filter((c) => c[0] === '/api/systems').length
+
+    // Fire several events back-to-back.
+    const es = FakeEventSource.instances[0]
+    es.emit('message', { type: 'systems.changed' })
+    es.emit('message', { type: 'systems.changed' })
+    es.emit('message', { type: 'systems.changed' })
+
+    // Wait for the debounce window (200ms) plus a margin.
+    await new Promise((r) => setTimeout(r, 300))
+
+    const newCalls = fetchMock.mock.calls.filter((c) => c[0] === '/api/systems').length
+    expect(newCalls - initialCalls).toBe(1)
+  })
+
+  it('ignores events of unknown types', async () => {
+    fetchMock.mockResolvedValue(jsonResponse([]))
+    render(<SystemsPage />)
+    await waitFor(() => expect(screen.getByText(/no systems yet/i)).toBeInTheDocument())
+    const initialCalls = fetchMock.mock.calls.filter((c) => c[0] === '/api/systems').length
+
+    FakeEventSource.instances[0].emit('message', { type: 'something.else' })
+    await new Promise((r) => setTimeout(r, 300))
+
+    const newCalls = fetchMock.mock.calls.filter((c) => c[0] === '/api/systems').length
+    expect(newCalls - initialCalls).toBe(0)
   })
 
   it('shows a load error when the list request fails', async () => {
