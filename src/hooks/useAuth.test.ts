@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: AGPL-3.0-or-later
+// SPDX-License-Identifier: Apache-2.0
 
 import { act, renderHook, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -114,5 +114,31 @@ describe('useAuth', () => {
     const calls = fetchMock.mock.calls.map((c) => String(c[0]))
     expect(calls).toContain('/api/auth/login')
     expect(calls).toContain('/api/auth/logout')
+  })
+
+  it('login skips refresh when totp is required', async () => {
+    fetchMock
+      .mockResolvedValueOnce(
+        jsonResponse({ setupRequired: false, authenticated: false }),
+      )
+      .mockResolvedValueOnce(jsonResponse({ totpRequired: true }))
+
+    const { result } = renderHook(() => useAuth())
+    await waitFor(() => {
+      expect(result.current.state.kind).toBe('ready')
+    })
+
+    let kind: string | undefined
+    await act(async () => {
+      const r = await result.current.login('admin', 'correctpassword')
+      kind = r.kind
+    })
+    expect(kind).toBe('totp')
+    // /status was called exactly once on mount; the login that returned
+    // totpRequired must not have triggered a second /status round-trip.
+    const statusCalls = fetchMock.mock.calls
+      .map((c) => String(c[0]))
+      .filter((u) => u === '/api/auth/status')
+    expect(statusCalls).toHaveLength(1)
   })
 })

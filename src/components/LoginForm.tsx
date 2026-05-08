@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: AGPL-3.0-or-later
+// SPDX-License-Identifier: Apache-2.0
 
 import { useState, type FormEvent } from 'react'
 import {
@@ -12,16 +12,27 @@ import {
   FormGroup,
   TextInput,
 } from '@patternfly/react-core'
+import type { LoginResult } from '../api/auth'
+import { totpVerify } from '../api/auth'
+import TotpChallengeForm from './TotpChallengeForm'
 
 type Props = {
-  onLogin: (username: string, password: string) => Promise<unknown>
+  onLogin: (username: string, password: string) => Promise<LoginResult>
+  // onTotpComplete is the parent's hook to refresh /api/auth/status after
+  // the second-factor step issues a session cookie. Optional so simple
+  // (non-TOTP) callers stay typeable.
+  onTotpComplete?: () => Promise<void> | void
 }
 
-export default function LoginForm({ onLogin }: Props) {
+export default function LoginForm({ onLogin, onTotpComplete }: Props) {
   const [username, setUsername] = useState('')
   const [password, setPassword] = useState('')
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  // When the password step returns totpRequired, we swap to the second-step
+  // form. The credentials are NOT retained — the backend tracks the partial
+  // login via a short-lived signed cookie.
+  const [totpStep, setTotpStep] = useState(false)
 
   const valid = username.trim().length > 0 && password.length > 0
 
@@ -31,12 +42,34 @@ export default function LoginForm({ onLogin }: Props) {
     setSubmitting(true)
     setError(null)
     try {
-      await onLogin(username.trim(), password)
+      const result = await onLogin(username.trim(), password)
+      if (result.kind === 'totp') {
+        setTotpStep(true)
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err))
     } finally {
       setSubmitting(false)
     }
+  }
+
+  const onVerify = async (code: string, rememberDevice: boolean) => {
+    await totpVerify(code, rememberDevice)
+    if (onTotpComplete) {
+      await onTotpComplete()
+    }
+  }
+
+  if (totpStep) {
+    return (
+      <TotpChallengeForm
+        onVerify={onVerify}
+        onCancel={() => {
+          setTotpStep(false)
+          setPassword('')
+        }}
+      />
+    )
   }
 
   return (

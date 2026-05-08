@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: AGPL-3.0-or-later
+// SPDX-License-Identifier: Apache-2.0
 
 import { useState, type FormEvent } from 'react'
 import {
@@ -20,6 +20,8 @@ import {
   updateProfile,
   type AuthUser,
 } from '../api/auth'
+import TwoFactorCard from '../components/TwoFactorCard'
+import TrustedDevicesCard from '../components/TrustedDevicesCard'
 
 const MIN_PASSWORD = 8
 
@@ -30,7 +32,18 @@ type Props = {
   onProfileUpdate: (u: AuthUser) => void
 }
 
-export default function ProfilePage({ user, onProfileUpdate }: Props) {
+type ProfilePageProps = Props & {
+  // onAuthChange is called when an auth-relevant property of the current
+  // user (TOTP enrollment, etc.) changes server-side, so the page can
+  // re-fetch /api/auth/status to refresh `user.totpEnabled` and similar.
+  onAuthChange?: () => void
+}
+
+export default function ProfilePage({
+  user,
+  onProfileUpdate,
+  onAuthChange,
+}: ProfilePageProps) {
   return (
     <>
       <PageSection>
@@ -41,6 +54,15 @@ export default function ProfilePage({ user, onProfileUpdate }: Props) {
       </PageSection>
       <PageSection>
         <ChangePasswordForm />
+      </PageSection>
+      <PageSection>
+        <TwoFactorCard
+          initialEnabled={user.totpEnabled}
+          onChange={onAuthChange}
+        />
+      </PageSection>
+      <PageSection>
+        <TrustedDevicesCard />
       </PageSection>
     </>
   )

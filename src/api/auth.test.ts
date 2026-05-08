@@ -1,13 +1,19 @@
-// SPDX-License-Identifier: AGPL-3.0-or-later
+// SPDX-License-Identifier: Apache-2.0
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { ApiError } from './systems'
 import {
   changePassword,
   getAuthStatus,
+  listTrustedDevices,
   login,
   logout,
+  revokeTrustedDevice,
   setupAdmin,
+  totpConfirm,
+  totpDisable,
+  totpSetup,
+  totpVerify,
   updateProfile,
   type AuthStatus,
 } from './auth'
@@ -68,12 +74,21 @@ describe('api/auth', () => {
     await expect(setupAdmin('a', 'b')).rejects.toBeInstanceOf(ApiError)
   })
 
-  it('login posts JSON and returns the user', async () => {
+  it('login posts JSON and returns an authenticated result', async () => {
     fetchMock.mockResolvedValueOnce(
       jsonResponse({ id: 'u1', username: 'admin', createdAt: '2026-05-06T12:00:00Z' }),
     )
-    const u = await login('admin', 'correctpassword')
-    expect(u.username).toBe('admin')
+    const got = await login('admin', 'correctpassword')
+    expect(got.kind).toBe('authenticated')
+    if (got.kind === 'authenticated') {
+      expect(got.user.username).toBe('admin')
+    }
+  })
+
+  it('login surfaces the totp-required branch as a discriminated result', async () => {
+    fetchMock.mockResolvedValueOnce(jsonResponse({ totpRequired: true }))
+    const got = await login('admin', 'correctpassword')
+    expect(got.kind).toBe('totp')
   })
 
   it('login surfaces backend message on 401', async () => {
@@ -147,5 +162,95 @@ describe('api/auth', () => {
     await expect(changePassword('wrong', 'newsecretpw')).rejects.toThrow(
       /current password incorrect/,
     )
+  })
+
+  it('totpSetup posts and returns the secret + qr', async () => {
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse({ secret: 'JBSWY3DP', uri: 'otpauth://x', qrPng: 'BASE64' }),
+    )
+    const got = await totpSetup()
+    expect(got.secret).toBe('JBSWY3DP')
+    expect(got.qrPng).toBe('BASE64')
+  })
+
+  it('totpSetup throws ApiError on backend reject', async () => {
+    fetchMock.mockResolvedValueOnce(jsonResponse({ error: 'no' }, 503))
+    await expect(totpSetup()).rejects.toBeInstanceOf(ApiError)
+  })
+
+  it('totpConfirm sends the code and returns recovery codes', async () => {
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse({ recoveryCodes: ['ABC12-DEF34', 'GHIJK-LMNOP'] }),
+    )
+    const got = await totpConfirm('123456')
+    expect(got).toHaveLength(2)
+    const init = fetchMock.mock.calls[0][1] as RequestInit
+    expect(JSON.parse(String(init.body))).toEqual({ code: '123456' })
+  })
+
+  it('totpConfirm throws on bad code', async () => {
+    fetchMock.mockResolvedValueOnce(jsonResponse({ error: 'invalid code' }, 401))
+    await expect(totpConfirm('000000')).rejects.toThrow(/invalid code/)
+  })
+
+  it('totpVerify posts code+rememberDevice and returns the user', async () => {
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse({ id: 'u1', username: 'admin', createdAt: 't' }),
+    )
+    const u = await totpVerify('123456', true)
+    expect(u.username).toBe('admin')
+    const init = fetchMock.mock.calls[0][1] as RequestInit
+    expect(JSON.parse(String(init.body))).toEqual({
+      code: '123456',
+      rememberDevice: true,
+    })
+  })
+
+  it('totpDisable sends DELETE with credentials and resolves on 204', async () => {
+    fetchMock.mockResolvedValueOnce(new Response(null, { status: 204 }))
+    await expect(totpDisable('correctpassword', '123456')).resolves.toBeUndefined()
+    const url = fetchMock.mock.calls[0][0] as string
+    const init = fetchMock.mock.calls[0][1] as RequestInit
+    expect(url).toBe('/api/auth/totp')
+    expect(init.method).toBe('DELETE')
+  })
+
+  it('totpDisable throws on 401', async () => {
+    fetchMock.mockResolvedValueOnce(jsonResponse({ error: 'wrong' }, 401))
+    await expect(totpDisable('x', 'y')).rejects.toBeInstanceOf(ApiError)
+  })
+
+  it('listTrustedDevices returns the array', async () => {
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse([
+        {
+          id: 'd1',
+          label: 'Firefox on Linux',
+          createdAt: 't',
+          lastUsedAt: 't',
+          expiresAt: 't',
+        },
+      ]),
+    )
+    const got = await listTrustedDevices()
+    expect(got).toHaveLength(1)
+    expect(got[0].label).toBe('Firefox on Linux')
+  })
+
+  it('listTrustedDevices throws on backend error', async () => {
+    fetchMock.mockResolvedValueOnce(jsonResponse({ error: 'no' }, 500))
+    await expect(listTrustedDevices()).rejects.toBeInstanceOf(ApiError)
+  })
+
+  it('revokeTrustedDevice DELETEs the right URL and encodes the id', async () => {
+    fetchMock.mockResolvedValueOnce(new Response(null, { status: 204 }))
+    await expect(revokeTrustedDevice('a/b')).resolves.toBeUndefined()
+    const url = fetchMock.mock.calls[0][0] as string
+    expect(url).toBe('/api/auth/devices/a%2Fb')
+  })
+
+  it('revokeTrustedDevice throws on 404', async () => {
+    fetchMock.mockResolvedValueOnce(jsonResponse({ error: 'not found' }, 404))
+    await expect(revokeTrustedDevice('x')).rejects.toBeInstanceOf(ApiError)
   })
 })

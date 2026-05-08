@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: AGPL-3.0-or-later
+// SPDX-License-Identifier: Apache-2.0
 
 import { useState } from 'react'
 import {
@@ -33,12 +33,6 @@ import LoginForm from './components/LoginForm'
 import SetupForm from './components/SetupForm'
 import { useAuth } from './hooks/useAuth'
 import { useTheme } from './hooks/useTheme'
-
-// AGPL §13 requires running instances to prominently offer source to remote
-// users. Override at build time via VITE_SOURCE_URL; the default points at
-// the upstream project so forks must update it.
-const SOURCE_URL =
-  import.meta.env.VITE_SOURCE_URL ?? 'https://github.com/example/system-wrangler'
 
 type PageKey = 'dashboard' | 'systems' | 'profile'
 
@@ -76,7 +70,7 @@ export default function App() {
   }
 
   if (!status.authenticated || !status.user) {
-    return <LoginForm onLogin={auth.login} />
+    return <LoginForm onLogin={auth.login} onTotpComplete={auth.refresh} />
   }
 
   const user = status.user
@@ -130,12 +124,7 @@ export default function App() {
       <MastheadContent>
         <Toolbar>
           <ToolbarContent>
-            <ToolbarItem align={{ default: 'alignEnd' }}>
-              <a href={SOURCE_URL} target="_blank" rel="noreferrer">
-                Source
-              </a>
-            </ToolbarItem>
-            <ToolbarItem>{userMenu}</ToolbarItem>
+            <ToolbarItem align={{ default: 'alignEnd' }}>{userMenu}</ToolbarItem>
           </ToolbarContent>
         </Toolbar>
       </MastheadContent>
@@ -175,6 +164,9 @@ export default function App() {
         <ProfilePage
           user={user}
           onProfileUpdate={() => {
+            void auth.refresh()
+          }}
+          onAuthChange={() => {
             void auth.refresh()
           }}
         />

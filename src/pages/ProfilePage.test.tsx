@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: AGPL-3.0-or-later
+// SPDX-License-Identifier: Apache-2.0
 
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -11,6 +11,7 @@ const baseUser: AuthUser = {
   email: '',
   theme: '',
   createdAt: '2026-05-06T12:00:00Z',
+  totpEnabled: false,
 }
 
 function jsonResponse(body: unknown, status = 200): Response {
@@ -20,11 +21,31 @@ function jsonResponse(body: unknown, status = 200): Response {
   })
 }
 
+// routedFetch builds a fetch mock that dispatches by URL substring. This is
+// less flaky than chained mockResolvedValueOnce because the order of mounted
+// components (TrustedDevicesCard fires /api/auth/devices on mount, then the
+// user clicks Save) doesn't have to match the order of mock setup.
+type RouteMap = Record<string, () => Response | Promise<Response>>
+
+function routedFetch(routes: RouteMap): ReturnType<typeof vi.fn> {
+  return vi.fn().mockImplementation((url: string) => {
+    for (const [substr, fn] of Object.entries(routes)) {
+      if (url.includes(substr)) return Promise.resolve(fn())
+    }
+    return Promise.resolve(jsonResponse({}))
+  })
+}
+
 describe('ProfilePage', () => {
   let fetchMock: ReturnType<typeof vi.fn>
 
   beforeEach(() => {
-    fetchMock = vi.fn()
+    // Default: devices endpoint returns empty (TrustedDevicesCard mounts on
+    // every render). Per-test setups override this map for the call they
+    // actually exercise.
+    fetchMock = routedFetch({
+      '/api/auth/devices': () => jsonResponse([]),
+    })
     vi.stubGlobal('fetch', fetchMock)
   })
 
@@ -50,9 +71,12 @@ describe('ProfilePage', () => {
 
   it('saves profile updates and reports success', async () => {
     const onProfileUpdate = vi.fn()
-    fetchMock.mockResolvedValueOnce(
-      jsonResponse({ ...baseUser, email: 'a@b.c', theme: 'light' }),
-    )
+    fetchMock = routedFetch({
+      '/api/auth/devices': () => jsonResponse([]),
+      '/api/auth/profile': () =>
+        jsonResponse({ ...baseUser, email: 'a@b.c', theme: 'light' }),
+    })
+    vi.stubGlobal('fetch', fetchMock)
     render(<ProfilePage user={baseUser} onProfileUpdate={onProfileUpdate} />)
 
     fireEvent.change(screen.getByLabelText(/email/i), {
@@ -65,8 +89,15 @@ describe('ProfilePage', () => {
       expect(onProfileUpdate).toHaveBeenCalledTimes(1)
     })
     expect(screen.getByText(/profile saved/i)).toBeInTheDocument()
-    const init = fetchMock.mock.calls[0][1] as RequestInit
-    expect(init.method).toBe('PATCH')
+    // Find the PATCH /api/auth/profile call (other calls fire on mount).
+    const profileCall = fetchMock.mock.calls.find(
+      (c) =>
+        typeof c[0] === 'string' &&
+        c[0].includes('/api/auth/profile') &&
+        (c[1] as RequestInit | undefined)?.method === 'PATCH',
+    )
+    expect(profileCall).toBeDefined()
+    const init = profileCall![1] as RequestInit
     expect(JSON.parse(String(init.body))).toEqual({
       email: 'a@b.c',
       theme: 'light',
@@ -74,9 +105,11 @@ describe('ProfilePage', () => {
   })
 
   it('surfaces an error when the profile update fails', async () => {
-    fetchMock.mockResolvedValueOnce(
-      jsonResponse({ error: 'invalid theme' }, 400),
-    )
+    fetchMock = routedFetch({
+      '/api/auth/devices': () => jsonResponse([]),
+      '/api/auth/profile': () => jsonResponse({ error: 'invalid theme' }, 400),
+    })
+    vi.stubGlobal('fetch', fetchMock)
     render(<ProfilePage user={baseUser} onProfileUpdate={() => {}} />)
     fireEvent.click(screen.getByRole('button', { name: /save changes/i }))
     await waitFor(() => {
@@ -131,7 +164,11 @@ describe('ProfilePage', () => {
   })
 
   it('changes the password and clears the form on success', async () => {
-    fetchMock.mockResolvedValueOnce(new Response(null, { status: 204 }))
+    fetchMock = routedFetch({
+      '/api/auth/devices': () => jsonResponse([]),
+      '/api/auth/password': () => new Response(null, { status: 204 }),
+    })
+    vi.stubGlobal('fetch', fetchMock)
     render(<ProfilePage user={baseUser} onProfileUpdate={() => {}} />)
 
     fireEvent.change(screen.getByLabelText(/current password/i), {
@@ -154,9 +191,12 @@ describe('ProfilePage', () => {
   })
 
   it('reports the server error when the password change fails', async () => {
-    fetchMock.mockResolvedValueOnce(
-      jsonResponse({ error: 'current password incorrect' }, 401),
-    )
+    fetchMock = routedFetch({
+      '/api/auth/devices': () => jsonResponse([]),
+      '/api/auth/password': () =>
+        jsonResponse({ error: 'current password incorrect' }, 401),
+    })
+    vi.stubGlobal('fetch', fetchMock)
     render(<ProfilePage user={baseUser} onProfileUpdate={() => {}} />)
 
     fireEvent.change(screen.getByLabelText(/current password/i), {

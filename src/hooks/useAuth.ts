@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: AGPL-3.0-or-later
+// SPDX-License-Identifier: Apache-2.0
 
 import { useCallback, useEffect, useState } from 'react'
 import {
@@ -8,6 +8,7 @@ import {
   setupAdmin as setupApi,
   type AuthStatus,
   type AuthUser,
+  type LoginResult,
 } from '../api/auth'
 
 export type AuthState =
@@ -18,7 +19,7 @@ export type AuthState =
 export type UseAuth = {
   state: AuthState
   setup: (username: string, password: string) => Promise<AuthUser>
-  login: (username: string, password: string) => Promise<AuthUser>
+  login: (username: string, password: string) => Promise<LoginResult>
   logout: () => Promise<void>
   refresh: () => Promise<void>
 }
@@ -53,9 +54,14 @@ export function useAuth(): UseAuth {
 
   const login = useCallback(
     async (username: string, password: string) => {
-      const u = await loginApi(username, password)
-      await refresh()
-      return u
+      const result = await loginApi(username, password)
+      // Only refresh /status when the session cookie has actually been issued.
+      // The TOTP-required branch leaves the user mid-flow; calling refresh
+      // here would just round-trip an unauthenticated /status and is wasteful.
+      if (result.kind === 'authenticated') {
+        await refresh()
+      }
+      return result
     },
     [refresh],
   )
