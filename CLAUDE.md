@@ -7,16 +7,15 @@ Node runtime in production.** The dev server proxies `/api/*` to
 
 Stack: React 19, TypeScript (strict), Vite, **PatternFly v6**.
 
-## License (AGPL-3.0-or-later)
+## License (Apache-2.0)
 
 - Every new source file (`.ts`, `.tsx`, `.js`) MUST begin with this header, on
   its own line, followed by a blank line:
   ```ts
-  // SPDX-License-Identifier: AGPL-3.0-or-later
+  // SPDX-License-Identifier: Apache-2.0
   ```
-- The "Source" link in `App.tsx` (Masthead toolbar) is required for AGPL §13
-  compliance. Don't remove it. URL comes from `VITE_SOURCE_URL` at build time;
-  set it correctly before publishing builds.
+- Do not add dependencies under licenses that conflict with Apache-2.0
+  redistribution (e.g. GPL/AGPL/LGPL).
 
 ## First-time setup
 

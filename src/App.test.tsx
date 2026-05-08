@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: AGPL-3.0-or-later
+// SPDX-License-Identifier: Apache-2.0
 
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -83,13 +83,6 @@ describe('App', () => {
           screen.getByRole('heading', { name: /dashboard/i }),
         ).toBeInTheDocument()
       })
-    })
-
-    it('exposes the source link required by AGPL §13', async () => {
-      render(<App />)
-      const link = await screen.findByRole('link', { name: /source/i })
-      expect(link).toHaveAttribute('href')
-      expect(link.getAttribute('href')).toMatch(/^https?:\/\//)
     })
 
     it('shows backend health once fetched', async () => {
