@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
-import { useState, type FormEvent } from 'react'
+import { useEffect, useState, type FormEvent } from 'react'
 import {
   Alert,
   Bullseye,
@@ -33,6 +33,9 @@ export default function LoginForm({ onLogin, onTotpComplete }: Props) {
   // form. The credentials are NOT retained — the backend tracks the partial
   // login via a short-lived signed cookie.
   const [totpStep, setTotpStep] = useState(false)
+  // Conditional-reveal lockout: only populated when correct credentials
+  // land on a locked account. Resets when the user re-edits the form.
+  const [lockedUntil, setLockedUntil] = useState<string | null>(null)
 
   const valid = username.trim().length > 0 && password.length > 0
 
@@ -41,10 +44,13 @@ export default function LoginForm({ onLogin, onTotpComplete }: Props) {
     if (!valid) return
     setSubmitting(true)
     setError(null)
+    setLockedUntil(null)
     try {
       const result = await onLogin(username.trim(), password)
       if (result.kind === 'totp') {
         setTotpStep(true)
+      } else if (result.kind === 'locked') {
+        setLockedUntil(result.lockedUntil)
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err))
@@ -54,7 +60,12 @@ export default function LoginForm({ onLogin, onTotpComplete }: Props) {
   }
 
   const onVerify = async (code: string, rememberDevice: boolean) => {
-    await totpVerify(code, rememberDevice)
+    const result = await totpVerify(code, rememberDevice)
+    if (result.kind === 'locked') {
+      setTotpStep(false)
+      setLockedUntil(result.lockedUntil)
+      return
+    }
     if (onTotpComplete) {
       await onTotpComplete()
     }
@@ -72,6 +83,14 @@ export default function LoginForm({ onLogin, onTotpComplete }: Props) {
     )
   }
 
+  // Re-edit clears the lockout banner so users aren't staring at a stale
+  // countdown if they switch usernames or just want to retry after the
+  // window expires.
+  const onInputChange = (setter: (v: string) => void) => (v: string) => {
+    setter(v)
+    if (lockedUntil) setLockedUntil(null)
+  }
+
   return (
     <Bullseye>
       <Card style={{ width: 380 }}>
@@ -82,7 +101,7 @@ export default function LoginForm({ onLogin, onTotpComplete }: Props) {
               <TextInput
                 id="login-username"
                 value={username}
-                onChange={(_, v) => setUsername(v)}
+                onChange={(_, v) => onInputChange(setUsername)(v)}
                 isDisabled={submitting}
                 isRequired
                 autoFocus
@@ -94,12 +113,13 @@ export default function LoginForm({ onLogin, onTotpComplete }: Props) {
                 id="login-password"
                 type="password"
                 value={password}
-                onChange={(_, v) => setPassword(v)}
+                onChange={(_, v) => onInputChange(setPassword)(v)}
                 isDisabled={submitting}
                 isRequired
                 autoComplete="current-password"
               />
             </FormGroup>
+            {lockedUntil && <LockedAlert lockedUntil={lockedUntil} />}
             {error && (
               <Alert variant="danger" title="Sign-in failed" isInline>
                 {error}
@@ -109,7 +129,7 @@ export default function LoginForm({ onLogin, onTotpComplete }: Props) {
               type="submit"
               variant="primary"
               isLoading={submitting}
-              isDisabled={!valid || submitting}
+              isDisabled={!valid || submitting || lockedUntil !== null}
             >
               Sign in
             </Button>
@@ -117,5 +137,37 @@ export default function LoginForm({ onLogin, onTotpComplete }: Props) {
         </CardBody>
       </Card>
     </Bullseye>
+  )
+}
+
+// LockedAlert renders the lockout banner with the unlock time in the
+// title (so it's never missed) and a live-updating countdown in the
+// body. The tick runs on a 1-second interval; once the lock expires
+// the title flips to "you can try again now."
+function LockedAlert({ lockedUntil }: { lockedUntil: string }) {
+  const target = new Date(lockedUntil).getTime()
+  const [now, setNow] = useState(() => Date.now())
+  useEffect(() => {
+    const id = window.setInterval(() => setNow(Date.now()), 1000)
+    return () => window.clearInterval(id)
+  }, [])
+  const remaining = Math.max(0, Math.floor((target - now) / 1000))
+  if (!Number.isFinite(target) || remaining === 0) {
+    return (
+      <Alert variant="warning" title="Account ready — re-enter your password" isInline />
+    )
+  }
+  const min = Math.floor(remaining / 60)
+  const sec = remaining % 60
+  const human = min > 0 ? `${min}m ${sec}s` : `${sec}s`
+  const when = new Date(target).toLocaleTimeString()
+  return (
+    <Alert
+      variant="warning"
+      title={`Account locked until ${when}`}
+      isInline
+    >
+      Too many failed attempts. Try again in {human}.
+    </Alert>
   )
 }

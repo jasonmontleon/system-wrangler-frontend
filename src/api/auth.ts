@@ -9,6 +9,7 @@ export type AuthUser = {
   theme: string
   createdAt: string
   totpEnabled: boolean
+  mustChangePassword?: boolean
 }
 
 export type ProfileUpdate = {
@@ -23,11 +24,14 @@ export type AuthStatus = {
 }
 
 // Discriminated result of the first step of login: either we got a session
-// outright (no TOTP enabled, or trusted-device cookie hit) or the server has
-// issued a 5-minute challenge cookie and is asking for the second factor.
+// outright (no TOTP enabled, or trusted-device cookie hit), the server has
+// issued a 5-minute challenge cookie and is asking for the second factor,
+// or the credentials were correct but the account is in a lockout window
+// (the 423 response carries the lockedUntil timestamp).
 export type LoginResult =
   | { kind: 'authenticated'; user: AuthUser }
   | { kind: 'totp' }
+  | { kind: 'locked'; lockedUntil: string }
 
 export type TotpSetup = {
   secret: string
@@ -81,10 +85,12 @@ export async function login(
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ username, password }),
   })
+  if (resp.status === 423) {
+    const body = (await resp.json()) as { lockedUntil?: string }
+    return { kind: 'locked', lockedUntil: body.lockedUntil ?? '' }
+  }
   if (!resp.ok) throw new ApiError(resp.status, await parseError(resp))
-  const body = (await resp.json()) as
-    | { totpRequired: true }
-    | AuthUser
+  const body = (await resp.json()) as { totpRequired: true } | AuthUser
   if ('totpRequired' in body && body.totpRequired === true) {
     return { kind: 'totp' }
   }
@@ -139,19 +145,31 @@ export async function totpConfirm(code: string): Promise<string[]> {
   return body.recoveryCodes
 }
 
+// TotpVerifyResult mirrors LoginResult for the second-factor path:
+// successful auth carries the user, locked carries the lockedUntil
+// timestamp so the UI can render a countdown.
+export type TotpVerifyResult =
+  | { kind: 'authenticated'; user: AuthUser }
+  | { kind: 'locked'; lockedUntil: string }
+
 // totpVerify completes the second step of login. The backend gates this on
 // the short-lived sw_totp_challenge cookie set by /api/auth/login.
 export async function totpVerify(
   code: string,
   rememberDevice: boolean,
-): Promise<AuthUser> {
+): Promise<TotpVerifyResult> {
   const resp = await fetch('/api/auth/totp/verify', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ code, rememberDevice }),
   })
+  if (resp.status === 423) {
+    const body = (await resp.json()) as { lockedUntil?: string }
+    return { kind: 'locked', lockedUntil: body.lockedUntil ?? '' }
+  }
   if (!resp.ok) throw new ApiError(resp.status, await parseError(resp))
-  return (await resp.json()) as AuthUser
+  const user = (await resp.json()) as AuthUser
+  return { kind: 'authenticated', user }
 }
 
 // totpDisable revokes TOTP for the current user. The backend requires both

@@ -32,6 +32,7 @@ import DashboardPage from './pages/DashboardPage'
 import ProfilePage from './pages/ProfilePage'
 import SystemsPage from './pages/SystemsPage'
 import UsersPage from './pages/UsersPage'
+import ForcePasswordChange from './components/ForcePasswordChange'
 import LoginForm from './components/LoginForm'
 import SetupForm from './components/SetupForm'
 import { useAuth } from './hooks/useAuth'
@@ -77,6 +78,15 @@ export default function App() {
   }
 
   const user = status.user
+
+  if (user.mustChangePassword) {
+    return (
+      <ForcePasswordChange
+        username={user.username}
+        onChanged={() => auth.refresh()}
+      />
+    )
+  }
 
   const onSelectMenu = (
     _event?: React.MouseEvent<Element, MouseEvent>,

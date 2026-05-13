@@ -11,6 +11,9 @@ export type User = {
   totpEnabled: boolean
   disabled: boolean
   disabledAt?: string
+  failedAttempts?: number
+  lockedUntil?: string
+  mustChangePassword?: boolean
 }
 
 export type CreateUserInput = {
@@ -62,5 +65,30 @@ export async function deleteUser(id: string): Promise<void> {
   const resp = await fetch(`/api/admin/users/${encodeURIComponent(id)}`, {
     method: 'DELETE',
   })
+  if (!resp.ok) throw new ApiError(resp.status, await parseError(resp))
+}
+
+export async function adminResetPassword(
+  id: string,
+  password: string,
+): Promise<void> {
+  const resp = await fetch(
+    `/api/admin/users/${encodeURIComponent(id)}/password`,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ password }),
+    },
+  )
+  if (!resp.ok) throw new ApiError(resp.status, await parseError(resp))
+}
+
+export async function adminResetTotp(id: string): Promise<void> {
+  const resp = await fetch(
+    `/api/admin/users/${encodeURIComponent(id)}/totp/reset`,
+    {
+      method: 'POST',
+    },
+  )
   if (!resp.ok) throw new ApiError(resp.status, await parseError(resp))
 }

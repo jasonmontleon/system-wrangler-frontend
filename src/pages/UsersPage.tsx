@@ -34,6 +34,8 @@ import {
 import { ActionsColumn, Table, Tbody, Td, Th, Thead, Tr } from '@patternfly/react-table'
 import { ApiError } from '../api/systems'
 import {
+  adminResetPassword,
+  adminResetTotp,
   createUser,
   deleteUser,
   listUsers,
@@ -56,10 +58,12 @@ const PAGE_SIZE_OPTIONS: { value: PageSize; label: string }[] = [
 type SortKey = 'username' | 'status' | 'createdAt'
 type SortDir = 'asc' | 'desc'
 
-type ConfirmKind = 'remove-one' | 'remove-bulk'
 type Confirm =
   | { kind: 'remove-one'; user: User }
   | { kind: 'remove-bulk'; ids: string[] }
+  | { kind: 'totp-reset'; user: User }
+
+type ResetPasswordTarget = { user: User } | null
 
 export default function UsersPage({ currentUserId }: Props) {
   const [users, setUsers] = useState<User[] | null>(null)
@@ -67,6 +71,7 @@ export default function UsersPage({ currentUserId }: Props) {
   const [actionError, setActionError] = useState<string | null>(null)
   const [isAddOpen, setAddOpen] = useState(false)
   const [confirm, setConfirm] = useState<Confirm | null>(null)
+  const [resetTarget, setResetTarget] = useState<ResetPasswordTarget>(null)
 
   const [filters, setFilters] = useState<Record<string, string>>({
     username: '',
@@ -490,6 +495,16 @@ export default function UsersPage({ currentUserId }: Props) {
                             onClick: () => void setDisabled(u.id, !u.disabled).then(refresh),
                           },
                           {
+                            title: `Reset password for ${u.username}`,
+                            onClick: () => setResetTarget({ user: u }),
+                          },
+                          {
+                            title: `Reset 2FA for ${u.username}`,
+                            isDisabled: !u.totpEnabled,
+                            onClick: () =>
+                              setConfirm({ kind: 'totp-reset', user: u }),
+                          },
+                          {
                             title: `Remove ${u.username}`,
                             onClick: () =>
                               setConfirm({ kind: 'remove-one', user: u }),
@@ -544,20 +559,37 @@ export default function UsersPage({ currentUserId }: Props) {
         }}
       />
 
-      <ConfirmRemoveModal
+      <ConfirmActionModal
         confirm={confirm}
         onCancel={() => setConfirm(null)}
         onConfirm={async () => {
           if (!confirm) return
           if (confirm.kind === 'remove-one') {
             await remove(confirm.user.id)
-          } else {
+          } else if (confirm.kind === 'remove-bulk') {
             for (const id of confirm.ids) {
               await remove(id)
             }
             setSelected(new Set())
+          } else {
+            setActionError(null)
+            try {
+              await adminResetTotp(confirm.user.id)
+            } catch (err) {
+              setActionError(err instanceof Error ? err.message : String(err))
+            }
           }
           setConfirm(null)
+          await refresh()
+        }}
+      />
+
+      <ResetPasswordModal
+        target={resetTarget}
+        onClose={() => setResetTarget(null)}
+        onError={(msg) => setActionError(msg)}
+        onReset={async () => {
+          setResetTarget(null)
           await refresh()
         }}
       />
@@ -662,33 +694,144 @@ function AddUserModal({ isOpen, onClose, onCreated }: AddUserModalProps) {
   )
 }
 
-type ConfirmRemoveModalProps = {
+type ConfirmActionModalProps = {
   confirm: Confirm | null
   onCancel: () => void
   onConfirm: () => void | Promise<void>
 }
 
-function ConfirmRemoveModal({ confirm, onCancel, onConfirm }: ConfirmRemoveModalProps) {
+function ConfirmActionModal({ confirm, onCancel, onConfirm }: ConfirmActionModalProps) {
   const isOpen = confirm !== null
-  const isBulk = confirm?.kind === 'remove-bulk'
-  const title = isBulk ? 'Remove users?' : 'Remove user?'
-  const body = isBulk
-    ? `Permanently remove ${(confirm as { kind: ConfirmKind; ids: string[] } | null)?.ids.length ?? 0} users? This cannot be undone.`
-    : `Permanently remove ${confirm?.kind === 'remove-one' ? confirm.user.username : ''}? This cannot be undone.`
+  let title = 'Remove user?'
+  let body = ''
+  let buttonLabel = 'Remove'
+  let buttonVariant: 'danger' | 'primary' = 'danger'
+  if (confirm?.kind === 'remove-bulk') {
+    title = 'Remove users?'
+    body = `Permanently remove ${confirm.ids.length} users? This cannot be undone.`
+  } else if (confirm?.kind === 'remove-one') {
+    body = `Permanently remove ${confirm.user.username}? This cannot be undone.`
+  } else if (confirm?.kind === 'totp-reset') {
+    title = 'Reset 2FA?'
+    body = `Clear ${confirm.user.username}'s authenticator, recovery codes, and trusted devices? They may re-enroll on next login.`
+    buttonLabel = 'Reset'
+    buttonVariant = 'primary'
+  }
   return (
     <Modal
       variant="small"
       isOpen={isOpen}
       onClose={onCancel}
-      aria-labelledby="remove-user-title"
+      aria-labelledby="confirm-action-title"
     >
-      <ModalHeader title={title} labelId="remove-user-title" />
+      <ModalHeader title={title} labelId="confirm-action-title" />
       <ModalBody>{body}</ModalBody>
       <ModalFooter>
-        <Button variant="danger" onClick={() => void onConfirm()}>
-          Remove
+        <Button variant={buttonVariant} onClick={() => void onConfirm()}>
+          {buttonLabel}
         </Button>
         <Button variant="link" onClick={onCancel}>
+          Cancel
+        </Button>
+      </ModalFooter>
+    </Modal>
+  )
+}
+
+type ResetPasswordModalProps = {
+  target: ResetPasswordTarget
+  onClose: () => void
+  onError: (msg: string) => void
+  onReset: () => void | Promise<void>
+}
+
+function ResetPasswordModal({
+  target,
+  onClose,
+  onError,
+  onReset,
+}: ResetPasswordModalProps) {
+  const [password, setPassword] = useState('')
+  const [submitting, setSubmitting] = useState(false)
+  const [submitError, setSubmitError] = useState<string | null>(null)
+  const isOpen = target !== null
+
+  useEffect(() => {
+    if (isOpen) {
+      setPassword('')
+      setSubmitError(null)
+      setSubmitting(false)
+    }
+  }, [isOpen])
+
+  const onSubmit = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!target) return
+    setSubmitting(true)
+    setSubmitError(null)
+    try {
+      await adminResetPassword(target.user.id, password)
+      await onReset()
+    } catch (err) {
+      const msg =
+        err instanceof ApiError
+          ? err.message
+          : err instanceof Error
+            ? err.message
+            : String(err)
+      setSubmitError(msg)
+      onError(msg)
+    } finally {
+      setSubmitting(false)
+    }
+  }
+
+  return (
+    <Modal
+      variant="small"
+      isOpen={isOpen}
+      onClose={onClose}
+      aria-labelledby="reset-password-title"
+    >
+      <ModalHeader
+        title={target ? `Reset password for ${target.user.username}` : 'Reset password'}
+        labelId="reset-password-title"
+      />
+      <ModalBody>
+        <Form id="reset-password-form" onSubmit={onSubmit}>
+          <p style={{ marginBottom: 12 }}>
+            The user will be forced to change this password at their next login.
+          </p>
+          <FormGroup label="New password" fieldId="reset-pw" isRequired>
+            <TextInput
+              id="reset-pw"
+              type="password"
+              value={password}
+              onChange={(_, v) => setPassword(v)}
+              isRequired
+              isDisabled={submitting}
+              placeholder="At least 8 characters"
+              autoFocus
+            />
+          </FormGroup>
+          {submitError && (
+            <Alert variant="danger" title="Reset failed" isInline>
+              {submitError}
+            </Alert>
+          )}
+        </Form>
+      </ModalBody>
+      <ModalFooter>
+        <Button
+          type="submit"
+          form="reset-password-form"
+          variant="primary"
+          isLoading={submitting}
+          isDisabled={submitting || password.length < 8}
+        >
+          Set password
+        </Button>
+        <Button variant="link" onClick={onClose} isDisabled={submitting}>
           Cancel
         </Button>
       </ModalFooter>

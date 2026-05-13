@@ -367,6 +367,109 @@ describe('UsersPage', () => {
     expect(dataRowTexts[2]).toContain('carol')
   })
 
+  it('admin password reset prompts for a new password and posts it', async () => {
+    fetchMock
+      .mockResolvedValueOnce(
+        jsonResponse({
+          users: [
+            userRow({ id: 'u1', username: 'alice' }),
+            userRow({ id: 'u2', username: 'bob' }),
+          ],
+        }),
+      )
+      .mockResolvedValueOnce(new Response(null, { status: 204 }))
+      .mockResolvedValueOnce(
+        jsonResponse({
+          users: [
+            userRow({ id: 'u1', username: 'alice' }),
+            userRow({ id: 'u2', username: 'bob' }),
+          ],
+        }),
+      )
+
+    render(<UsersPage currentUserId="u1" />)
+    const bobRow = (await screen.findByText('bob')).closest('tr')!
+    clickRowKebab(bobRow, /reset password for bob/i)
+
+    const dialog = await screen.findByRole('dialog')
+    fireEvent.change(within(dialog).getByLabelText(/new password/i), {
+      target: { value: 'adminchosen' },
+    })
+    fireEvent.click(within(dialog).getByRole('button', { name: /^set password$/i }))
+
+    await waitFor(() => {
+      const post = (fetchMock.mock.calls as Array<[FetchInput, FetchInit]>).find(
+        (c) => c[0] === '/api/admin/users/u2/password' && c[1]?.method === 'POST',
+      )
+      expect(post).toBeDefined()
+      expect(post![1]!.body).toBe(JSON.stringify({ password: 'adminchosen' }))
+    })
+  })
+
+  it('admin TOTP reset is gated on confirmation', async () => {
+    fetchMock
+      .mockResolvedValueOnce(
+        jsonResponse({
+          users: [
+            userRow({ id: 'u1', username: 'alice' }),
+            userRow({ id: 'u2', username: 'bob', totpEnabled: true }),
+          ],
+        }),
+      )
+      .mockResolvedValueOnce(new Response(null, { status: 204 }))
+      .mockResolvedValueOnce(
+        jsonResponse({
+          users: [
+            userRow({ id: 'u1', username: 'alice' }),
+            userRow({ id: 'u2', username: 'bob' }),
+          ],
+        }),
+      )
+
+    render(<UsersPage currentUserId="u1" />)
+    const bobRow = (await screen.findByText('bob')).closest('tr')!
+    clickRowKebab(bobRow, /reset 2fa for bob/i)
+
+    const dialog = await screen.findByRole('dialog')
+    expect(within(dialog).getByText(/clear bob's authenticator/i)).toBeInTheDocument()
+    expect(
+      (fetchMock.mock.calls as Array<[FetchInput, FetchInit]>).filter(
+        (c) => c[1]?.method === 'POST',
+      ),
+    ).toHaveLength(0)
+
+    fireEvent.click(within(dialog).getByRole('button', { name: /^reset$/i }))
+
+    await waitFor(() => {
+      const post = (fetchMock.mock.calls as Array<[FetchInput, FetchInit]>).find(
+        (c) => c[0] === '/api/admin/users/u2/totp/reset' && c[1]?.method === 'POST',
+      )
+      expect(post).toBeDefined()
+    })
+  })
+
+  it('admin TOTP reset does nothing when the target has no 2FA', async () => {
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse({
+        users: [
+          userRow({ id: 'u1', username: 'alice' }),
+          userRow({ id: 'u2', username: 'bob', totpEnabled: false }),
+        ],
+      }),
+    )
+    render(<UsersPage currentUserId="u1" />)
+    const bobRow = (await screen.findByText('bob')).closest('tr')!
+    fireEvent.click(within(bobRow).getByRole('button', { name: /kebab toggle/i }))
+    fireEvent.click(screen.getByRole('menuitem', { name: /reset 2fa for bob/i }))
+    // Disabled item: no confirm dialog opens and no POST happens.
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+    expect(
+      (fetchMock.mock.calls as Array<[FetchInput, FetchInit]>).filter(
+        (c) => c[1]?.method === 'POST',
+      ),
+    ).toHaveLength(0)
+  })
+
   it('paginates and offers an All option', async () => {
     const many = Array.from({ length: 30 }, (_, i) =>
       userRow({ id: `u${i}`, username: `user${i.toString().padStart(2, '0')}` }),

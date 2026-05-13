@@ -197,13 +197,38 @@ describe('api/auth', () => {
     fetchMock.mockResolvedValueOnce(
       jsonResponse({ id: 'u1', username: 'admin', createdAt: 't' }),
     )
-    const u = await totpVerify('123456', true)
-    expect(u.username).toBe('admin')
+    const result = await totpVerify('123456', true)
+    expect(result.kind).toBe('authenticated')
+    if (result.kind === 'authenticated') {
+      expect(result.user.username).toBe('admin')
+    }
     const init = fetchMock.mock.calls[0][1] as RequestInit
     expect(JSON.parse(String(init.body))).toEqual({
       code: '123456',
       rememberDevice: true,
     })
+  })
+
+  it('totpVerify returns lockout on 423', async () => {
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse({ error: 'account locked', lockedUntil: '2026-05-13T12:15:00Z' }, 423),
+    )
+    const result = await totpVerify('123456', false)
+    expect(result.kind).toBe('locked')
+    if (result.kind === 'locked') {
+      expect(result.lockedUntil).toBe('2026-05-13T12:15:00Z')
+    }
+  })
+
+  it('login returns lockout on 423', async () => {
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse({ error: 'account locked', lockedUntil: '2026-05-13T12:15:00Z' }, 423),
+    )
+    const result = await login('alice', 'correctpassword')
+    expect(result.kind).toBe('locked')
+    if (result.kind === 'locked') {
+      expect(result.lockedUntil).toBe('2026-05-13T12:15:00Z')
+    }
   })
 
   it('totpDisable sends DELETE with credentials and resolves on 204', async () => {

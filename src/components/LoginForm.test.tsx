@@ -65,6 +65,48 @@ describe('LoginForm', () => {
     })
   })
 
+  it('shows the lockout banner with unlock time when login returns locked', async () => {
+    const onLogin = vi.fn().mockResolvedValue({
+      kind: 'locked' as const,
+      lockedUntil: new Date(Date.now() + 65_000).toISOString(),
+    })
+    render(<LoginForm onLogin={onLogin} />)
+    fireEvent.change(screen.getByLabelText(/username/i), {
+      target: { value: 'admin' },
+    })
+    fireEvent.change(screen.getByLabelText(/password/i), {
+      target: { value: 'correctpassword' },
+    })
+    fireEvent.click(screen.getByRole('button', { name: /sign in/i }))
+    await waitFor(() => {
+      expect(screen.getByText(/account locked until/i)).toBeInTheDocument()
+    })
+    expect(screen.getByText(/try again in/i)).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /sign in/i })).toBeDisabled()
+  })
+
+  it('clears the lockout banner when the user edits a field', async () => {
+    const onLogin = vi.fn().mockResolvedValue({
+      kind: 'locked' as const,
+      lockedUntil: new Date(Date.now() + 65_000).toISOString(),
+    })
+    render(<LoginForm onLogin={onLogin} />)
+    fireEvent.change(screen.getByLabelText(/username/i), {
+      target: { value: 'admin' },
+    })
+    fireEvent.change(screen.getByLabelText(/password/i), {
+      target: { value: 'wrongnow' },
+    })
+    fireEvent.click(screen.getByRole('button', { name: /sign in/i }))
+    await waitFor(() => {
+      expect(screen.getByText(/account locked until/i)).toBeInTheDocument()
+    })
+    fireEvent.change(screen.getByLabelText(/password/i), {
+      target: { value: 'retrying' },
+    })
+    expect(screen.queryByText(/account locked until/i)).not.toBeInTheDocument()
+  })
+
   it('swaps to the TOTP challenge form when login returns totpRequired', async () => {
     const onLogin = vi.fn().mockResolvedValue({ kind: 'totp' as const })
     render(<LoginForm onLogin={onLogin} />)
