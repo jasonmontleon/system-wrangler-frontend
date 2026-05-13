@@ -26,6 +26,7 @@ import {
   ToolbarContent,
   ToolbarItem,
 } from '@patternfly/react-core'
+import AuditPage from './pages/AuditPage'
 import DashboardPage from './pages/DashboardPage'
 import ProfilePage from './pages/ProfilePage'
 import SystemsPage from './pages/SystemsPage'
@@ -34,7 +35,7 @@ import SetupForm from './components/SetupForm'
 import { useAuth } from './hooks/useAuth'
 import { useTheme } from './hooks/useTheme'
 
-type PageKey = 'dashboard' | 'systems' | 'profile'
+type PageKey = 'dashboard' | 'systems' | 'audit' | 'profile'
 
 export default function App() {
   const auth = useAuth()
@@ -150,6 +151,13 @@ export default function App() {
             >
               Systems
             </NavItem>
+            <NavItem
+              isActive={page === 'audit'}
+              onClick={() => setPage('audit')}
+              to="#"
+            >
+              Audit
+            </NavItem>
           </NavList>
         </Nav>
       </PageSidebarBody>
@@ -160,6 +168,7 @@ export default function App() {
     <Page masthead={masthead} sidebar={sidebar}>
       {page === 'dashboard' && <DashboardPage />}
       {page === 'systems' && <SystemsPage />}
+      {page === 'audit' && <AuditPage />}
       {page === 'profile' && (
         <ProfilePage
           user={user}
