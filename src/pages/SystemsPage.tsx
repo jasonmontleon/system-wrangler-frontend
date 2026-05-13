@@ -1,20 +1,29 @@
 // SPDX-License-Identifier: Apache-2.0
 
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   Alert,
   Button,
   Bullseye,
+  Dropdown,
+  DropdownItem,
+  DropdownList,
   EmptyState,
   EmptyStateBody,
   Form,
   FormGroup,
   Label,
+  MenuToggle,
+  type MenuToggleElement,
   Modal,
   ModalBody,
   ModalFooter,
   ModalHeader,
   PageSection,
+  SearchInput,
+  Select,
+  SelectList,
+  SelectOption,
   Spinner,
   TextInput,
   Title,
@@ -22,7 +31,7 @@ import {
   ToolbarContent,
   ToolbarItem,
 } from '@patternfly/react-core'
-import { Table, Tbody, Td, Th, Thead, Tr } from '@patternfly/react-table'
+import { ActionsColumn, Table, Tbody, Td, Th, Thead, Tr } from '@patternfly/react-table'
 import {
   ApiError,
   createSystem,
@@ -48,10 +57,42 @@ function formatLastSeen(iso: string | undefined): string {
   return Number.isNaN(d.getTime()) ? '—' : d.toLocaleString()
 }
 
+type PageSize = 25 | 50 | 100 | 'all'
+const PAGE_SIZE_OPTIONS: { value: PageSize; label: string }[] = [
+  { value: 25, label: '25 per page' },
+  { value: 50, label: '50 per page' },
+  { value: 100, label: '100 per page' },
+  { value: 'all', label: 'All' },
+]
+
+type SortKey = 'name' | 'hostname' | 'status' | 'lastSeen' | 'createdAt'
+type SortDir = 'asc' | 'desc'
+
+type Confirm =
+  | { kind: 'remove-one'; system: System }
+  | { kind: 'remove-bulk'; ids: string[] }
+
 export default function SystemsPage() {
   const [systems, setSystems] = useState<System[] | null>(null)
   const [loadError, setLoadError] = useState<string | null>(null)
+  const [actionError, setActionError] = useState<string | null>(null)
   const [isAddOpen, setAddOpen] = useState(false)
+  const [confirm, setConfirm] = useState<Confirm | null>(null)
+
+  const [filters, setFilters] = useState<Record<string, string>>({
+    name: '',
+    hostname: '',
+    status: '',
+    lastSeen: '',
+    createdAt: '',
+  })
+  const [sortKey, setSortKey] = useState<SortKey>('name')
+  const [sortDir, setSortDir] = useState<SortDir>('asc')
+  const [pageSize, setPageSize] = useState<PageSize>(25)
+  const [page, setPage] = useState(1)
+  const [sizeOpen, setSizeOpen] = useState(false)
+  const [actionsOpen, setActionsOpen] = useState(false)
+  const [selected, setSelected] = useState<Set<string>>(new Set())
 
   const refresh = useCallback(async () => {
     try {
@@ -67,8 +108,6 @@ export default function SystemsPage() {
     void refresh()
   }, [refresh])
 
-  // Debounced re-fetch on server events. Bursts (e.g. several systems
-  // added in quick succession) collapse into one refetch.
   const debounceRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
   useEventStream(
     useCallback(
@@ -88,14 +127,139 @@ export default function SystemsPage() {
     }
   }, [])
 
-  const onDelete = async (id: string) => {
-    try {
-      await deleteSystem(id)
-      await refresh()
-    } catch (err) {
-      setLoadError(err instanceof Error ? err.message : String(err))
+  const filtered = useMemo(() => {
+    if (!systems) return []
+    const n = filters.name.trim().toLowerCase()
+    const h = filters.hostname.trim().toLowerCase()
+    const st = filters.status.trim().toLowerCase()
+    const ls = filters.lastSeen.trim().toLowerCase()
+    const c = filters.createdAt.trim().toLowerCase()
+    return systems.filter((row) => {
+      if (n && !row.name.toLowerCase().includes(n)) return false
+      if (h && !row.hostname.toLowerCase().includes(h)) return false
+      if (st) {
+        const label = STATUS_LABELS[row.status]?.text.toLowerCase() ?? row.status
+        if (!label.includes(st)) return false
+      }
+      if (ls) {
+        if (!formatLastSeen(row.lastSeen).toLowerCase().includes(ls)) return false
+      }
+      if (c) {
+        if (!new Date(row.createdAt).toLocaleString().toLowerCase().includes(c))
+          return false
+      }
+      return true
+    })
+  }, [systems, filters])
+
+  const sorted = useMemo(() => {
+    const copy = [...filtered]
+    copy.sort((a, b) => {
+      let av: string | number = ''
+      let bv: string | number = ''
+      if (sortKey === 'name') {
+        av = a.name.toLowerCase()
+        bv = b.name.toLowerCase()
+      } else if (sortKey === 'hostname') {
+        av = a.hostname.toLowerCase()
+        bv = b.hostname.toLowerCase()
+      } else if (sortKey === 'status') {
+        av = a.status
+        bv = b.status
+      } else if (sortKey === 'lastSeen') {
+        av = a.lastSeen ? new Date(a.lastSeen).getTime() : 0
+        bv = b.lastSeen ? new Date(b.lastSeen).getTime() : 0
+      } else {
+        av = new Date(a.createdAt).getTime()
+        bv = new Date(b.createdAt).getTime()
+      }
+      if (av < bv) return sortDir === 'asc' ? -1 : 1
+      if (av > bv) return sortDir === 'asc' ? 1 : -1
+      return 0
+    })
+    return copy
+  }, [filtered, sortKey, sortDir])
+
+  const pageCount =
+    pageSize === 'all' ? 1 : Math.max(1, Math.ceil(sorted.length / pageSize))
+  const safePage = Math.min(page, pageCount)
+  const visible =
+    pageSize === 'all'
+      ? sorted
+      : sorted.slice((safePage - 1) * pageSize, safePage * pageSize)
+
+  useEffect(() => {
+    if (page > pageCount) setPage(pageCount)
+  }, [page, pageCount])
+
+  useEffect(() => {
+    setPage(1)
+  }, [filters, sortKey, sortDir, pageSize])
+
+  useEffect(() => {
+    if (!systems) return
+    const valid = new Set(systems.map((s) => s.id))
+    setSelected((prev) => {
+      const next = new Set<string>()
+      prev.forEach((id) => {
+        if (valid.has(id)) next.add(id)
+      })
+      return next.size === prev.size ? prev : next
+    })
+  }, [systems])
+
+  const onSort = (key: SortKey) => {
+    if (sortKey === key) {
+      setSortDir((d) => (d === 'asc' ? 'desc' : 'asc'))
+    } else {
+      setSortKey(key)
+      setSortDir('asc')
     }
   }
+
+  const sortFor = (key: SortKey, columnIndex: number) => ({
+    sortBy: {
+      index: sortKey === key ? columnIndex : undefined,
+      direction: sortKey === key ? sortDir : undefined,
+      defaultDirection: 'asc' as const,
+    },
+    onSort: () => onSort(key),
+    columnIndex,
+  })
+
+  const toggleRow = (id: string, checked: boolean) => {
+    setSelected((prev) => {
+      const next = new Set(prev)
+      if (checked) next.add(id)
+      else next.delete(id)
+      return next
+    })
+  }
+
+  const allVisibleSelected =
+    visible.length > 0 && visible.every((s) => selected.has(s.id))
+
+  const toggleAllVisible = (checked: boolean) => {
+    setSelected((prev) => {
+      const next = new Set(prev)
+      visible.forEach((s) => {
+        if (checked) next.add(s.id)
+        else next.delete(s.id)
+      })
+      return next
+    })
+  }
+
+  const removeOne = async (id: string) => {
+    setActionError(null)
+    try {
+      await deleteSystem(id)
+    } catch (err) {
+      setActionError(err instanceof Error ? err.message : String(err))
+    }
+  }
+
+  const selectionCount = selected.size
 
   return (
     <>
@@ -106,9 +270,74 @@ export default function SystemsPage() {
               <Title headingLevel="h1">Systems</Title>
             </ToolbarItem>
             <ToolbarItem align={{ default: 'alignEnd' }}>
-              <Button variant="primary" onClick={() => setAddOpen(true)}>
-                Add system
-              </Button>
+              <Dropdown
+                isOpen={actionsOpen}
+                onSelect={(_, value) => {
+                  setActionsOpen(false)
+                  if (value === 'add') setAddOpen(true)
+                  if (value === 'remove') {
+                    const ids = Array.from(selected)
+                    if (ids.length > 0) {
+                      setConfirm({ kind: 'remove-bulk', ids })
+                    }
+                  }
+                }}
+                onOpenChange={(open) => setActionsOpen(open)}
+                toggle={(ref: React.Ref<MenuToggleElement>) => (
+                  <MenuToggle
+                    ref={ref}
+                    isExpanded={actionsOpen}
+                    onClick={() => setActionsOpen((o) => !o)}
+                    variant="primary"
+                    aria-label="Actions"
+                  >
+                    Actions
+                  </MenuToggle>
+                )}
+              >
+                <DropdownList>
+                  <DropdownItem value="add" key="add">
+                    Add system
+                  </DropdownItem>
+                  <DropdownItem
+                    value="remove"
+                    key="remove"
+                    isDisabled={selectionCount === 0}
+                  >
+                    Remove selected
+                    {selectionCount > 0 ? ` (${selectionCount})` : ''}
+                  </DropdownItem>
+                </DropdownList>
+              </Dropdown>
+            </ToolbarItem>
+            <ToolbarItem>
+              <Select
+                isOpen={sizeOpen}
+                selected={pageSize}
+                onSelect={(_, value) => {
+                  setPageSize(value as PageSize)
+                  setSizeOpen(false)
+                }}
+                onOpenChange={(open) => setSizeOpen(open)}
+                toggle={(ref: React.Ref<MenuToggleElement>) => (
+                  <MenuToggle
+                    ref={ref}
+                    isExpanded={sizeOpen}
+                    onClick={() => setSizeOpen((o) => !o)}
+                    aria-label="Page size"
+                  >
+                    {PAGE_SIZE_OPTIONS.find((p) => p.value === pageSize)?.label}
+                  </MenuToggle>
+                )}
+              >
+                <SelectList>
+                  {PAGE_SIZE_OPTIONS.map((p) => (
+                    <SelectOption key={String(p.value)} value={p.value}>
+                      {p.label}
+                    </SelectOption>
+                  ))}
+                </SelectList>
+              </Select>
             </ToolbarItem>
           </ToolbarContent>
         </Toolbar>
@@ -120,6 +349,20 @@ export default function SystemsPage() {
             {loadError}
           </Alert>
         )}
+        {actionError && (
+          <Alert
+            variant="danger"
+            title="Action failed"
+            isInline
+            actionClose={
+              <Button variant="plain" onClick={() => setActionError(null)} aria-label="Dismiss">
+                ×
+              </Button>
+            }
+          >
+            {actionError}
+          </Alert>
+        )}
         {!loadError && systems === null && (
           <Bullseye>
             <Spinner />
@@ -128,7 +371,7 @@ export default function SystemsPage() {
         {systems !== null && systems.length === 0 && (
           <EmptyState titleText="No systems yet" headingLevel="h2">
             <EmptyStateBody>
-              Add your first system with the button in the toolbar above.
+              Add your first system from the Actions menu in the toolbar above.
             </EmptyStateBody>
           </EmptyState>
         )}
@@ -136,19 +379,101 @@ export default function SystemsPage() {
           <Table aria-label="Systems" variant="compact">
             <Thead>
               <Tr>
-                <Th width={25}>Name</Th>
-                <Th width={25}>Hostname</Th>
-                <Th width={15}>Status</Th>
-                <Th width={20}>Last seen</Th>
-                <Th width={10}>Added</Th>
+                <Th
+                  select={{
+                    onSelect: () => toggleAllVisible(!allVisibleSelected),
+                    isSelected: allVisibleSelected,
+                    isDisabled: visible.length === 0,
+                  }}
+                />
+                <Th width={25} sort={sortFor('name', 1)}>
+                  Name
+                </Th>
+                <Th width={25} sort={sortFor('hostname', 2)}>
+                  Hostname
+                </Th>
+                <Th width={15} sort={sortFor('status', 3)}>
+                  Status
+                </Th>
+                <Th width={20} sort={sortFor('lastSeen', 4)}>
+                  Last seen
+                </Th>
+                <Th width={10} sort={sortFor('createdAt', 5)}>
+                  Added
+                </Th>
                 <Th width={10} screenReaderText="Actions" />
+              </Tr>
+              <Tr>
+                <Th screenReaderText="Filter spacer" />
+                <Th>
+                  <SearchInput
+                    aria-label="Filter name"
+                    placeholder="Filter name"
+                    value={filters.name}
+                    onChange={(_, v) => setFilters((f) => ({ ...f, name: v }))}
+                    onClear={() => setFilters((f) => ({ ...f, name: '' }))}
+                  />
+                </Th>
+                <Th>
+                  <SearchInput
+                    aria-label="Filter hostname"
+                    placeholder="Filter hostname"
+                    value={filters.hostname}
+                    onChange={(_, v) =>
+                      setFilters((f) => ({ ...f, hostname: v }))
+                    }
+                    onClear={() => setFilters((f) => ({ ...f, hostname: '' }))}
+                  />
+                </Th>
+                <Th>
+                  <SearchInput
+                    aria-label="Filter status"
+                    placeholder="Filter status"
+                    value={filters.status}
+                    onChange={(_, v) =>
+                      setFilters((f) => ({ ...f, status: v }))
+                    }
+                    onClear={() => setFilters((f) => ({ ...f, status: '' }))}
+                  />
+                </Th>
+                <Th>
+                  <SearchInput
+                    aria-label="Filter last seen"
+                    placeholder="Filter last seen"
+                    value={filters.lastSeen}
+                    onChange={(_, v) =>
+                      setFilters((f) => ({ ...f, lastSeen: v }))
+                    }
+                    onClear={() => setFilters((f) => ({ ...f, lastSeen: '' }))}
+                  />
+                </Th>
+                <Th>
+                  <SearchInput
+                    aria-label="Filter added"
+                    placeholder="Filter added"
+                    value={filters.createdAt}
+                    onChange={(_, v) =>
+                      setFilters((f) => ({ ...f, createdAt: v }))
+                    }
+                    onClear={() => setFilters((f) => ({ ...f, createdAt: '' }))}
+                  />
+                </Th>
+                <Th screenReaderText="Actions spacer" />
               </Tr>
             </Thead>
             <Tbody>
-              {systems.map((s) => {
+              {visible.map((s, rowIndex) => {
                 const label = STATUS_LABELS[s.status] ?? STATUS_LABELS.unprobed
                 return (
                   <Tr key={s.id}>
+                    <Td
+                      select={{
+                        rowIndex,
+                        onSelect: (_, isSelecting) =>
+                          toggleRow(s.id, isSelecting),
+                        isSelected: selected.has(s.id),
+                      }}
+                    />
                     <Td dataLabel="Name" modifier="truncate">
                       {s.name}
                     </Td>
@@ -165,14 +490,15 @@ export default function SystemsPage() {
                       {new Date(s.createdAt).toLocaleString()}
                     </Td>
                     <Td dataLabel="Actions" isActionCell>
-                      <Button
-                        variant="link"
-                        isDanger
-                        onClick={() => void onDelete(s.id)}
-                        aria-label={`Remove ${s.name}`}
-                      >
-                        Remove
-                      </Button>
+                      <ActionsColumn
+                        items={[
+                          {
+                            title: `Remove ${s.name}`,
+                            onClick: () =>
+                              setConfirm({ kind: 'remove-one', system: s }),
+                          },
+                        ]}
+                      />
                     </Td>
                   </Tr>
                 )
@@ -182,11 +508,59 @@ export default function SystemsPage() {
         )}
       </PageSection>
 
+      {systems !== null && systems.length > 0 && pageSize !== 'all' && (
+        <PageSection>
+          <Toolbar>
+            <ToolbarContent>
+              <ToolbarItem>
+                <Button
+                  variant="secondary"
+                  isDisabled={safePage <= 1}
+                  onClick={() => setPage((p) => Math.max(1, p - 1))}
+                >
+                  Previous
+                </Button>
+              </ToolbarItem>
+              <ToolbarItem>
+                <Button
+                  variant="secondary"
+                  isDisabled={safePage >= pageCount}
+                  onClick={() => setPage((p) => Math.min(pageCount, p + 1))}
+                >
+                  Next
+                </Button>
+              </ToolbarItem>
+              <ToolbarItem>
+                Page {safePage} of {pageCount}
+              </ToolbarItem>
+            </ToolbarContent>
+          </Toolbar>
+        </PageSection>
+      )}
+
       <AddSystemModal
         isOpen={isAddOpen}
         onClose={() => setAddOpen(false)}
         onCreated={async () => {
           setAddOpen(false)
+          await refresh()
+        }}
+      />
+
+      <ConfirmRemoveModal
+        confirm={confirm}
+        onCancel={() => setConfirm(null)}
+        onConfirm={async () => {
+          if (!confirm) return
+          if (confirm.kind === 'remove-one') {
+            await removeOne(confirm.system.id)
+          } else {
+            for (const id of confirm.ids) {
+              await removeOne(id)
+            }
+            setSelected(new Set())
+          }
+          setConfirm(null)
           await refresh()
         }}
       />
@@ -207,7 +581,6 @@ function AddSystemModal({ isOpen, onClose, onCreated }: AddSystemModalProps) {
   const [submitting, setSubmitting] = useState(false)
   const [submitError, setSubmitError] = useState<string | null>(null)
 
-  // Reset state every time the modal is opened so old values don't leak in.
   useEffect(() => {
     if (isOpen) {
       setHostname('')
@@ -297,6 +670,40 @@ function AddSystemModal({ isOpen, onClose, onCreated }: AddSystemModalProps) {
           Add
         </Button>
         <Button variant="link" onClick={onClose} isDisabled={submitting}>
+          Cancel
+        </Button>
+      </ModalFooter>
+    </Modal>
+  )
+}
+
+type ConfirmRemoveModalProps = {
+  confirm: Confirm | null
+  onCancel: () => void
+  onConfirm: () => void | Promise<void>
+}
+
+function ConfirmRemoveModal({ confirm, onCancel, onConfirm }: ConfirmRemoveModalProps) {
+  const isOpen = confirm !== null
+  const isBulk = confirm?.kind === 'remove-bulk'
+  const title = isBulk ? 'Remove systems?' : 'Remove system?'
+  const body = isBulk
+    ? `Permanently remove ${confirm && confirm.kind === 'remove-bulk' ? confirm.ids.length : 0} systems? This cannot be undone.`
+    : `Permanently remove ${confirm?.kind === 'remove-one' ? confirm.system.name : ''}? This cannot be undone.`
+  return (
+    <Modal
+      variant="small"
+      isOpen={isOpen}
+      onClose={onCancel}
+      aria-labelledby="remove-system-title"
+    >
+      <ModalHeader title={title} labelId="remove-system-title" />
+      <ModalBody>{body}</ModalBody>
+      <ModalFooter>
+        <Button variant="danger" onClick={() => void onConfirm()}>
+          Remove
+        </Button>
+        <Button variant="link" onClick={onCancel}>
           Cancel
         </Button>
       </ModalFooter>

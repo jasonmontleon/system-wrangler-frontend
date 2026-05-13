@@ -4,6 +4,7 @@ import { fireEvent, render, screen, waitFor, within } from '@testing-library/rea
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import SystemsPage from './SystemsPage'
 
+type FetchInput = RequestInfo | URL
 type FetchInit = RequestInit | undefined
 
 function jsonResponse(body: unknown, status = 200): Response {
@@ -44,6 +45,16 @@ class FakeEventSource {
   }
 }
 
+function clickActionsItem(label: RegExp) {
+  fireEvent.click(screen.getByRole('button', { name: /^actions$/i }))
+  fireEvent.click(screen.getByRole('menuitem', { name: label }))
+}
+
+function clickRowKebab(row: HTMLElement, label: RegExp) {
+  fireEvent.click(within(row).getByRole('button', { name: /kebab toggle/i }))
+  fireEvent.click(screen.getByRole('menuitem', { name: label }))
+}
+
 describe('SystemsPage', () => {
   let fetchMock: ReturnType<typeof vi.fn>
 
@@ -58,13 +69,10 @@ describe('SystemsPage', () => {
     vi.unstubAllGlobals()
   })
 
-  it('shows empty state with prompt to use the toolbar button', async () => {
+  it('shows the empty state when there are no systems', async () => {
     fetchMock.mockResolvedValueOnce(jsonResponse([]))
     render(<SystemsPage />)
     expect(await screen.findByText(/no systems yet/i)).toBeInTheDocument()
-    expect(
-      screen.getByText(/add your first system with the button/i),
-    ).toBeInTheDocument()
   })
 
   it('renders status labels and last-seen for each system', async () => {
@@ -86,9 +94,9 @@ describe('SystemsPage', () => {
     expect(within(freshRow).getByText('—')).toBeInTheDocument()
   })
 
-  it('opens the add modal, defaults Name from Hostname, and submits', async () => {
+  it('opens Add system from the Actions menu, defaults Name from Hostname, and submits', async () => {
     fetchMock
-      .mockResolvedValueOnce(jsonResponse([])) // initial list
+      .mockResolvedValueOnce(jsonResponse([]))
       .mockResolvedValueOnce(
         jsonResponse(system({ id: '1', name: 'srv.example.com', hostname: 'srv.example.com' }), 201),
       )
@@ -99,19 +107,16 @@ describe('SystemsPage', () => {
     render(<SystemsPage />)
     await waitFor(() => expect(screen.getByText(/no systems yet/i)).toBeInTheDocument())
 
-    fireEvent.click(screen.getByRole('button', { name: /add system/i }))
-
+    clickActionsItem(/add system/i)
     const modal = await screen.findByRole('dialog')
     const hostnameInput = within(modal).getByLabelText(/hostname/i) as HTMLInputElement
     const nameInput = within(modal).getByLabelText(/^name/i) as HTMLInputElement
 
     fireEvent.change(hostnameInput, { target: { value: 'srv.example.com' } })
-    // Name auto-defaults from hostname.
     expect(nameInput.value).toBe('srv.example.com')
 
     fireEvent.click(within(modal).getByRole('button', { name: /^add$/i }))
 
-    // Same string appears in both Name and Hostname columns — assert at least one match.
     const matches = await screen.findAllByText('srv.example.com')
     expect(matches.length).toBeGreaterThanOrEqual(1)
 
@@ -137,7 +142,7 @@ describe('SystemsPage', () => {
     render(<SystemsPage />)
     await waitFor(() => expect(screen.getByText(/no systems yet/i)).toBeInTheDocument())
 
-    fireEvent.click(screen.getByRole('button', { name: /add system/i }))
+    clickActionsItem(/add system/i)
     const modal = await screen.findByRole('dialog')
     const hostnameInput = within(modal).getByLabelText(/hostname/i)
     const nameInput = within(modal).getByLabelText(/^name/i) as HTMLInputElement
@@ -145,11 +150,9 @@ describe('SystemsPage', () => {
     fireEvent.change(hostnameInput, { target: { value: '10.0.0.5' } })
     expect(nameInput.value).toBe('10.0.0.5')
     fireEvent.change(nameInput, { target: { value: 'web prod' } })
-    // Once Name is edited, further Hostname changes do NOT overwrite it.
     fireEvent.change(hostnameInput, { target: { value: '10.0.0.6' } })
     expect(nameInput.value).toBe('web prod')
 
-    // Reset hostname so the submission matches the mock fixture.
     fireEvent.change(hostnameInput, { target: { value: '10.0.0.5' } })
     fireEvent.click(within(modal).getByRole('button', { name: /^add$/i }))
     expect(await screen.findByText('web prod')).toBeInTheDocument()
@@ -163,18 +166,17 @@ describe('SystemsPage', () => {
     render(<SystemsPage />)
     await waitFor(() => expect(screen.getByText(/no systems yet/i)).toBeInTheDocument())
 
-    fireEvent.click(screen.getByRole('button', { name: /add system/i }))
+    clickActionsItem(/add system/i)
     const modal = await screen.findByRole('dialog')
     fireEvent.change(within(modal).getByLabelText(/hostname/i), { target: { value: 'x' } })
     fireEvent.change(within(modal).getByLabelText(/^name/i), { target: { value: 'x' } })
     fireEvent.click(within(modal).getByRole('button', { name: /^add$/i }))
 
     expect(await within(modal).findByText(/hostname is required/i)).toBeInTheDocument()
-    // The dialog is still rendered (the user can correct and retry).
     expect(screen.queryByRole('dialog')).toBeInTheDocument()
   })
 
-  it('removes a system via the row delete button', async () => {
+  it('removes a system only after confirmation', async () => {
     fetchMock
       .mockResolvedValueOnce(
         jsonResponse([system({ id: '1', name: 'doomed', hostname: '1.1.1.1' })]),
@@ -184,20 +186,124 @@ describe('SystemsPage', () => {
 
     render(<SystemsPage />)
     const row = (await screen.findByText('doomed')).closest('tr')!
-    fireEvent.click(within(row).getByRole('button', { name: /remove doomed/i }))
+    clickRowKebab(row, /remove doomed/i)
+
+    const dialog = await screen.findByRole('dialog')
+    expect(within(dialog).getByText(/permanently remove doomed/i)).toBeInTheDocument()
+    expect(
+      (fetchMock.mock.calls as Array<[FetchInput, FetchInit]>).filter(
+        (c) => c[1]?.method === 'DELETE',
+      ),
+    ).toHaveLength(0)
+
+    fireEvent.click(within(dialog).getByRole('button', { name: /^remove$/i }))
 
     await waitFor(() =>
       expect(screen.getByText(/no systems yet/i)).toBeInTheDocument(),
     )
 
-    const deleteCall = fetchMock.mock.calls[1] as [string, FetchInit]
-    expect(deleteCall[0]).toBe('/api/systems/1')
-    expect(deleteCall[1]?.method).toBe('DELETE')
+    const deleteCall = (fetchMock.mock.calls as Array<[FetchInput, FetchInit]>).find(
+      (c) => c[1]?.method === 'DELETE',
+    )
+    expect(deleteCall![0]).toBe('/api/systems/1')
+  })
+
+  it('bulk-removes selected systems via the Actions menu', async () => {
+    fetchMock
+      .mockResolvedValueOnce(
+        jsonResponse([
+          system({ id: '1', name: 'a', hostname: '10.0.0.1' }),
+          system({ id: '2', name: 'b', hostname: '10.0.0.2' }),
+          system({ id: '3', name: 'c', hostname: '10.0.0.3' }),
+        ]),
+      )
+      .mockResolvedValueOnce(new Response(null, { status: 204 }))
+      .mockResolvedValueOnce(new Response(null, { status: 204 }))
+      .mockResolvedValueOnce(
+        jsonResponse([system({ id: '3', name: 'c', hostname: '10.0.0.3' })]),
+      )
+
+    render(<SystemsPage />)
+    await screen.findByText('a')
+
+    fireEvent.click(within(screen.getByText('a').closest('tr')!).getByRole('checkbox'))
+    fireEvent.click(within(screen.getByText('b').closest('tr')!).getByRole('checkbox'))
+
+    clickActionsItem(/remove selected/i)
+    const dialog = await screen.findByRole('dialog')
+    fireEvent.click(within(dialog).getByRole('button', { name: /^remove$/i }))
+
+    await waitFor(() => {
+      expect(screen.queryByText('a')).not.toBeInTheDocument()
+      expect(screen.queryByText('b')).not.toBeInTheDocument()
+    })
+    const deleteCalls = (fetchMock.mock.calls as Array<[FetchInput, FetchInit]>).filter(
+      (c) => c[1]?.method === 'DELETE',
+    )
+    expect(deleteCalls.map((c) => c[0]).sort()).toEqual(['/api/systems/1', '/api/systems/2'])
+  })
+
+  it('filters by hostname via the column filter input', async () => {
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse([
+        system({ id: '1', name: 'a', hostname: 'alpha.example.com' }),
+        system({ id: '2', name: 'b', hostname: 'beta.example.com' }),
+        system({ id: '3', name: 'c', hostname: 'gamma.example.com' }),
+      ]),
+    )
+    render(<SystemsPage />)
+    await screen.findByText('alpha.example.com')
+
+    const filter = screen.getByLabelText(/filter hostname/i)
+    fireEvent.change(filter, { target: { value: 'beta' } })
+
+    expect(screen.getByText('beta.example.com')).toBeInTheDocument()
+    expect(screen.queryByText('alpha.example.com')).not.toBeInTheDocument()
+    expect(screen.queryByText('gamma.example.com')).not.toBeInTheDocument()
+  })
+
+  it('sorts by name when the column header is clicked', async () => {
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse([
+        system({ id: '1', name: 'charlie', hostname: '10.0.0.1' }),
+        system({ id: '2', name: 'alpha', hostname: '10.0.0.2' }),
+        system({ id: '3', name: 'bravo', hostname: '10.0.0.3' }),
+      ]),
+    )
+    render(<SystemsPage />)
+    await screen.findByText('alpha')
+
+    const rows0 = screen.getAllByRole('row').slice(2).map((r) => r.textContent)
+    // Initial sort key is name asc → already sorted.
+    expect(rows0[0]).toContain('alpha')
+    expect(rows0[1]).toContain('bravo')
+    expect(rows0[2]).toContain('charlie')
+
+    const header = screen.getByRole('columnheader', { name: /^name/i })
+    fireEvent.click(header.querySelector('button')!)
+    const rows1 = screen.getAllByRole('row').slice(2).map((r) => r.textContent)
+    expect(rows1[0]).toContain('charlie')
+    expect(rows1[1]).toContain('bravo')
+    expect(rows1[2]).toContain('alpha')
+  })
+
+  it('paginates and offers an All option', async () => {
+    const many = Array.from({ length: 30 }, (_, i) =>
+      system({ id: `s${i}`, name: `sys${i.toString().padStart(2, '0')}`, hostname: `10.0.0.${i}` }),
+    )
+    fetchMock.mockResolvedValueOnce(jsonResponse(many))
+    render(<SystemsPage />)
+    await screen.findByText('sys00')
+
+    expect(screen.queryByText('sys29')).not.toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: /page size/i }))
+    fireEvent.click(await screen.findByRole('option', { name: /^all$/i }))
+    expect(await screen.findByText('sys29')).toBeInTheDocument()
   })
 
   it('refetches when a systems.changed event arrives', async () => {
     fetchMock
-      .mockResolvedValueOnce(jsonResponse([])) // initial: empty
+      .mockResolvedValueOnce(jsonResponse([]))
       .mockResolvedValueOnce(
         jsonResponse([system({ id: '99', name: 'late-arrival', hostname: '10.0.0.99' })]),
       )
@@ -205,11 +311,8 @@ describe('SystemsPage', () => {
     render(<SystemsPage />)
     expect(await screen.findByText(/no systems yet/i)).toBeInTheDocument()
 
-    // Simulate the backend pushing a systems.changed event.
     FakeEventSource.instances[0].emit('message', { type: 'systems.changed' })
-
     expect(await screen.findByText('late-arrival')).toBeInTheDocument()
-    // Two GET /api/systems calls: initial + after event.
     expect(fetchMock.mock.calls.filter((c) => c[0] === '/api/systems')).toHaveLength(2)
   })
 
@@ -220,13 +323,11 @@ describe('SystemsPage', () => {
 
     const initialCalls = fetchMock.mock.calls.filter((c) => c[0] === '/api/systems').length
 
-    // Fire several events back-to-back.
     const es = FakeEventSource.instances[0]
     es.emit('message', { type: 'systems.changed' })
     es.emit('message', { type: 'systems.changed' })
     es.emit('message', { type: 'systems.changed' })
 
-    // Wait for the debounce window (200ms) plus a margin.
     await new Promise((r) => setTimeout(r, 300))
 
     const newCalls = fetchMock.mock.calls.filter((c) => c[0] === '/api/systems').length

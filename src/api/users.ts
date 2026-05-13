@@ -57,3 +57,10 @@ export async function setUserDisabled(
   if (!resp.ok) throw new ApiError(resp.status, await parseError(resp))
   return (await resp.json()) as User
 }
+
+export async function deleteUser(id: string): Promise<void> {
+  const resp = await fetch(`/api/admin/users/${encodeURIComponent(id)}`, {
+    method: 'DELETE',
+  })
+  if (!resp.ok) throw new ApiError(resp.status, await parseError(resp))
+}
