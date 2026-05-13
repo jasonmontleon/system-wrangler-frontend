@@ -103,6 +103,24 @@ describe('App', () => {
       })
     })
 
+    it('groups the sidebar into Inventory, Administration, and Monitoring sections', async () => {
+      render(<App />)
+      // Section titles are rendered as headings inside PatternFly NavGroup.
+      const inventory = await screen.findByRole('heading', { name: /^inventory$/i })
+      const administration = screen.getByRole('heading', { name: /^administration$/i })
+      const monitoring = screen.getByRole('heading', { name: /^monitoring$/i })
+      expect(inventory).toBeInTheDocument()
+      expect(administration).toBeInTheDocument()
+      expect(monitoring).toBeInTheDocument()
+      // Systems lives under Inventory, Audit under Administration. Monitoring
+      // is intentionally empty for now — assert no nav items in its section
+      // by checking the rendered DOM order: Monitoring is last and has no
+      // following NavItem inside its group container.
+      const monitoringSection = monitoring.closest('section')
+      expect(monitoringSection).not.toBeNull()
+      expect(monitoringSection!.querySelectorAll('li')).toHaveLength(0)
+    })
+
     it('does not expose the theme toggle from the masthead', async () => {
       render(<App />)
       await screen.findByRole('button', { name: /user menu/i })

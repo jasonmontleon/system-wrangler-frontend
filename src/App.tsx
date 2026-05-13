@@ -15,6 +15,7 @@ import {
   MenuToggle,
   type MenuToggleElement,
   Nav,
+  NavGroup,
   NavItem,
   NavList,
   Page,
@@ -135,7 +136,7 @@ export default function App() {
   const sidebar = (
     <PageSidebar>
       <PageSidebarBody>
-        <Nav>
+        <Nav aria-label="Primary">
           <NavList>
             <NavItem
               isActive={page === 'dashboard'}
@@ -144,6 +145,8 @@ export default function App() {
             >
               Dashboard
             </NavItem>
+          </NavList>
+          <NavGroup title="Inventory">
             <NavItem
               isActive={page === 'systems'}
               onClick={() => setPage('systems')}
@@ -151,6 +154,8 @@ export default function App() {
             >
               Systems
             </NavItem>
+          </NavGroup>
+          <NavGroup title="Administration">
             <NavItem
               isActive={page === 'audit'}
               onClick={() => setPage('audit')}
@@ -158,7 +163,10 @@ export default function App() {
             >
               Audit
             </NavItem>
-          </NavList>
+          </NavGroup>
+          {/* Reserved for alerts, custom dashboards, and reports once those
+              land; rendered now so the structure of the sidebar is visible. */}
+          <NavGroup title="Monitoring" />
         </Nav>
       </PageSidebarBody>
     </PageSidebar>
