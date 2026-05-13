@@ -172,11 +172,19 @@ export default function AuditPage() {
             <Spinner />
           </Bullseye>
         )}
-        {records !== null && records.length === 0 && (
+        {records !== null && records.length === 0 && pageIndex === 0 && (
           <EmptyState titleText="No audit records" headingLevel="h2">
             <EmptyStateBody>
               Privileged actions like login and system changes appear here as
               they happen.
+            </EmptyStateBody>
+          </EmptyState>
+        )}
+        {records !== null && records.length === 0 && pageIndex > 0 && (
+          <EmptyState titleText="No more records" headingLevel="h2">
+            <EmptyStateBody>
+              This page is past the end of the audit log. Use Previous to go
+              back.
             </EmptyStateBody>
           </EmptyState>
         )}
@@ -238,7 +246,7 @@ export default function AuditPage() {
         )}
       </PageSection>
 
-      {records !== null && records.length > 0 && (
+      {records !== null && (records.length > 0 || pageIndex > 0) && (
         <PageSection>
           <Toolbar>
             <ToolbarContent>

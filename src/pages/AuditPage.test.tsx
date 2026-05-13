@@ -198,6 +198,38 @@ describe('AuditPage', () => {
     expect(await screen.findByText(/could not load audit log/i)).toBeInTheDocument()
   })
 
+  it('keeps Previous available when the next page returns no records', async () => {
+    // Regression: if a stale next cursor lands on an empty page, the
+    // paging toolbar must stay visible so the user can return to page 1.
+    fetchMock
+      .mockResolvedValueOnce(
+        jsonResponse({
+          records: [record({ id: 'p1' })],
+          next: { afterMs: 1, afterId: 'p1' },
+        }),
+      )
+      .mockResolvedValueOnce(jsonResponse({ records: [] }))
+      .mockResolvedValueOnce(
+        jsonResponse({
+          records: [record({ id: 'p1' })],
+          next: { afterMs: 1, afterId: 'p1' },
+        }),
+      )
+
+    render(<AuditPage />)
+    await screen.findByText('auth.login')
+    fireEvent.click(screen.getByRole('button', { name: /^next$/i }))
+
+    expect(await screen.findByText(/no more records/i)).toBeInTheDocument()
+    const prev = screen.getByRole('button', { name: /^previous$/i })
+    expect(prev).not.toBeDisabled()
+    expect(screen.getByRole('button', { name: /^next$/i })).toBeDisabled()
+
+    fireEvent.click(prev)
+    await screen.findByText('auth.login')
+    expect(screen.getByText(/page 1/i)).toBeInTheDocument()
+  })
+
   it('resets paging back to page 1 when the page size changes', async () => {
     // page 1, then forward to page 2, then change page size: should refetch
     // with the new size and no cursor (page 1).
