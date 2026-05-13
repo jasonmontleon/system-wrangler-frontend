@@ -31,12 +31,13 @@ import AuditPage from './pages/AuditPage'
 import DashboardPage from './pages/DashboardPage'
 import ProfilePage from './pages/ProfilePage'
 import SystemsPage from './pages/SystemsPage'
+import UsersPage from './pages/UsersPage'
 import LoginForm from './components/LoginForm'
 import SetupForm from './components/SetupForm'
 import { useAuth } from './hooks/useAuth'
 import { useTheme } from './hooks/useTheme'
 
-type PageKey = 'dashboard' | 'systems' | 'audit' | 'profile'
+type PageKey = 'dashboard' | 'systems' | 'users' | 'audit' | 'profile'
 
 export default function App() {
   const auth = useAuth()
@@ -157,6 +158,13 @@ export default function App() {
           </NavGroup>
           <NavGroup title="Administration">
             <NavItem
+              isActive={page === 'users'}
+              onClick={() => setPage('users')}
+              to="#"
+            >
+              Users
+            </NavItem>
+            <NavItem
               isActive={page === 'audit'}
               onClick={() => setPage('audit')}
               to="#"
@@ -176,6 +184,7 @@ export default function App() {
     <Page masthead={masthead} sidebar={sidebar}>
       {page === 'dashboard' && <DashboardPage />}
       {page === 'systems' && <SystemsPage />}
+      {page === 'users' && <UsersPage currentUserId={user.id} />}
       {page === 'audit' && <AuditPage />}
       {page === 'profile' && (
         <ProfilePage
