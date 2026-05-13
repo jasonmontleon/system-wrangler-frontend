@@ -37,6 +37,8 @@ import LoginForm from './components/LoginForm'
 import SetupForm from './components/SetupForm'
 import { useAuth } from './hooks/useAuth'
 import { useTheme } from './hooks/useTheme'
+import wordmarkDark from './assets/wordmark-dark.svg'
+import wordmarkLight from './assets/wordmark-light.svg'
 
 type PageKey = 'dashboard' | 'systems' | 'users' | 'audit' | 'profile'
 
@@ -47,7 +49,7 @@ export default function App() {
 
   const serverTheme =
     auth.state.kind === 'ready' ? auth.state.status.user?.theme : undefined
-  useTheme(serverTheme)
+  const [theme] = useTheme(serverTheme)
 
   if (auth.state.kind === 'loading') {
     return (
@@ -131,7 +133,20 @@ export default function App() {
     <Masthead>
       <MastheadMain>
         <MastheadBrand>
-          <MastheadLogo>System Wrangler</MastheadLogo>
+          <MastheadLogo
+            style={
+              {
+                '--pf-v6-c-masthead__logo--Width': '11rem',
+                '--pf-v6-c-masthead__logo--MaxHeight': '5rem',
+              } as React.CSSProperties
+            }
+          >
+            <img
+              src={theme === 'dark' ? wordmarkDark : wordmarkLight}
+              alt="System Wrangler"
+              style={{ height: '5rem', width: 'auto', display: 'block' }}
+            />
+          </MastheadLogo>
         </MastheadBrand>
       </MastheadMain>
       <MastheadContent>
