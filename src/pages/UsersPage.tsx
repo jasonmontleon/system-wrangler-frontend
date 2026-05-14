@@ -42,6 +42,7 @@ import {
   setUserDisabled,
   type User,
 } from '../api/users'
+import UserRolesCard from '../components/UserRolesCard'
 
 type Props = {
   currentUserId: string
@@ -72,6 +73,7 @@ export default function UsersPage({ currentUserId }: Props) {
   const [isAddOpen, setAddOpen] = useState(false)
   const [confirm, setConfirm] = useState<Confirm | null>(null)
   const [resetTarget, setResetTarget] = useState<ResetPasswordTarget>(null)
+  const [rolesTarget, setRolesTarget] = useState<User | null>(null)
 
   const [filters, setFilters] = useState<Record<string, string>>({
     username: '',
@@ -499,6 +501,10 @@ export default function UsersPage({ currentUserId }: Props) {
                             onClick: () => setResetTarget({ user: u }),
                           },
                           {
+                            title: `Manage roles for ${u.username}`,
+                            onClick: () => setRolesTarget(u),
+                          },
+                          {
                             title: `Reset 2FA for ${u.username}`,
                             isDisabled: !u.totpEnabled,
                             onClick: () =>
@@ -593,6 +599,32 @@ export default function UsersPage({ currentUserId }: Props) {
           await refresh()
         }}
       />
+
+      <Modal
+        variant="medium"
+        isOpen={rolesTarget !== null}
+        onClose={() => setRolesTarget(null)}
+        aria-labelledby="manage-roles-title"
+      >
+        <ModalHeader
+          title={rolesTarget ? `Roles for ${rolesTarget.username}` : 'Roles'}
+          labelId="manage-roles-title"
+        />
+        <ModalBody>
+          {rolesTarget && (
+            <UserRolesCard
+              userId={rolesTarget.id}
+              username={rolesTarget.username}
+              editable
+            />
+          )}
+        </ModalBody>
+        <ModalFooter>
+          <Button variant="link" onClick={() => setRolesTarget(null)}>
+            Close
+          </Button>
+        </ModalFooter>
+      </Modal>
     </>
   )
 }

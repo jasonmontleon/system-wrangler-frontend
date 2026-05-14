@@ -52,9 +52,21 @@ describe('GroupDetailPage', () => {
 
   beforeEach(() => {
     fetchMock = vi.fn()
-    vi.stubGlobal('fetch', (input: FetchInput, init?: FetchInit) =>
-      (fetchMock as unknown as typeof fetch)(input, init),
-    )
+    vi.stubGlobal('fetch', (input: FetchInput, init?: FetchInit) => {
+      // GroupDetailPage now fetches the caller's scope via /api/me/scope
+      // alongside the systems list. Tests that only care about systems
+      // shouldn't have to mock it; default to "Global Admin" so the UI
+      // shows every control.
+      if (String(input).startsWith('/api/me/scope')) {
+        return Promise.resolve(
+          new Response(JSON.stringify({ global: 'admin', groups: {} }), {
+            status: 200,
+            headers: { 'Content-Type': 'application/json' },
+          }),
+        )
+      }
+      return (fetchMock as unknown as typeof fetch)(input, init)
+    })
     FakeEventSource.instances = []
     vi.stubGlobal('EventSource', FakeEventSource)
   })
@@ -111,6 +123,46 @@ describe('GroupDetailPage', () => {
       ])
       expect(calls).toContainEqual(['/api/systems/s-1/group', 'PUT'])
     })
+  })
+
+  it('Global Admin sees the Roles tab and can switch to it', async () => {
+    // The default scope mock in beforeEach is "global admin", which is
+    // exactly what we need. Just provide the systems + role-assignments
+    // response for the tab content.
+    fetchMock
+      .mockResolvedValueOnce(jsonResponse([]))
+      .mockResolvedValueOnce(
+        jsonResponse({
+          assignments: [
+            { userId: 'u1', username: 'alice', groupId: 'g-1', role: 'admin' },
+          ],
+        }),
+      )
+    render(<GroupDetailPage group={sampleGroup} onBack={() => {}} />)
+    fireEvent.click(await screen.findByRole('tab', { name: /^roles$/i }))
+    expect(await screen.findByText('alice')).toBeInTheDocument()
+  })
+
+  it('users without any group role do not see the Roles tab', async () => {
+    // Override the default scope: a Global Auditor sees the group itself
+    // (any global role can see all groups) but per research/rbac.md the
+    // Roles tab is for callers with a role on this specific group.
+    // Actually a Global Auditor IS a global role, so they would see the
+    // tab. Use a user with a role on a DIFFERENT group instead.
+    vi.unstubAllGlobals()
+    const fetchMock2 = vi.fn()
+    vi.stubGlobal('fetch', (input: FetchInput, init?: FetchInit) => {
+      if (String(input).startsWith('/api/me/scope')) {
+        return Promise.resolve(
+          jsonResponse({ global: '', groups: { 'other-group': 'auditor' } }),
+        )
+      }
+      return (fetchMock2 as unknown as typeof fetch)(input, init)
+    })
+    fetchMock2.mockResolvedValueOnce(jsonResponse([]))
+    render(<GroupDetailPage group={sampleGroup} onBack={() => {}} />)
+    await screen.findByText(/no systems in this group/i)
+    expect(screen.queryByRole('tab', { name: /^roles$/i })).toBeNull()
   })
 
   it('clicking the breadcrumb back invokes onBack', async () => {

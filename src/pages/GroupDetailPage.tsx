@@ -26,11 +26,16 @@ import {
   SelectList,
   SelectOption,
   Spinner,
+  Tab,
+  TabTitleText,
+  Tabs,
   Title,
   Toolbar,
   ToolbarContent,
   ToolbarItem,
 } from '@patternfly/react-core'
+import GroupRolesTab from '../components/GroupRolesTab'
+import { canAdminGroup, isGlobalAdmin, roleOnGroup, useScope } from '../hooks/useScope'
 import { ActionsColumn, Table, Tbody, Td, Th, Thead, Tr } from '@patternfly/react-table'
 import {
   listSystems,
@@ -81,6 +86,20 @@ export default function GroupDetailPage({ group, onBack }: GroupDetailPageProps)
   const [actionError, setActionError] = useState<string | null>(null)
   const [isAddOpen, setAddOpen] = useState(false)
   const [confirm, setConfirm] = useState<Confirm | null>(null)
+  const [activeTab, setActiveTab] = useState<'members' | 'roles'>('members')
+
+  const { state: scopeState } = useScope()
+  const callerRole = roleOnGroup(scopeState, group.id)
+  const callerIsGlobalAdmin = isGlobalAdmin(scopeState)
+  const canAdminThisGroup = canAdminGroup(scopeState, group.id)
+  // Group Admin sees the Roles tab as read-write but the Admin role
+  // choice is hidden from their picker — only Global Admin can grant
+  // Admin per research/rbac.md.
+  const canGrantAdminRole = callerIsGlobalAdmin
+  // The tab is visible to every caller that can read the group at all
+  // (matching the GET endpoint's gate). Group Operator / Auditor see
+  // it read-only.
+  const showRolesTab = callerIsGlobalAdmin || callerRole !== ''
 
   const [filters, setFilters] = useState<Record<string, string>>({
     name: '',
@@ -284,11 +303,34 @@ export default function GroupDetailPage({ group, onBack }: GroupDetailPageProps)
       </PageSection>
 
       <PageSection>
+        <Title headingLevel="h1">{group.name}</Title>
+      </PageSection>
+      <PageSection>
+        <Tabs
+          activeKey={activeTab}
+          onSelect={(_, key) => setActiveTab(key as 'members' | 'roles')}
+          aria-label={`${group.name} tabs`}
+        >
+          <Tab eventKey="members" title={<TabTitleText>Members</TabTitleText>} />
+          {showRolesTab && (
+            <Tab eventKey="roles" title={<TabTitleText>Roles</TabTitleText>} />
+          )}
+        </Tabs>
+      </PageSection>
+      {activeTab === 'roles' && showRolesTab && (
+        <PageSection>
+          <GroupRolesTab
+            groupId={group.id}
+            groupName={group.name}
+            canAdmin={canAdminThisGroup}
+            canGrantAdminRole={canGrantAdminRole}
+          />
+        </PageSection>
+      )}
+      {activeTab === 'members' && (<>
+      <PageSection>
         <Toolbar>
           <ToolbarContent>
-            <ToolbarItem>
-              <Title headingLevel="h1">{group.name}</Title>
-            </ToolbarItem>
             <ToolbarItem align={{ default: 'alignEnd' }}>
               <Dropdown
                 isOpen={actionsOpen}
@@ -561,6 +603,7 @@ export default function GroupDetailPage({ group, onBack }: GroupDetailPageProps)
           </Toolbar>
         </PageSection>
       )}
+      </>)}
 
       <AddSystemsModal
         isOpen={isAddOpen}

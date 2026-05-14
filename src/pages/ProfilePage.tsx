@@ -20,6 +20,7 @@ import {
   updateProfile,
   type AuthUser,
 } from '../api/auth'
+import MyRolesCard from '../components/MyRolesCard'
 import TwoFactorCard from '../components/TwoFactorCard'
 import TrustedDevicesCard from '../components/TrustedDevicesCard'
 
@@ -63,6 +64,9 @@ export default function ProfilePage({
       </PageSection>
       <PageSection>
         <TrustedDevicesCard />
+      </PageSection>
+      <PageSection>
+        <MyRolesCard />
       </PageSection>
     </>
   )
