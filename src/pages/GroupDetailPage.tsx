@@ -3,15 +3,16 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   Alert,
+  Breadcrumb,
+  BreadcrumbItem,
   Button,
   Bullseye,
+  Checkbox,
   Dropdown,
   DropdownItem,
   DropdownList,
   EmptyState,
   EmptyStateBody,
-  Form,
-  FormGroup,
   Label,
   MenuToggle,
   type MenuToggleElement,
@@ -25,7 +26,6 @@ import {
   SelectList,
   SelectOption,
   Spinner,
-  TextInput,
   Title,
   Toolbar,
   ToolbarContent,
@@ -33,14 +33,11 @@ import {
 } from '@patternfly/react-core'
 import { ActionsColumn, Table, Tbody, Td, Th, Thead, Tr } from '@patternfly/react-table'
 import {
-  ApiError,
-  createSystem,
-  deleteSystem,
   listSystems,
   type System,
   type SystemStatus,
 } from '../api/systems'
-import { listGroups, type Group } from '../api/groups'
+import { type Group, setSystemGroup } from '../api/groups'
 import { useEventStream } from '../hooks/useEventStream'
 
 const STATUS_LABELS: Record<
@@ -66,22 +63,20 @@ const PAGE_SIZE_OPTIONS: { value: PageSize; label: string }[] = [
   { value: 'all', label: 'All' },
 ]
 
-type SortKey =
-  | 'name'
-  | 'hostname'
-  | 'status'
-  | 'group'
-  | 'lastSeen'
-  | 'createdAt'
+type SortKey = 'name' | 'hostname' | 'status' | 'lastSeen' | 'createdAt'
 type SortDir = 'asc' | 'desc'
 
 type Confirm =
   | { kind: 'remove-one'; system: System }
   | { kind: 'remove-bulk'; ids: string[] }
 
-export default function SystemsPage() {
+type GroupDetailPageProps = {
+  group: Group
+  onBack: () => void
+}
+
+export default function GroupDetailPage({ group, onBack }: GroupDetailPageProps) {
   const [systems, setSystems] = useState<System[] | null>(null)
-  const [groups, setGroups] = useState<Group[]>([])
   const [loadError, setLoadError] = useState<string | null>(null)
   const [actionError, setActionError] = useState<string | null>(null)
   const [isAddOpen, setAddOpen] = useState(false)
@@ -91,7 +86,6 @@ export default function SystemsPage() {
     name: '',
     hostname: '',
     status: '',
-    group: '',
     lastSeen: '',
     createdAt: '',
   })
@@ -112,35 +106,6 @@ export default function SystemsPage() {
       setLoadError(e instanceof Error ? e.message : String(e))
     }
   }, [])
-
-  // Group names are loaded once on mount, decoupled from the systems
-  // refresh cycle. The Group column is best-effort: if the call fails,
-  // every row simply shows '—' rather than blocking the Systems list.
-  useEffect(() => {
-    let cancelled = false
-    listGroups()
-      .then((gs) => {
-        if (!cancelled) setGroups(gs)
-      })
-      .catch(() => {
-        // intentionally ignored
-      })
-    return () => {
-      cancelled = true
-    }
-  }, [])
-
-  const groupNameById = useMemo(() => {
-    const m = new Map<string, string>()
-    for (const g of groups) m.set(g.id, g.name)
-    return m
-  }, [groups])
-
-  const groupNameFor = useCallback(
-    (s: System): string =>
-      s.groupId ? (groupNameById.get(s.groupId) ?? '') : '',
-    [groupNameById],
-  )
 
   useEffect(() => {
     void refresh()
@@ -165,35 +130,34 @@ export default function SystemsPage() {
     }
   }, [])
 
+  const members = useMemo(
+    () => (systems ?? []).filter((s) => s.groupId === group.id),
+    [systems, group.id],
+  )
+
   const filtered = useMemo(() => {
-    if (!systems) return []
     const n = filters.name.trim().toLowerCase()
     const h = filters.hostname.trim().toLowerCase()
     const st = filters.status.trim().toLowerCase()
-    const gr = filters.group.trim().toLowerCase()
     const ls = filters.lastSeen.trim().toLowerCase()
     const c = filters.createdAt.trim().toLowerCase()
-    return systems.filter((row) => {
+    return members.filter((row) => {
       if (n && !row.name.toLowerCase().includes(n)) return false
       if (h && !row.hostname.toLowerCase().includes(h)) return false
       if (st) {
         const label = STATUS_LABELS[row.status]?.text.toLowerCase() ?? row.status
         if (!label.includes(st)) return false
       }
-      if (gr) {
-        const display = (groupNameFor(row) || '—').toLowerCase()
-        if (!display.includes(gr)) return false
-      }
-      if (ls) {
-        if (!formatLastSeen(row.lastSeen).toLowerCase().includes(ls)) return false
-      }
-      if (c) {
-        if (!new Date(row.createdAt).toLocaleString().toLowerCase().includes(c))
-          return false
-      }
+      if (ls && !formatLastSeen(row.lastSeen).toLowerCase().includes(ls))
+        return false
+      if (
+        c &&
+        !new Date(row.createdAt).toLocaleString().toLowerCase().includes(c)
+      )
+        return false
       return true
     })
-  }, [systems, filters, groupNameFor])
+  }, [members, filters])
 
   const sorted = useMemo(() => {
     const copy = [...filtered]
@@ -209,9 +173,6 @@ export default function SystemsPage() {
       } else if (sortKey === 'status') {
         av = a.status
         bv = b.status
-      } else if (sortKey === 'group') {
-        av = groupNameFor(a).toLowerCase()
-        bv = groupNameFor(b).toLowerCase()
       } else if (sortKey === 'lastSeen') {
         av = a.lastSeen ? new Date(a.lastSeen).getTime() : 0
         bv = b.lastSeen ? new Date(b.lastSeen).getTime() : 0
@@ -224,7 +185,7 @@ export default function SystemsPage() {
       return 0
     })
     return copy
-  }, [filtered, sortKey, sortDir, groupNameFor])
+  }, [filtered, sortKey, sortDir])
 
   const pageCount =
     pageSize === 'all' ? 1 : Math.max(1, Math.ceil(sorted.length / pageSize))
@@ -243,8 +204,7 @@ export default function SystemsPage() {
   }, [filters, sortKey, sortDir, pageSize])
 
   useEffect(() => {
-    if (!systems) return
-    const valid = new Set(systems.map((s) => s.id))
+    const valid = new Set(members.map((s) => s.id))
     setSelected((prev) => {
       const next = new Set<string>()
       prev.forEach((id) => {
@@ -252,7 +212,7 @@ export default function SystemsPage() {
       })
       return next.size === prev.size ? prev : next
     })
-  }, [systems])
+  }, [members])
 
   const onSort = (key: SortKey) => {
     if (sortKey === key) {
@@ -296,24 +256,38 @@ export default function SystemsPage() {
     })
   }
 
-  const removeOne = async (id: string) => {
+  const removeFromGroup = async (id: string) => {
     setActionError(null)
     try {
-      await deleteSystem(id)
+      await setSystemGroup(id, null)
     } catch (err) {
       setActionError(err instanceof Error ? err.message : String(err))
     }
   }
+
+  const ungrouped = useMemo(
+    () => (systems ?? []).filter((s) => !s.groupId),
+    [systems],
+  )
 
   const selectionCount = selected.size
 
   return (
     <>
       <PageSection>
+        <Breadcrumb>
+          <BreadcrumbItem to="#" onClick={onBack}>
+            System Groups
+          </BreadcrumbItem>
+          <BreadcrumbItem isActive>{group.name}</BreadcrumbItem>
+        </Breadcrumb>
+      </PageSection>
+
+      <PageSection>
         <Toolbar>
           <ToolbarContent>
             <ToolbarItem>
-              <Title headingLevel="h1">Systems</Title>
+              <Title headingLevel="h1">{group.name}</Title>
             </ToolbarItem>
             <ToolbarItem align={{ default: 'alignEnd' }}>
               <Dropdown
@@ -343,14 +317,14 @@ export default function SystemsPage() {
               >
                 <DropdownList>
                   <DropdownItem value="add" key="add">
-                    Add system
+                    Add systems
                   </DropdownItem>
                   <DropdownItem
                     value="remove"
                     key="remove"
                     isDisabled={selectionCount === 0}
                   >
-                    Remove selected
+                    Remove selected from group
                     {selectionCount > 0 ? ` (${selectionCount})` : ''}
                   </DropdownItem>
                 </DropdownList>
@@ -401,7 +375,11 @@ export default function SystemsPage() {
             title="Action failed"
             isInline
             actionClose={
-              <Button variant="plain" onClick={() => setActionError(null)} aria-label="Dismiss">
+              <Button
+                variant="plain"
+                onClick={() => setActionError(null)}
+                aria-label="Dismiss"
+              >
                 ×
               </Button>
             }
@@ -414,15 +392,15 @@ export default function SystemsPage() {
             <Spinner />
           </Bullseye>
         )}
-        {systems !== null && systems.length === 0 && (
-          <EmptyState titleText="No systems yet" headingLevel="h2">
+        {systems !== null && members.length === 0 && (
+          <EmptyState titleText="No systems in this group" headingLevel="h2">
             <EmptyStateBody>
-              Add your first system from the Actions menu in the toolbar above.
+              Add systems from the Actions menu in the toolbar above.
             </EmptyStateBody>
           </EmptyState>
         )}
-        {systems !== null && systems.length > 0 && (
-          <Table aria-label="Systems" variant="compact">
+        {systems !== null && members.length > 0 && (
+          <Table aria-label={`Systems in ${group.name}`} variant="compact">
             <Thead>
               <Tr>
                 <Th
@@ -432,22 +410,19 @@ export default function SystemsPage() {
                     isDisabled: visible.length === 0,
                   }}
                 />
-                <Th width={20} sort={sortFor('name', 1)}>
+                <Th width={25} sort={sortFor('name', 1)}>
                   Name
                 </Th>
-                <Th width={20} sort={sortFor('hostname', 2)}>
+                <Th width={25} sort={sortFor('hostname', 2)}>
                   Hostname
                 </Th>
-                <Th width={10} sort={sortFor('status', 3)}>
+                <Th width={15} sort={sortFor('status', 3)}>
                   Status
                 </Th>
-                <Th width={15} sort={sortFor('group', 4)}>
-                  Group
-                </Th>
-                <Th width={15} sort={sortFor('lastSeen', 5)}>
+                <Th width={20} sort={sortFor('lastSeen', 4)}>
                   Last seen
                 </Th>
-                <Th width={10} sort={sortFor('createdAt', 6)}>
+                <Th width={10} sort={sortFor('createdAt', 5)}>
                   Added
                 </Th>
                 <Th width={10} screenReaderText="Actions" />
@@ -483,17 +458,6 @@ export default function SystemsPage() {
                       setFilters((f) => ({ ...f, status: v }))
                     }
                     onClear={() => setFilters((f) => ({ ...f, status: '' }))}
-                  />
-                </Th>
-                <Th>
-                  <SearchInput
-                    aria-label="Filter group"
-                    placeholder="Filter group"
-                    value={filters.group}
-                    onChange={(_, v) =>
-                      setFilters((f) => ({ ...f, group: v }))
-                    }
-                    onClear={() => setFilters((f) => ({ ...f, group: '' }))}
                   />
                 </Th>
                 <Th>
@@ -545,7 +509,6 @@ export default function SystemsPage() {
                         {label.text}
                       </Label>
                     </Td>
-                    <Td dataLabel="Group">{groupNameFor(s) || '—'}</Td>
                     <Td dataLabel="Last seen">{formatLastSeen(s.lastSeen)}</Td>
                     <Td dataLabel="Added">
                       {new Date(s.createdAt).toLocaleString()}
@@ -554,7 +517,7 @@ export default function SystemsPage() {
                       <ActionsColumn
                         items={[
                           {
-                            title: `Remove ${s.name}`,
+                            title: `Remove ${s.name} from group`,
                             onClick: () =>
                               setConfirm({ kind: 'remove-one', system: s }),
                           },
@@ -569,7 +532,7 @@ export default function SystemsPage() {
         )}
       </PageSection>
 
-      {systems !== null && systems.length > 0 && pageSize !== 'all' && (
+      {systems !== null && members.length > 0 && pageSize !== 'all' && (
         <PageSection>
           <Toolbar>
             <ToolbarContent>
@@ -599,11 +562,21 @@ export default function SystemsPage() {
         </PageSection>
       )}
 
-      <AddSystemModal
+      <AddSystemsModal
         isOpen={isAddOpen}
+        candidates={ungrouped}
+        groupName={group.name}
         onClose={() => setAddOpen(false)}
-        onCreated={async () => {
+        onAdded={async (ids) => {
           setAddOpen(false)
+          setActionError(null)
+          try {
+            for (const id of ids) {
+              await setSystemGroup(id, group.id)
+            }
+          } catch (err) {
+            setActionError(err instanceof Error ? err.message : String(err))
+          }
           await refresh()
         }}
       />
@@ -614,10 +587,10 @@ export default function SystemsPage() {
         onConfirm={async () => {
           if (!confirm) return
           if (confirm.kind === 'remove-one') {
-            await removeOne(confirm.system.id)
+            await removeFromGroup(confirm.system.id)
           } else {
             for (const id of confirm.ids) {
-              await removeOne(id)
+              await removeFromGroup(id)
             }
             setSelected(new Set())
           }
@@ -629,54 +602,56 @@ export default function SystemsPage() {
   )
 }
 
-type AddSystemModalProps = {
+type AddSystemsModalProps = {
   isOpen: boolean
+  candidates: System[]
+  groupName: string
   onClose: () => void
-  onCreated: () => void | Promise<void>
+  onAdded: (ids: string[]) => void | Promise<void>
 }
 
-function AddSystemModal({ isOpen, onClose, onCreated }: AddSystemModalProps) {
-  const [hostname, setHostname] = useState('')
-  const [name, setName] = useState('')
-  const [nameEdited, setNameEdited] = useState(false)
+function AddSystemsModal({
+  isOpen,
+  candidates,
+  groupName,
+  onClose,
+  onAdded,
+}: AddSystemsModalProps) {
+  const [picked, setPicked] = useState<Set<string>>(new Set())
+  const [filter, setFilter] = useState('')
   const [submitting, setSubmitting] = useState(false)
-  const [submitError, setSubmitError] = useState<string | null>(null)
 
   useEffect(() => {
     if (isOpen) {
-      setHostname('')
-      setName('')
-      setNameEdited(false)
-      setSubmitError(null)
+      setPicked(new Set())
+      setFilter('')
       setSubmitting(false)
     }
   }, [isOpen])
 
-  const onHostnameChange = (v: string) => {
-    setHostname(v)
-    if (!nameEdited) setName(v)
+  const filtered = useMemo(() => {
+    const q = filter.trim().toLowerCase()
+    if (!q) return candidates
+    return candidates.filter(
+      (c) =>
+        c.name.toLowerCase().includes(q) ||
+        c.hostname.toLowerCase().includes(q),
+    )
+  }, [candidates, filter])
+
+  const toggle = (id: string, checked: boolean) => {
+    setPicked((prev) => {
+      const next = new Set(prev)
+      if (checked) next.add(id)
+      else next.delete(id)
+      return next
+    })
   }
 
-  const onNameChange = (v: string) => {
-    setName(v)
-    setNameEdited(true)
-  }
-
-  const onSubmit = async (e: React.FormEvent) => {
-    e.preventDefault()
+  const onSubmit = async () => {
     setSubmitting(true)
-    setSubmitError(null)
     try {
-      await createSystem({ name, hostname })
-      await onCreated()
-    } catch (err) {
-      const msg =
-        err instanceof ApiError
-          ? err.message
-          : err instanceof Error
-            ? err.message
-            : String(err)
-      setSubmitError(msg)
+      await onAdded(Array.from(picked))
     } finally {
       setSubmitting(false)
     }
@@ -684,51 +659,54 @@ function AddSystemModal({ isOpen, onClose, onCreated }: AddSystemModalProps) {
 
   return (
     <Modal
-      variant="small"
+      variant="medium"
       isOpen={isOpen}
       onClose={onClose}
-      aria-labelledby="add-system-title"
+      aria-labelledby="add-systems-title"
     >
-      <ModalHeader title="Add system" labelId="add-system-title" />
+      <ModalHeader
+        title={`Add systems to ${groupName}`}
+        labelId="add-systems-title"
+      />
       <ModalBody>
-        <Form id="add-system-form" onSubmit={onSubmit}>
-          <FormGroup label="Hostname" fieldId="add-system-hostname" isRequired>
-            <TextInput
-              id="add-system-hostname"
-              value={hostname}
-              onChange={(_, v) => onHostnameChange(v)}
-              isRequired
-              isDisabled={submitting}
-              autoFocus
-              placeholder="server.example.com or 10.0.0.5"
-            />
-          </FormGroup>
-          <FormGroup label="Name" fieldId="add-system-name" isRequired>
-            <TextInput
-              id="add-system-name"
-              value={name}
-              onChange={(_, v) => onNameChange(v)}
-              isRequired
-              isDisabled={submitting}
-              placeholder="Defaults to hostname"
-            />
-          </FormGroup>
-          {submitError && (
-            <Alert variant="danger" title="Could not add system" isInline>
-              {submitError}
-            </Alert>
-          )}
-        </Form>
+        <SearchInput
+          aria-label="Filter systems"
+          placeholder="Filter by name or hostname"
+          value={filter}
+          onChange={(_, v) => setFilter(v)}
+          onClear={() => setFilter('')}
+        />
+        {candidates.length === 0 ? (
+          <EmptyState titleText="No ungrouped systems" headingLevel="h3">
+            <EmptyStateBody>
+              Every system already belongs to a group.
+            </EmptyStateBody>
+          </EmptyState>
+        ) : (
+          <div style={{ maxHeight: '20rem', overflowY: 'auto', marginTop: '0.5rem' }}>
+            {filtered.map((c) => (
+              <Checkbox
+                key={c.id}
+                id={`add-system-${c.id}`}
+                label={`${c.name} (${c.hostname})`}
+                isChecked={picked.has(c.id)}
+                onChange={(_, checked) => toggle(c.id, checked)}
+              />
+            ))}
+            {filtered.length === 0 && (
+              <p style={{ marginTop: '0.5rem' }}>No matches.</p>
+            )}
+          </div>
+        )}
       </ModalBody>
       <ModalFooter>
         <Button
-          type="submit"
-          form="add-system-form"
           variant="primary"
+          onClick={() => void onSubmit()}
+          isDisabled={submitting || picked.size === 0}
           isLoading={submitting}
-          isDisabled={submitting || !hostname || !name}
         >
-          Add
+          Add {picked.size > 0 ? `(${picked.size})` : ''}
         </Button>
         <Button variant="link" onClick={onClose} isDisabled={submitting}>
           Cancel
@@ -744,21 +722,25 @@ type ConfirmRemoveModalProps = {
   onConfirm: () => void | Promise<void>
 }
 
-function ConfirmRemoveModal({ confirm, onCancel, onConfirm }: ConfirmRemoveModalProps) {
+function ConfirmRemoveModal({
+  confirm,
+  onCancel,
+  onConfirm,
+}: ConfirmRemoveModalProps) {
   const isOpen = confirm !== null
   const isBulk = confirm?.kind === 'remove-bulk'
-  const title = isBulk ? 'Remove systems?' : 'Remove system?'
+  const title = isBulk ? 'Remove from group?' : 'Remove from group?'
   const body = isBulk
-    ? `Permanently remove ${confirm && confirm.kind === 'remove-bulk' ? confirm.ids.length : 0} systems? This cannot be undone.`
-    : `Permanently remove ${confirm?.kind === 'remove-one' ? confirm.system.name : ''}? This cannot be undone.`
+    ? `Remove ${confirm && confirm.kind === 'remove-bulk' ? confirm.ids.length : 0} systems from this group? The systems themselves are not deleted.`
+    : `Remove ${confirm?.kind === 'remove-one' ? confirm.system.name : ''} from this group? The system itself is not deleted.`
   return (
     <Modal
       variant="small"
       isOpen={isOpen}
       onClose={onCancel}
-      aria-labelledby="remove-system-title"
+      aria-labelledby="remove-from-group-title"
     >
-      <ModalHeader title={title} labelId="remove-system-title" />
+      <ModalHeader title={title} labelId="remove-from-group-title" />
       <ModalBody>{body}</ModalBody>
       <ModalFooter>
         <Button variant="danger" onClick={() => void onConfirm()}>

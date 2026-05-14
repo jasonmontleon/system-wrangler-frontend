@@ -60,7 +60,15 @@ describe('SystemsPage', () => {
 
   beforeEach(() => {
     fetchMock = vi.fn()
-    vi.stubGlobal('fetch', fetchMock)
+    // The Group column reads /api/groups on mount; short-circuit it to an
+    // empty list so the mockResolvedValueOnce queue for /api/systems is
+    // not consumed by the unrelated groups request.
+    const wrapped = (input: FetchInput, init?: FetchInit) => {
+      const url = typeof input === 'string' ? input : input.toString()
+      if (url.startsWith('/api/groups')) return Promise.resolve(jsonResponse([]))
+      return (fetchMock as unknown as typeof fetch)(input, init)
+    }
+    vi.stubGlobal('fetch', wrapped)
     FakeEventSource.instances = []
     vi.stubGlobal('EventSource', FakeEventSource)
   })
@@ -90,8 +98,10 @@ describe('SystemsPage', () => {
     expect(within(downRow).getByText('Unreachable')).toBeInTheDocument()
     const freshRow = screen.getByText('fresh').closest('tr')!
     expect(within(freshRow).getByText('Unprobed')).toBeInTheDocument()
-    expect(within(downRow).getByText('—')).toBeInTheDocument()
-    expect(within(freshRow).getByText('—')).toBeInTheDocument()
+    const lastSeenCell = (row: HTMLElement) =>
+      row.querySelector('td[data-label="Last seen"]') as HTMLElement
+    expect(lastSeenCell(downRow)).toHaveTextContent('—')
+    expect(lastSeenCell(freshRow)).toHaveTextContent('—')
   })
 
   it('opens Add system from the Actions menu, defaults Name from Hostname, and submits', async () => {

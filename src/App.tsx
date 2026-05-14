@@ -29,9 +29,12 @@ import {
 } from '@patternfly/react-core'
 import AuditPage from './pages/AuditPage'
 import DashboardPage from './pages/DashboardPage'
+import GroupDetailPage from './pages/GroupDetailPage'
+import GroupsPage from './pages/GroupsPage'
 import ProfilePage from './pages/ProfilePage'
 import SystemsPage from './pages/SystemsPage'
 import UsersPage from './pages/UsersPage'
+import type { Group } from './api/groups'
 import ForcePasswordChange from './components/ForcePasswordChange'
 import LoginForm from './components/LoginForm'
 import SetupForm from './components/SetupForm'
@@ -40,12 +43,20 @@ import { useTheme } from './hooks/useTheme'
 import wordmarkDark from './assets/wordmark-dark.svg'
 import wordmarkLight from './assets/wordmark-light.svg'
 
-type PageKey = 'dashboard' | 'systems' | 'users' | 'audit' | 'profile'
+type PageKey =
+  | 'dashboard'
+  | 'systems'
+  | 'groups'
+  | 'group-detail'
+  | 'users'
+  | 'audit'
+  | 'profile'
 
 export default function App() {
   const auth = useAuth()
   const [page, setPage] = useState<PageKey>('dashboard')
   const [menuOpen, setMenuOpen] = useState(false)
+  const [activeGroup, setActiveGroup] = useState<Group | null>(null)
 
   const serverTheme =
     auth.state.kind === 'ready' ? auth.state.status.user?.theme : undefined
@@ -180,6 +191,16 @@ export default function App() {
             >
               Systems
             </NavItem>
+            <NavItem
+              isActive={page === 'groups' || page === 'group-detail'}
+              onClick={() => {
+                setActiveGroup(null)
+                setPage('groups')
+              }}
+              to="#"
+            >
+              System Groups
+            </NavItem>
           </NavGroup>
           <NavGroup title="Administration">
             <NavItem
@@ -209,6 +230,23 @@ export default function App() {
     <Page masthead={masthead} sidebar={sidebar}>
       {page === 'dashboard' && <DashboardPage />}
       {page === 'systems' && <SystemsPage />}
+      {page === 'groups' && (
+        <GroupsPage
+          onOpenGroup={(g) => {
+            setActiveGroup(g)
+            setPage('group-detail')
+          }}
+        />
+      )}
+      {page === 'group-detail' && activeGroup && (
+        <GroupDetailPage
+          group={activeGroup}
+          onBack={() => {
+            setActiveGroup(null)
+            setPage('groups')
+          }}
+        />
+      )}
       {page === 'users' && <UsersPage currentUserId={user.id} />}
       {page === 'audit' && <AuditPage />}
       {page === 'profile' && (

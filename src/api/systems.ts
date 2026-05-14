@@ -9,6 +9,7 @@ export type System = {
   createdAt: string
   status: SystemStatus
   lastSeen?: string
+  groupId?: string | null
 }
 
 export type SystemInput = {
