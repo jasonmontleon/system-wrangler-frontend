@@ -230,6 +230,83 @@ describe('AuditPage', () => {
     expect(screen.getByText(/page 1/i)).toBeInTheDocument()
   })
 
+  // alwaysOneRecord installs a fetch handler that returns a single
+  // audit record on every call. Used by the filter tests where the
+  // table needs to stay rendered (and therefore the filter row
+  // accessible) across multiple refetches; Response bodies can only
+  // be consumed once, so a single mockResolvedValue is exhausted
+  // after the first await.
+  function alwaysOneRecord() {
+    fetchMock.mockImplementation(() =>
+      Promise.resolve(jsonResponse({ records: [record()] })),
+    )
+  }
+
+  it('sends filter inputs to the backend after debounce', async () => {
+    alwaysOneRecord()
+    render(<AuditPage />)
+    await screen.findByText('auth.login')
+
+    fireEvent.change(screen.getByLabelText(/filter actor/i), {
+      target: { value: 'alice' },
+    })
+    await waitFor(() => {
+      expect(lastFetchURL(fetchMock)).toContain('actor_label=alice')
+    })
+    // action gets a trailing '*' auto-appended so partial typing is
+    // treated as a prefix.
+    fireEvent.change(screen.getByLabelText(/filter action/i), {
+      target: { value: 'auth' },
+    })
+    await waitFor(() => {
+      expect(lastFetchURL(fetchMock)).toContain('action=auth*')
+    })
+  })
+
+  it('parses YYYY-MM-DD into a since/until day range', async () => {
+    alwaysOneRecord()
+    render(<AuditPage />)
+    await screen.findByText('auth.login')
+
+    fireEvent.change(screen.getByLabelText(/filter time/i), {
+      target: { value: '2026-05-15' },
+    })
+    await waitFor(() => {
+      const url = lastFetchURL(fetchMock)
+      const since = Date.parse('2026-05-15T00:00:00Z')
+      expect(url).toContain('since=' + since)
+      expect(url).toContain('until=' + (since + 24 * 60 * 60 * 1000))
+    })
+  })
+
+  it('only filters by outcome when the input resolves to a known value', async () => {
+    alwaysOneRecord()
+    render(<AuditPage />)
+    await screen.findByText('auth.login')
+
+    // Partial input "s" matches "success" prefix uniquely → sent.
+    fireEvent.change(screen.getByLabelText(/filter outcome/i), {
+      target: { value: 's' },
+    })
+    await waitFor(() => {
+      expect(lastFetchURL(fetchMock)).toContain('outcome=success')
+    })
+    // Ambiguous prefix "f" only matches "failure" → still sent.
+    fireEvent.change(screen.getByLabelText(/filter outcome/i), {
+      target: { value: 'f' },
+    })
+    await waitFor(() => {
+      expect(lastFetchURL(fetchMock)).toContain('outcome=failure')
+    })
+    // "x" matches no known outcome → param is dropped.
+    fireEvent.change(screen.getByLabelText(/filter outcome/i), {
+      target: { value: 'x' },
+    })
+    await waitFor(() => {
+      expect(lastFetchURL(fetchMock)).not.toContain('outcome=')
+    })
+  })
+
   it('resets paging back to page 1 when the page size changes', async () => {
     // page 1, then forward to page 2, then change page size: should refetch
     // with the new size and no cursor (page 1).

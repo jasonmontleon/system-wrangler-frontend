@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   Alert,
   Bullseye,
@@ -32,6 +32,7 @@ import {
 } from '@patternfly/react-table'
 import {
   type AuditCursor,
+  type AuditListParams,
   type AuditOutcome,
   type AuditRecord,
   listAudit,
@@ -75,6 +76,71 @@ function formatTarget(r: AuditRecord): string {
 // cursor until exhausted.
 const ALL_LIMIT = 500
 
+// FILTER_DEBOUNCE_MS is how long the page waits after the last
+// keystroke before issuing a new query. Short enough to feel
+// responsive when an operator stops typing; long enough that
+// typing through a 10-character substring doesn't fire ten
+// requests.
+const FILTER_DEBOUNCE_MS = 300
+
+const KNOWN_OUTCOMES: AuditOutcome[] = ['success', 'failure', 'denied']
+
+// matchOutcome accepts the user's free-text outcome filter and returns
+// it as a canonical AuditOutcome when the text is an unambiguous match
+// for one of the three known values (case-insensitive prefix). The
+// backend's outcome filter is exact-match, so any input that doesn't
+// resolve cleanly is passed up as `undefined` — better to show
+// everything than to silently mismatch.
+function matchOutcome(input: string): AuditOutcome | undefined {
+  const v = input.trim().toLowerCase()
+  if (!v) return undefined
+  const hits = KNOWN_OUTCOMES.filter((o) => o.startsWith(v))
+  return hits.length === 1 ? hits[0] : undefined
+}
+
+// parseDayRange parses a strict YYYY-MM-DD input as a UTC day range
+// (since=that midnight, until=next midnight). Returns null for any
+// other input shape so the caller can leave the filter unset.
+function parseDayRange(
+  input: string,
+): { sinceMs: number; untilMs: number } | null {
+  const v = input.trim()
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(v)) return null
+  const ms = Date.parse(v + 'T00:00:00Z')
+  if (Number.isNaN(ms)) return null
+  return { sinceMs: ms, untilMs: ms + 24 * 60 * 60 * 1000 }
+}
+
+// filterParamsFor compiles the visible filter state into the
+// AuditListParams shape the backend understands. The mapping is
+// deliberately lossy where the backend can't match the UI's
+// substring semantics: outcome is exact (so partial input is
+// dropped), and occurredAt only fires on a complete YYYY-MM-DD.
+function filterParamsFor(filters: Record<string, string>): AuditListParams {
+  const params: AuditListParams = {}
+  const action = filters.action.trim()
+  if (action) {
+    // The backend treats a trailing '*' as a prefix; auto-append
+    // one so "auth" matches "auth.login.failed" the way operators
+    // intuitively expect from a typeahead.
+    params.action = action.endsWith('*') ? action : action + '*'
+  }
+  const actor = filters.actor.trim()
+  if (actor) params.actorLabel = actor
+  const target = filters.target.trim()
+  if (target) params.targetLabel = target
+  const outcome = matchOutcome(filters.outcome)
+  if (outcome) params.outcome = outcome
+  const reqID = filters.requestId.trim()
+  if (reqID) params.requestId = reqID
+  const range = parseDayRange(filters.occurredAt)
+  if (range) {
+    params.sinceMs = range.sinceMs
+    params.untilMs = range.untilMs
+  }
+  return params
+}
+
 export default function AuditPage() {
   const [pageSize, setPageSize] = useState<PageSize>(25)
   const [sizeOpen, setSizeOpen] = useState(false)
@@ -92,15 +158,58 @@ export default function AuditPage() {
     outcome: '',
     requestId: '',
   })
+  // debouncedFilters trails the visible filter state by
+  // FILTER_DEBOUNCE_MS so the network doesn't fire on every
+  // keystroke. The page reads this — not `filters` — when
+  // assembling the listAudit query.
+  const [debouncedFilters, setDebouncedFilters] = useState(filters)
+  useEffect(() => {
+    const id = window.setTimeout(
+      () => setDebouncedFilters(filters),
+      FILTER_DEBOUNCE_MS,
+    )
+    return () => window.clearTimeout(id)
+  }, [filters])
+  const filterParams = useMemo(
+    () => filterParamsFor(debouncedFilters),
+    [debouncedFilters],
+  )
+  // filtersKey is the dependency the cursor-reset effect watches so
+  // it doesn't trigger on object identity. Keeps the cursor stable
+  // when an unrelated keystroke (e.g. partial outcome input) leaves
+  // the resolved filterParams unchanged.
+  const filtersKey = JSON.stringify(filterParams)
   const [sortKey, setSortKey] = useState<SortKey>('occurredAt')
   const [sortDir, setSortDir] = useState<SortDir>('desc')
 
   const currentCursor = stack[stack.length - 1]
   const pageIndex = stack.length - 1
 
+  // Resolved filter set changed → roll the cursor stack back to
+  // the first page so the next fetch starts at the head of the
+  // newly-filtered result set. Skip on the initial render: the
+  // initial filterParams is the empty object and rolling back to
+  // [undefined] when we're already at [undefined] would be a
+  // no-op that still triggers a render.
+  const firstFiltersKey = useRef(filtersKey)
+  useEffect(() => {
+    if (filtersKey === firstFiltersKey.current) return
+    setStack([undefined])
+  }, [filtersKey])
+
   const fetchPage = useCallback(
-    async (size: PageSize, cursor: AuditCursor | undefined) => {
-      setRecords(null)
+    async (
+      size: PageSize,
+      cursor: AuditCursor | undefined,
+      params: AuditListParams,
+    ) => {
+      // Deliberately leave `records` in place across a refetch. A
+      // debounced filter keystroke that called setRecords(null) here
+      // would unmount the <Table> (and its <Thead> filter inputs),
+      // pulling focus away from whatever the operator was typing
+      // into. Stale rows linger for ~50ms until the response lands;
+      // the initial null-records gate (records === null) still
+      // shows the spinner on first load.
       setLoadError(null)
       try {
         if (size === 'all') {
@@ -109,7 +218,7 @@ export default function AuditPage() {
           // Loop until the server returns no next cursor. Per-request cap
           // is enforced by the backend (MaxLimit=500).
           for (;;) {
-            const resp = await listAudit({ limit: ALL_LIMIT, after })
+            const resp = await listAudit({ ...params, limit: ALL_LIMIT, after })
             all.push(...resp.records)
             if (!resp.next) break
             after = resp.next
@@ -117,7 +226,7 @@ export default function AuditPage() {
           setRecords(all)
           setNextCursor(undefined)
         } else {
-          const resp = await listAudit({ limit: size, after: cursor })
+          const resp = await listAudit({ ...params, limit: size, after: cursor })
           setRecords(resp.records)
           setNextCursor(resp.next)
         }
@@ -130,8 +239,8 @@ export default function AuditPage() {
   )
 
   useEffect(() => {
-    void fetchPage(pageSize, currentCursor)
-  }, [fetchPage, pageSize, currentCursor])
+    void fetchPage(pageSize, currentCursor, filterParams)
+  }, [fetchPage, pageSize, currentCursor, filterParams])
 
   const onChangePageSize = (size: PageSize) => {
     setSizeOpen(false)
@@ -177,33 +286,14 @@ export default function AuditPage() {
     columnIndex,
   })
 
+  // Filtering happens server-side via debouncedFilters → filterParams
+  // → listAudit. This memo only re-sorts the page the server already
+  // returned; the default order is occurred_at DESC (backend), so the
+  // client-side sort is for column-header overrides like
+  // "sort by action."
   const filteredRecords = useMemo(() => {
     if (!records) return null
-    const f = {
-      occurredAt: filters.occurredAt.trim().toLowerCase(),
-      actor: filters.actor.trim().toLowerCase(),
-      action: filters.action.trim().toLowerCase(),
-      target: filters.target.trim().toLowerCase(),
-      outcome: filters.outcome.trim().toLowerCase(),
-      requestId: filters.requestId.trim().toLowerCase(),
-    }
-    const rows = records.filter((r) => {
-      if (f.occurredAt && !formatTime(r.occurredAt).toLowerCase().includes(f.occurredAt))
-        return false
-      if (f.actor && !formatActor(r).toLowerCase().includes(f.actor)) return false
-      if (f.action && !r.action.toLowerCase().includes(f.action)) return false
-      if (f.target && !formatTarget(r).toLowerCase().includes(f.target)) return false
-      if (
-        f.outcome &&
-        !(OUTCOME_LABELS[r.outcome]?.text.toLowerCase() ?? r.outcome).includes(
-          f.outcome,
-        )
-      )
-        return false
-      if (f.requestId && !(r.requestId ?? '').toLowerCase().includes(f.requestId))
-        return false
-      return true
-    })
+    const rows = [...records]
     rows.sort((a, b) => {
       let av: string | number = ''
       let bv: string | number = ''
@@ -231,7 +321,7 @@ export default function AuditPage() {
       return 0
     })
     return rows
-  }, [records, filters, sortKey, sortDir])
+  }, [records, sortKey, sortDir])
 
   return (
     <>
@@ -282,23 +372,7 @@ export default function AuditPage() {
             <Spinner />
           </Bullseye>
         )}
-        {records !== null && records.length === 0 && pageIndex === 0 && (
-          <EmptyState titleText="No audit records" headingLevel="h2">
-            <EmptyStateBody>
-              Privileged actions like login and system changes appear here as
-              they happen.
-            </EmptyStateBody>
-          </EmptyState>
-        )}
-        {records !== null && records.length === 0 && pageIndex > 0 && (
-          <EmptyState titleText="No more records" headingLevel="h2">
-            <EmptyStateBody>
-              This page is past the end of the audit log. Use Previous to go
-              back.
-            </EmptyStateBody>
-          </EmptyState>
-        )}
-        {filteredRecords !== null && records !== null && records.length > 0 && (
+        {filteredRecords !== null && records !== null && (
           <Table aria-label="Audit log" variant="compact">
             <Thead>
               <Tr>
@@ -327,7 +401,7 @@ export default function AuditPage() {
                 <Th>
                   <SearchInput
                     aria-label="Filter time"
-                    placeholder="Filter time"
+                    placeholder="YYYY-MM-DD"
                     value={filters.occurredAt}
                     onChange={(_, v) =>
                       setFilters((f) => ({ ...f, occurredAt: v }))
@@ -365,7 +439,7 @@ export default function AuditPage() {
                 <Th>
                   <SearchInput
                     aria-label="Filter outcome"
-                    placeholder="Filter outcome"
+                    placeholder="success / failure / denied"
                     value={filters.outcome}
                     onChange={(_, v) => setFilters((f) => ({ ...f, outcome: v }))}
                     onClear={() => setFilters((f) => ({ ...f, outcome: '' }))}
@@ -384,6 +458,18 @@ export default function AuditPage() {
                 </Th>
               </Tr>
             </Thead>
+            {filteredRecords.length === 0 && (
+              <Tbody>
+                <Tr>
+                  <Td colSpan={7}>
+                    <EmptyAuditRow
+                      hasFilters={Object.keys(filterParams).length > 0}
+                      pageIndex={pageIndex}
+                    />
+                  </Td>
+                </Tr>
+              </Tbody>
+            )}
             {filteredRecords.map((r, i) => {
               const isExpanded = expanded.has(r.id)
               const outcome = OUTCOME_LABELS[r.outcome] ?? OUTCOME_LABELS.success
@@ -453,6 +539,50 @@ export default function AuditPage() {
         </PageSection>
       )}
     </>
+  )
+}
+
+// EmptyAuditRow renders the "nothing here" content inside the Table
+// body so the surrounding Thead — and its filter row — stays
+// mounted. Rendering an EmptyState outside the Table would unmount
+// the SearchInputs, and the operator who just typed too-restrictive
+// a filter would have no way to relax it.
+function EmptyAuditRow({
+  hasFilters,
+  pageIndex,
+}: {
+  hasFilters: boolean
+  pageIndex: number
+}) {
+  if (hasFilters) {
+    return (
+      <EmptyState
+        titleText="No records match the current filters"
+        headingLevel="h2"
+      >
+        <EmptyStateBody>
+          Clear or relax the filters above to widen the search.
+        </EmptyStateBody>
+      </EmptyState>
+    )
+  }
+  if (pageIndex > 0) {
+    return (
+      <EmptyState titleText="No more records" headingLevel="h2">
+        <EmptyStateBody>
+          This page is past the end of the audit log. Use Previous to go
+          back.
+        </EmptyStateBody>
+      </EmptyState>
+    )
+  }
+  return (
+    <EmptyState titleText="No audit records" headingLevel="h2">
+      <EmptyStateBody>
+        Privileged actions like login and system changes appear here as
+        they happen.
+      </EmptyStateBody>
+    </EmptyState>
   )
 }
 

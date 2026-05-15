@@ -46,6 +46,38 @@ describe('listAudit', () => {
     )
   })
 
+  it('serializes filter params with snake_case keys', async () => {
+    fetchMock.mockResolvedValueOnce(jsonResponse({ records: [] }))
+    await listAudit({
+      action: 'auth.*',
+      actorLabel: 'alice',
+      targetLabel: 'db-',
+      outcome: 'failure',
+      requestId: 'req-xyz',
+      sinceMs: 1700000000000,
+      untilMs: 1700000099999,
+    })
+    const url = String(fetchMock.mock.calls[0][0])
+    expect(url.startsWith('/api/admin/audit?')).toBe(true)
+    expect(url).toContain('action=auth.*')
+    expect(url).toContain('actor_label=alice')
+    expect(url).toContain('target_label=db-')
+    expect(url).toContain('outcome=failure')
+    expect(url).toContain('request_id=req-xyz')
+    expect(url).toContain('since=1700000000000')
+    expect(url).toContain('until=1700000099999')
+  })
+
+  it('omits empty and undefined filter params', async () => {
+    fetchMock.mockResolvedValueOnce(jsonResponse({ records: [] }))
+    await listAudit({
+      action: '',
+      actorLabel: undefined,
+      outcome: undefined,
+    })
+    expect(fetchMock.mock.calls[0][0]).toBe('/api/admin/audit')
+  })
+
   it('returns the parsed response on success', async () => {
     fetchMock.mockResolvedValueOnce(
       jsonResponse({
