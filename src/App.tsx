@@ -39,6 +39,7 @@ import type { Group } from './api/groups'
 import ForcePasswordChange from './components/ForcePasswordChange'
 import LoginForm from './components/LoginForm'
 import SetupForm from './components/SetupForm'
+import UndecryptableSecretsBanner from './components/UndecryptableSecretsBanner'
 import { useAuth } from './hooks/useAuth'
 import { isGlobalAdmin, useScope } from './hooks/useScope'
 import { useTheme } from './hooks/useTheme'
@@ -241,6 +242,13 @@ export default function App() {
 
   return (
     <Page masthead={masthead} sidebar={sidebar}>
+      {isGlobalAdmin(scope.state) && (
+        <PageSection>
+          <UndecryptableSecretsBanner
+            onNavigateToUsers={() => setPage('users')}
+          />
+        </PageSection>
+      )}
       {page === 'dashboard' && <DashboardPage />}
       {page === 'systems' && <SystemsPage />}
       {page === 'groups' && (
