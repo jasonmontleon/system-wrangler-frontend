@@ -3,7 +3,6 @@
 import { useEffect, useState, type FormEvent } from 'react'
 import {
   Alert,
-  Bullseye,
   Button,
   Card,
   CardBody,
@@ -15,6 +14,14 @@ import {
 import type { LoginResult } from '../api/auth'
 import { totpVerify } from '../api/auth'
 import TotpChallengeForm from './TotpChallengeForm'
+import wordmarkDark from '../assets/wordmark-dark.svg'
+import wordmarkLight from '../assets/wordmark-light.svg'
+import { useTheme } from '../hooks/useTheme'
+
+// CARD_WIDTH is the shared width of the PatternFly Card ("the
+// box") and the wordmark above it; pulling it out as a constant
+// keeps the two visually aligned if either is later resized.
+const CARD_WIDTH = 380
 
 type Props = {
   onLogin: (username: string, password: string) => Promise<LoginResult>
@@ -25,6 +32,10 @@ type Props = {
 }
 
 export default function LoginForm({ onLogin, onTotpComplete }: Props) {
+  // No authenticated user yet, so useTheme falls back to the
+  // project default; matches the wordmark choice the masthead
+  // uses once the user is signed in.
+  const [theme] = useTheme()
   const [username, setUsername] = useState('')
   const [password, setPassword] = useState('')
   const [submitting, setSubmitting] = useState(false)
@@ -92,8 +103,26 @@ export default function LoginForm({ onLogin, onTotpComplete }: Props) {
   }
 
   return (
-    <Bullseye>
-      <Card style={{ width: 380 }}>
+    <div
+      style={{
+        minHeight: '100vh',
+        paddingTop: 64,
+        display: 'flex',
+        flexDirection: 'column',
+        alignItems: 'center',
+      }}
+    >
+      <img
+        src={theme === 'dark' ? wordmarkDark : wordmarkLight}
+        alt="System Wrangler"
+        style={{
+          width: CARD_WIDTH,
+          height: 'auto',
+          marginBottom: 24,
+          display: 'block',
+        }}
+      />
+      <Card style={{ width: CARD_WIDTH }}>
         <CardTitle>Sign in</CardTitle>
         <CardBody>
           <Form onSubmit={onSubmit}>
@@ -136,7 +165,7 @@ export default function LoginForm({ onLogin, onTotpComplete }: Props) {
           </Form>
         </CardBody>
       </Card>
-    </Bullseye>
+    </div>
   )
 }
 

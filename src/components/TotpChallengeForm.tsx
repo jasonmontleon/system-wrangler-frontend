@@ -3,7 +3,6 @@
 import { useState, type FormEvent } from 'react'
 import {
   Alert,
-  Bullseye,
   Button,
   Card,
   CardBody,
@@ -13,6 +12,14 @@ import {
   FormGroup,
   TextInput,
 } from '@patternfly/react-core'
+import wordmarkDark from '../assets/wordmark-dark.svg'
+import wordmarkLight from '../assets/wordmark-light.svg'
+import { useTheme } from '../hooks/useTheme'
+
+// CARD_WIDTH must match the LoginForm value so a user moving
+// from the password step to this 2FA step doesn't see the box
+// resize or shift horizontally.
+const CARD_WIDTH = 380
 
 type Props = {
   // onVerify is supplied by the parent so it can chain a useAuth.refresh()
@@ -25,6 +32,7 @@ type Props = {
 }
 
 export default function TotpChallengeForm({ onVerify, onCancel }: Props) {
+  const [theme] = useTheme()
   const [useRecovery, setUseRecovery] = useState(false)
   const [code, setCode] = useState('')
   const [rememberDevice, setRememberDevice] = useState(false)
@@ -56,8 +64,26 @@ export default function TotpChallengeForm({ onVerify, onCancel }: Props) {
   }
 
   return (
-    <Bullseye>
-      <Card style={{ width: 380 }}>
+    <div
+      style={{
+        minHeight: '100vh',
+        paddingTop: 64,
+        display: 'flex',
+        flexDirection: 'column',
+        alignItems: 'center',
+      }}
+    >
+      <img
+        src={theme === 'dark' ? wordmarkDark : wordmarkLight}
+        alt="System Wrangler"
+        style={{
+          width: CARD_WIDTH,
+          height: 'auto',
+          marginBottom: 24,
+          display: 'block',
+        }}
+      />
+      <Card style={{ width: CARD_WIDTH }}>
         <CardTitle>Two-factor authentication</CardTitle>
         <CardBody>
           <Form onSubmit={onSubmit}>
@@ -123,6 +149,6 @@ export default function TotpChallengeForm({ onVerify, onCancel }: Props) {
           </Form>
         </CardBody>
       </Card>
-    </Bullseye>
+    </div>
   )
 }
