@@ -28,6 +28,7 @@ import {
   ToolbarItem,
 } from '@patternfly/react-core'
 import AuditPage from './pages/AuditPage'
+import BackupPage from './pages/BackupPage'
 import DashboardPage from './pages/DashboardPage'
 import GroupDetailPage from './pages/GroupDetailPage'
 import GroupsPage from './pages/GroupsPage'
@@ -39,6 +40,7 @@ import ForcePasswordChange from './components/ForcePasswordChange'
 import LoginForm from './components/LoginForm'
 import SetupForm from './components/SetupForm'
 import { useAuth } from './hooks/useAuth'
+import { isGlobalAdmin, useScope } from './hooks/useScope'
 import { useTheme } from './hooks/useTheme'
 import wordmarkDark from './assets/wordmark-dark.svg'
 import wordmarkLight from './assets/wordmark-light.svg'
@@ -50,10 +52,12 @@ type PageKey =
   | 'group-detail'
   | 'users'
   | 'audit'
+  | 'backup'
   | 'profile'
 
 export default function App() {
   const auth = useAuth()
+  const scope = useScope()
   const [page, setPage] = useState<PageKey>('dashboard')
   const [menuOpen, setMenuOpen] = useState(false)
   const [activeGroup, setActiveGroup] = useState<Group | null>(null)
@@ -217,6 +221,15 @@ export default function App() {
             >
               Audit
             </NavItem>
+            {isGlobalAdmin(scope.state) && (
+              <NavItem
+                isActive={page === 'backup'}
+                onClick={() => setPage('backup')}
+                to="#"
+              >
+                Backup
+              </NavItem>
+            )}
           </NavGroup>
           {/* Reserved for alerts, custom dashboards, and reports once those
               land; rendered now so the structure of the sidebar is visible. */}
@@ -249,6 +262,7 @@ export default function App() {
       )}
       {page === 'users' && <UsersPage currentUserId={user.id} />}
       {page === 'audit' && <AuditPage />}
+      {page === 'backup' && isGlobalAdmin(scope.state) && <BackupPage />}
       {page === 'profile' && (
         <ProfilePage
           user={user}
