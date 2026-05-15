@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { Link } from 'react-router-dom'
 import {
   Alert,
   Button,
@@ -56,11 +57,7 @@ type Confirm =
   | { kind: 'remove-one'; group: Group }
   | { kind: 'remove-bulk'; ids: string[] }
 
-type GroupsPageProps = {
-  onOpenGroup: (group: Group) => void
-}
-
-export default function GroupsPage({ onOpenGroup }: GroupsPageProps) {
+export default function GroupsPage() {
   const [groups, setGroups] = useState<Group[] | null>(null)
   const [loadError, setLoadError] = useState<string | null>(null)
   const [actionError, setActionError] = useState<string | null>(null)
@@ -418,13 +415,9 @@ export default function GroupsPage({ onOpenGroup }: GroupsPageProps) {
                     }}
                   />
                   <Td dataLabel="Name" modifier="truncate">
-                    <Button
-                      variant="link"
-                      isInline
-                      onClick={() => onOpenGroup(g)}
-                    >
+                    <Link to={`/groups/${encodeURIComponent(g.id)}`}>
                       {g.name}
-                    </Button>
+                    </Link>
                   </Td>
                   <Td dataLabel="Systems">{g.systemCount}</Td>
                   <Td dataLabel="Created">

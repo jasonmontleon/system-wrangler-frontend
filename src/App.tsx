@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
-import { useState } from 'react'
+import { useState, type ReactNode } from 'react'
 import {
   Alert,
   Bullseye,
@@ -27,15 +27,16 @@ import {
   ToolbarContent,
   ToolbarItem,
 } from '@patternfly/react-core'
+import { Navigate, Route, Routes, useLocation, useNavigate } from 'react-router-dom'
 import AuditPage from './pages/AuditPage'
 import BackupPage from './pages/BackupPage'
 import DashboardPage from './pages/DashboardPage'
 import GroupDetailPage from './pages/GroupDetailPage'
 import GroupsPage from './pages/GroupsPage'
+import NotFoundPage from './pages/NotFoundPage'
 import ProfilePage from './pages/ProfilePage'
 import SystemsPage from './pages/SystemsPage'
 import UsersPage from './pages/UsersPage'
-import type { Group } from './api/groups'
 import ForcePasswordChange from './components/ForcePasswordChange'
 import LoginForm from './components/LoginForm'
 import SetupForm from './components/SetupForm'
@@ -46,22 +47,11 @@ import { useTheme } from './hooks/useTheme'
 import wordmarkDark from './assets/wordmark-dark.svg'
 import wordmarkLight from './assets/wordmark-light.svg'
 
-type PageKey =
-  | 'dashboard'
-  | 'systems'
-  | 'groups'
-  | 'group-detail'
-  | 'users'
-  | 'audit'
-  | 'backup'
-  | 'profile'
-
 export default function App() {
   const auth = useAuth()
   const scope = useScope()
-  const [page, setPage] = useState<PageKey>('dashboard')
   const [menuOpen, setMenuOpen] = useState(false)
-  const [activeGroup, setActiveGroup] = useState<Group | null>(null)
+  const navigate = useNavigate()
 
   const serverTheme =
     auth.state.kind === 'ready' ? auth.state.status.user?.theme : undefined
@@ -112,7 +102,7 @@ export default function App() {
   ) => {
     setMenuOpen(false)
     if (value === 'profile') {
-      setPage('profile')
+      navigate('/profile')
     } else if (value === 'logout') {
       void auth.logout()
     }
@@ -180,56 +170,19 @@ export default function App() {
       <PageSidebarBody>
         <Nav aria-label="Primary">
           <NavList>
-            <NavItem
-              isActive={page === 'dashboard'}
-              onClick={() => setPage('dashboard')}
-              to="#"
-            >
+            <RouterNavItem to="/" end>
               Dashboard
-            </NavItem>
+            </RouterNavItem>
           </NavList>
           <NavGroup title="Inventory">
-            <NavItem
-              isActive={page === 'systems'}
-              onClick={() => setPage('systems')}
-              to="#"
-            >
-              Systems
-            </NavItem>
-            <NavItem
-              isActive={page === 'groups' || page === 'group-detail'}
-              onClick={() => {
-                setActiveGroup(null)
-                setPage('groups')
-              }}
-              to="#"
-            >
-              System Groups
-            </NavItem>
+            <RouterNavItem to="/systems">Systems</RouterNavItem>
+            <RouterNavItem to="/groups">System Groups</RouterNavItem>
           </NavGroup>
           <NavGroup title="Administration">
-            <NavItem
-              isActive={page === 'users'}
-              onClick={() => setPage('users')}
-              to="#"
-            >
-              Users
-            </NavItem>
-            <NavItem
-              isActive={page === 'audit'}
-              onClick={() => setPage('audit')}
-              to="#"
-            >
-              Audit
-            </NavItem>
+            <RouterNavItem to="/users">Users</RouterNavItem>
+            <RouterNavItem to="/audit">Audit</RouterNavItem>
             {isGlobalAdmin(scope.state) && (
-              <NavItem
-                isActive={page === 'backup'}
-                onClick={() => setPage('backup')}
-                to="#"
-              >
-                Backup
-              </NavItem>
+              <RouterNavItem to="/backup">Backup</RouterNavItem>
             )}
           </NavGroup>
           {/* Reserved for alerts, custom dashboards, and reports once those
@@ -245,43 +198,79 @@ export default function App() {
       {isGlobalAdmin(scope.state) && (
         <PageSection>
           <UndecryptableSecretsBanner
-            onNavigateToUsers={() => setPage('users')}
+            onNavigateToUsers={() => navigate('/users')}
           />
         </PageSection>
       )}
-      {page === 'dashboard' && <DashboardPage />}
-      {page === 'systems' && <SystemsPage />}
-      {page === 'groups' && (
-        <GroupsPage
-          onOpenGroup={(g) => {
-            setActiveGroup(g)
-            setPage('group-detail')
-          }}
+      <Routes>
+        <Route path="/" element={<DashboardPage />} />
+        <Route path="/systems" element={<SystemsPage />} />
+        <Route path="/groups" element={<GroupsPage />} />
+        <Route path="/groups/:groupId" element={<GroupDetailPage />} />
+        <Route path="/users" element={<UsersPage currentUserId={user.id} />} />
+        <Route path="/audit" element={<AuditPage />} />
+        <Route
+          path="/backup"
+          element={
+            isGlobalAdmin(scope.state) ? <BackupPage /> : <Navigate to="/" replace />
+          }
         />
-      )}
-      {page === 'group-detail' && activeGroup && (
-        <GroupDetailPage
-          group={activeGroup}
-          onBack={() => {
-            setActiveGroup(null)
-            setPage('groups')
-          }}
+        <Route
+          path="/profile"
+          element={
+            <ProfilePage
+              user={user}
+              onProfileUpdate={() => {
+                void auth.refresh()
+              }}
+              onAuthChange={() => {
+                void auth.refresh()
+              }}
+            />
+          }
         />
-      )}
-      {page === 'users' && <UsersPage currentUserId={user.id} />}
-      {page === 'audit' && <AuditPage />}
-      {page === 'backup' && isGlobalAdmin(scope.state) && <BackupPage />}
-      {page === 'profile' && (
-        <ProfilePage
-          user={user}
-          onProfileUpdate={() => {
-            void auth.refresh()
-          }}
-          onAuthChange={() => {
-            void auth.refresh()
-          }}
-        />
-      )}
+        <Route path="*" element={<NotFoundPage />} />
+      </Routes>
     </Page>
+  )
+}
+
+// RouterNavItem keeps the sidebar's anchor real (so right-click
+// "open in new tab" produces a sane URL) while intercepting the
+// normal click to navigate client-side without a full reload. `end`
+// mirrors NavLink's exact-match semantics: only the root needs it,
+// the rest match by prefix so deep routes like /groups/:id keep
+// their parent active.
+function RouterNavItem({
+  to,
+  end = false,
+  children,
+}: {
+  to: string
+  end?: boolean
+  children: ReactNode
+}) {
+  const { pathname } = useLocation()
+  const navigate = useNavigate()
+  const isActive = end ? pathname === to : pathname === to || pathname.startsWith(to + '/')
+  return (
+    <NavItem
+      isActive={isActive}
+      to={to}
+      onClick={(e) => {
+        // Let modified clicks fall through to the browser so
+        // ⌘-click / middle-click / right-click → new tab still
+        // work. Plain left-click is intercepted for client-side
+        // routing.
+        const ev = e as unknown as React.MouseEvent
+        if (ev.defaultPrevented) return
+        if (ev.button !== 0) return
+        if (ev.metaKey || ev.ctrlKey || ev.shiftKey || ev.altKey) return
+        ev.preventDefault()
+        navigate(to)
+      }}
+    >
+      {children}
+    </NavItem>
   )
 }

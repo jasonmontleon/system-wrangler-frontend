@@ -24,6 +24,12 @@ async function parseError(resp: Response): Promise<string> {
   return resp.statusText || `HTTP ${resp.status}`
 }
 
+export async function getGroup(id: string): Promise<Group> {
+  const resp = await apiFetch(`/api/groups/${encodeURIComponent(id)}`)
+  if (!resp.ok) throw new ApiError(resp.status, await parseError(resp))
+  return (await resp.json()) as Group
+}
+
 export async function listGroups(): Promise<Group[]> {
   const resp = await apiFetch('/api/groups')
   if (!resp.ok) throw new ApiError(resp.status, await parseError(resp))

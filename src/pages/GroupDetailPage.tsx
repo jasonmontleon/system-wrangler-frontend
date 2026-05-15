@@ -34,6 +34,7 @@ import {
   ToolbarContent,
   ToolbarItem,
 } from '@patternfly/react-core'
+import { Link, useParams } from 'react-router-dom'
 import GroupRolesTab from '../components/GroupRolesTab'
 import { canAdminGroup, isGlobalAdmin, roleOnGroup, useScope } from '../hooks/useScope'
 import { ActionsColumn, Table, Tbody, Td, Th, Thead, Tr } from '@patternfly/react-table'
@@ -42,7 +43,8 @@ import {
   type System,
   type SystemStatus,
 } from '../api/systems'
-import { type Group, setSystemGroup } from '../api/groups'
+import { ApiError } from '../api/systems'
+import { getGroup, setSystemGroup, type Group } from '../api/groups'
 import { useEventStream } from '../hooks/useEventStream'
 
 const STATUS_LABELS: Record<
@@ -75,12 +77,10 @@ type Confirm =
   | { kind: 'remove-one'; system: System }
   | { kind: 'remove-bulk'; ids: string[] }
 
-type GroupDetailPageProps = {
-  group: Group
-  onBack: () => void
-}
-
-export default function GroupDetailPage({ group, onBack }: GroupDetailPageProps) {
+export default function GroupDetailPage() {
+  const { groupId = '' } = useParams<{ groupId: string }>()
+  const [group, setGroup] = useState<Group | null>(null)
+  const [groupError, setGroupError] = useState<{ status: number; message: string } | null>(null)
   const [systems, setSystems] = useState<System[] | null>(null)
   const [loadError, setLoadError] = useState<string | null>(null)
   const [actionError, setActionError] = useState<string | null>(null)
@@ -89,9 +89,9 @@ export default function GroupDetailPage({ group, onBack }: GroupDetailPageProps)
   const [activeTab, setActiveTab] = useState<'members' | 'roles'>('members')
 
   const { state: scopeState } = useScope()
-  const callerRole = roleOnGroup(scopeState, group.id)
+  const callerRole = roleOnGroup(scopeState, groupId)
   const callerIsGlobalAdmin = isGlobalAdmin(scopeState)
-  const canAdminThisGroup = canAdminGroup(scopeState, group.id)
+  const canAdminThisGroup = canAdminGroup(scopeState, groupId)
   // Group Admin sees the Roles tab as read-write but the Admin role
   // choice is hidden from their picker — only Global Admin can grant
   // Admin per research/rbac.md.
@@ -127,6 +127,27 @@ export default function GroupDetailPage({ group, onBack }: GroupDetailPageProps)
   }, [])
 
   useEffect(() => {
+    if (!groupId) return
+    let cancelled = false
+    getGroup(groupId)
+      .then((g) => {
+        if (!cancelled) {
+          setGroup(g)
+          setGroupError(null)
+        }
+      })
+      .catch((err) => {
+        if (cancelled) return
+        const status = err instanceof ApiError ? err.status : 500
+        const message = err instanceof Error ? err.message : String(err)
+        setGroupError({ status, message })
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [groupId])
+
+  useEffect(() => {
     void refresh()
   }, [refresh])
 
@@ -150,8 +171,8 @@ export default function GroupDetailPage({ group, onBack }: GroupDetailPageProps)
   }, [])
 
   const members = useMemo(
-    () => (systems ?? []).filter((s) => s.groupId === group.id),
-    [systems, group.id],
+    () => (systems ?? []).filter((s) => s.groupId === groupId),
+    [systems, groupId],
   )
 
   const filtered = useMemo(() => {
@@ -291,13 +312,37 @@ export default function GroupDetailPage({ group, onBack }: GroupDetailPageProps)
 
   const selectionCount = selected.size
 
+  if (groupError) {
+    return (
+      <PageSection>
+        <Alert
+          variant="danger"
+          title={groupError.status === 404 ? 'Group not found' : 'Could not load group'}
+          isInline
+        >
+          {groupError.status === 404
+            ? 'The group either does not exist or your role does not grant visibility to it.'
+            : groupError.message}
+        </Alert>
+      </PageSection>
+    )
+  }
+
+  if (!group) {
+    return (
+      <Bullseye style={{ paddingTop: 64 }}>
+        <Spinner />
+      </Bullseye>
+    )
+  }
+
   return (
     <>
       <PageSection>
         <Breadcrumb>
-          <BreadcrumbItem to="#" onClick={onBack}>
-            System Groups
-          </BreadcrumbItem>
+          <BreadcrumbItem render={({ className }) => (
+            <Link to="/groups" className={className}>System Groups</Link>
+          )} />
           <BreadcrumbItem isActive>{group.name}</BreadcrumbItem>
         </Breadcrumb>
       </PageSection>

@@ -1,8 +1,17 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+import { MemoryRouter } from 'react-router-dom'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import GroupsPage from './GroupsPage'
+
+function renderWithRouter(initialPath = '/groups') {
+  return render(
+    <MemoryRouter initialEntries={[initialPath]}>
+      <GroupsPage />
+    </MemoryRouter>,
+  )
+}
 
 type FetchInput = RequestInfo | URL
 type FetchInit = RequestInit | undefined
@@ -52,21 +61,19 @@ describe('GroupsPage', () => {
 
   it('renders the empty state when no groups exist', async () => {
     fetchMock.mockResolvedValueOnce(jsonResponse([]))
-    render(<GroupsPage onOpenGroup={() => {}} />)
+    renderWithRouter()
     expect(await screen.findByText(/no system groups yet/i)).toBeInTheDocument()
   })
 
-  it('renders rows with system count and lets the user click into a group', async () => {
-    const onOpen = vi.fn()
+  it('renders rows with system count and links the name to the detail route', async () => {
     fetchMock.mockResolvedValueOnce(
       jsonResponse([group({ id: 'g-1', name: 'prod', systemCount: 3 })]),
     )
-    render(<GroupsPage onOpenGroup={onOpen} />)
+    renderWithRouter()
     const row = (await screen.findByText('prod')).closest('tr')!
     expect(within(row).getByText('3')).toBeInTheDocument()
-    fireEvent.click(within(row).getByRole('button', { name: 'prod' }))
-    expect(onOpen).toHaveBeenCalledTimes(1)
-    expect(onOpen.mock.calls[0][0].id).toBe('g-1')
+    const link = within(row).getByRole('link', { name: 'prod' })
+    expect(link.getAttribute('href')).toBe('/groups/g-1')
   })
 
   it('creates a group via the Add modal', async () => {
@@ -75,7 +82,7 @@ describe('GroupsPage', () => {
       .mockResolvedValueOnce(jsonResponse([])) // initial list
       .mockResolvedValueOnce(jsonResponse(created, 201)) // create
       .mockResolvedValueOnce(jsonResponse([created])) // refetch
-    render(<GroupsPage onOpenGroup={() => {}} />)
+    renderWithRouter()
     await screen.findByText(/no system groups yet/i)
     fireEvent.click(screen.getByRole('button', { name: /^actions$/i }))
     fireEvent.click(screen.getByRole('menuitem', { name: /add system group/i }))
@@ -96,7 +103,7 @@ describe('GroupsPage', () => {
 
   it('surfaces an error when load fails', async () => {
     fetchMock.mockResolvedValueOnce(jsonResponse({ error: 'down' }, 500))
-    render(<GroupsPage onOpenGroup={() => {}} />)
+    renderWithRouter()
     expect(
       await screen.findByText(/could not load system groups/i),
     ).toBeInTheDocument()

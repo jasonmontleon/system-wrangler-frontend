@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+import { MemoryRouter, Route, Routes } from 'react-router-dom'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import GroupDetailPage from './GroupDetailPage'
 
@@ -47,23 +48,38 @@ class FakeEventSource {
   close() {}
 }
 
+// renderRoute renders the detail page under a MemoryRouter at the
+// supplied path, with the route declared so useParams returns the
+// expected groupId. Defaults to "/groups/g-1" so each test doesn't
+// have to repeat it.
+function renderRoute(path = '/groups/g-1') {
+  return render(
+    <MemoryRouter initialEntries={[path]}>
+      <Routes>
+        <Route path="/groups/:groupId" element={<GroupDetailPage />} />
+        <Route path="/groups" element={<div>System Groups list</div>} />
+      </Routes>
+    </MemoryRouter>,
+  )
+}
+
 describe('GroupDetailPage', () => {
   let fetchMock: ReturnType<typeof vi.fn>
 
   beforeEach(() => {
     fetchMock = vi.fn()
+    // The page fans out to three endpoints before showing anything:
+    // /api/me/scope (scope), /api/groups/g-1 (this group), and
+    // /api/systems (members). The first two have a stable default;
+    // tests only configure the systems list (and any follow-up
+    // mutations) through fetchMock.
     vi.stubGlobal('fetch', (input: FetchInput, init?: FetchInit) => {
-      // GroupDetailPage now fetches the caller's scope via /api/me/scope
-      // alongside the systems list. Tests that only care about systems
-      // shouldn't have to mock it; default to "Global Admin" so the UI
-      // shows every control.
-      if (String(input).startsWith('/api/me/scope')) {
-        return Promise.resolve(
-          new Response(JSON.stringify({ global: 'admin', groups: {} }), {
-            status: 200,
-            headers: { 'Content-Type': 'application/json' },
-          }),
-        )
+      const url = String(input)
+      if (url.startsWith('/api/me/scope')) {
+        return Promise.resolve(jsonResponse({ global: 'admin', groups: {} }))
+      }
+      if (url === '/api/groups/g-1') {
+        return Promise.resolve(jsonResponse(sampleGroup))
       }
       return (fetchMock as unknown as typeof fetch)(input, init)
     })
@@ -82,7 +98,7 @@ describe('GroupDetailPage', () => {
         system({ id: 's-2', name: 'orphan' }),
       ]),
     )
-    render(<GroupDetailPage group={sampleGroup} onBack={() => {}} />)
+    renderRoute()
     expect(await screen.findByText('member')).toBeInTheDocument()
     expect(screen.queryByText('orphan')).not.toBeInTheDocument()
   })
@@ -105,7 +121,7 @@ describe('GroupDetailPage', () => {
           system({ id: 's-3', name: 'elsewhere', groupId: 'other' }),
         ]),
       )
-    render(<GroupDetailPage group={sampleGroup} onBack={() => {}} />)
+    renderRoute()
     await screen.findByText('taken')
     fireEvent.click(screen.getByRole('button', { name: /^actions$/i }))
     fireEvent.click(screen.getByRole('menuitem', { name: /add systems/i }))
@@ -126,9 +142,6 @@ describe('GroupDetailPage', () => {
   })
 
   it('Global Admin sees the Roles tab and can switch to it', async () => {
-    // The default scope mock in beforeEach is "global admin", which is
-    // exactly what we need. Just provide the systems + role-assignments
-    // response for the tab content.
     fetchMock
       .mockResolvedValueOnce(jsonResponse([]))
       .mockResolvedValueOnce(
@@ -138,39 +151,57 @@ describe('GroupDetailPage', () => {
           ],
         }),
       )
-    render(<GroupDetailPage group={sampleGroup} onBack={() => {}} />)
+    renderRoute()
     fireEvent.click(await screen.findByRole('tab', { name: /^roles$/i }))
     expect(await screen.findByText('alice')).toBeInTheDocument()
   })
 
   it('users without any group role do not see the Roles tab', async () => {
-    // Override the default scope: a Global Auditor sees the group itself
-    // (any global role can see all groups) but per research/rbac.md the
-    // Roles tab is for callers with a role on this specific group.
-    // Actually a Global Auditor IS a global role, so they would see the
-    // tab. Use a user with a role on a DIFFERENT group instead.
+    // Override the default scope: a caller with a role on a different
+    // group can still see this group (Global Admin), but per
+    // research/rbac.md the Roles tab is for callers with a role on
+    // *this* specific group.
     vi.unstubAllGlobals()
     const fetchMock2 = vi.fn()
     vi.stubGlobal('fetch', (input: FetchInput, init?: FetchInit) => {
-      if (String(input).startsWith('/api/me/scope')) {
+      const url = String(input)
+      if (url.startsWith('/api/me/scope')) {
         return Promise.resolve(
           jsonResponse({ global: '', groups: { 'other-group': 'auditor' } }),
         )
       }
+      if (url === '/api/groups/g-1') {
+        return Promise.resolve(jsonResponse(sampleGroup))
+      }
       return (fetchMock2 as unknown as typeof fetch)(input, init)
     })
     fetchMock2.mockResolvedValueOnce(jsonResponse([]))
-    render(<GroupDetailPage group={sampleGroup} onBack={() => {}} />)
+    renderRoute()
     await screen.findByText(/no systems in this group/i)
     expect(screen.queryByRole('tab', { name: /^roles$/i })).toBeNull()
   })
 
-  it('clicking the breadcrumb back invokes onBack', async () => {
-    const onBack = vi.fn()
+  it('the breadcrumb is a Link back to /groups', async () => {
     fetchMock.mockResolvedValueOnce(jsonResponse([]))
-    render(<GroupDetailPage group={sampleGroup} onBack={onBack} />)
+    renderRoute()
     await screen.findByText(/no systems in this group/i)
-    fireEvent.click(screen.getByText('System Groups'))
-    expect(onBack).toHaveBeenCalled()
+    const link = screen.getByRole('link', { name: 'System Groups' })
+    expect(link.getAttribute('href')).toBe('/groups')
+  })
+
+  it('surfaces a not-found message when the group fetch 404s', async () => {
+    vi.unstubAllGlobals()
+    vi.stubGlobal('fetch', (input: FetchInput) => {
+      const url = String(input)
+      if (url.startsWith('/api/me/scope')) {
+        return Promise.resolve(jsonResponse({ global: 'admin', groups: {} }))
+      }
+      if (url === '/api/groups/g-1') {
+        return Promise.resolve(jsonResponse({ error: 'group not found' }, 404))
+      }
+      return Promise.resolve(jsonResponse([]))
+    })
+    renderRoute()
+    expect(await screen.findByText(/group not found/i)).toBeInTheDocument()
   })
 })

@@ -1,8 +1,17 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { MemoryRouter } from 'react-router-dom'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import App from './App'
+
+function renderApp(initialPath = '/') {
+  return render(
+    <MemoryRouter initialEntries={[initialPath]}>
+      <App />
+    </MemoryRouter>,
+  )
+}
 
 type FetchInput = RequestInfo | URL
 type FetchInit = RequestInit | undefined
@@ -77,7 +86,7 @@ describe('App', () => {
     })
 
     it('renders the dashboard heading', async () => {
-      render(<App />)
+      renderApp()
       await waitFor(() => {
         expect(
           screen.getByRole('heading', { name: /dashboard/i }),
@@ -86,14 +95,14 @@ describe('App', () => {
     })
 
     it('shows backend health once fetched', async () => {
-      render(<App />)
+      renderApp()
       await waitFor(() => {
         expect(screen.getByText(/status: ok/i)).toBeInTheDocument()
       })
     })
 
     it('switches to the Systems page when the Systems nav item is clicked', async () => {
-      render(<App />)
+      renderApp()
       const systemsNav = await screen.findByText('Systems')
       fireEvent.click(systemsNav)
       await waitFor(() => {
@@ -104,7 +113,7 @@ describe('App', () => {
     })
 
     it('groups the sidebar into Inventory, Administration, and Monitoring sections', async () => {
-      render(<App />)
+      renderApp()
       // Section titles are rendered as headings inside PatternFly NavGroup.
       const inventory = await screen.findByRole('heading', { name: /^inventory$/i })
       const administration = screen.getByRole('heading', { name: /^administration$/i })
@@ -122,7 +131,7 @@ describe('App', () => {
     })
 
     it('does not expose the theme toggle from the masthead', async () => {
-      render(<App />)
+      renderApp()
       await screen.findByRole('button', { name: /user menu/i })
       expect(
         screen.queryByRole('button', { name: /switch to light mode/i }),
@@ -134,7 +143,7 @@ describe('App', () => {
 
     it('signs out via the user dropdown menu', async () => {
       const fetchMock = installFetch({})
-      render(<App />)
+      renderApp()
       const menuToggle = await screen.findByRole('button', { name: /user menu/i })
       fireEvent.click(menuToggle)
       const signOut = await screen.findByRole('menuitem', { name: /sign out/i })
@@ -146,7 +155,7 @@ describe('App', () => {
     })
 
     it('navigates to the profile page from the user dropdown menu', async () => {
-      render(<App />)
+      renderApp()
       const menuToggle = await screen.findByRole('button', { name: /user menu/i })
       fireEvent.click(menuToggle)
       const profile = await screen.findByRole('menuitem', { name: /profile/i })
@@ -167,7 +176,7 @@ describe('App', () => {
             user: { ...sampleUser, theme: 'light' },
           }),
       })
-      render(<App />)
+      renderApp()
       await screen.findByRole('button', { name: /user menu/i })
       expect(
         document.documentElement.classList.contains('pf-v6-theme-dark'),
@@ -184,7 +193,7 @@ describe('App', () => {
     })
 
     it('renders the SetupForm', async () => {
-      render(<App />)
+      renderApp()
       await waitFor(() => {
         expect(screen.getByText(/create admin account/i)).toBeInTheDocument()
       })
@@ -200,7 +209,7 @@ describe('App', () => {
     })
 
     it('renders the LoginForm', async () => {
-      render(<App />)
+      renderApp()
       await waitFor(() => {
         // CardTitle "Sign in" appears as text; the submit Button shares the
         // label, so allow either match.
@@ -217,7 +226,7 @@ describe('App', () => {
     })
 
     it('renders an error alert', async () => {
-      render(<App />)
+      renderApp()
       await waitFor(() => {
         expect(
           screen.getByText(/could not reach backend/i),
