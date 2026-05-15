@@ -49,7 +49,21 @@ import wordmarkLight from './assets/wordmark-light.svg'
 
 export default function App() {
   const auth = useAuth()
-  const scope = useScope()
+  // Thread the active user id into useScope so the sidebar's
+  // role-gated entries (e.g. Backup) update immediately on a
+  // login/logout cycle instead of waiting for a manual refresh.
+  // null covers both "auth still loading" and "no session" — the
+  // App returns its own loading spinner before any scope-gated
+  // chrome would render, so deferring the scope fetch until the
+  // user resolves keeps the initial load to one round-trip per
+  // identity.
+  const userKey =
+    auth.state.kind === 'ready' &&
+    auth.state.status.authenticated &&
+    auth.state.status.user
+      ? auth.state.status.user.id
+      : null
+  const scope = useScope(userKey)
   const [menuOpen, setMenuOpen] = useState(false)
   const navigate = useNavigate()
 

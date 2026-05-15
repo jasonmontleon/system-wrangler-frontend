@@ -71,4 +71,52 @@ describe('useScope', () => {
     expect(canAdminGroup(ready, 'any')).toBe(true)
     expect(isGlobalAdmin(ready)).toBe(true)
   })
+
+  it('skips the fetch when userKey is null and stays in loading', async () => {
+    fetchMock.mockResolvedValue(jsonResponse({ global: 'admin', groups: {} }))
+    const { result } = renderHook(() => useScope(null))
+    // Give any pending effect a turn so we'd catch an accidental
+    // fetch firing despite the null key.
+    await Promise.resolve()
+    expect(fetchMock).not.toHaveBeenCalled()
+    expect(result.current.state.kind).toBe('loading')
+  })
+
+  it('refetches when userKey changes', async () => {
+    fetchMock
+      .mockResolvedValueOnce(
+        jsonResponse({ global: 'admin', groups: {} }),
+      )
+      .mockResolvedValueOnce(
+        jsonResponse({ global: '', groups: { 'g-1': 'auditor' } }),
+      )
+    const { result, rerender } = renderHook(
+      ({ userKey }: { userKey: string | null }) => useScope(userKey),
+      { initialProps: { userKey: 'u1' } },
+    )
+    await waitFor(() => expect(result.current.state.kind).toBe('ready'))
+    if (result.current.state.kind !== 'ready') throw new Error('expected ready')
+    expect(result.current.state.scope.global).toBe('admin')
+
+    rerender({ userKey: 'u2' })
+    await waitFor(() => {
+      if (result.current.state.kind !== 'ready') return
+      expect(result.current.state.scope.global).toBe('')
+    })
+    expect(fetchMock).toHaveBeenCalledTimes(2)
+  })
+
+  it('resets to loading when userKey transitions to null', async () => {
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse({ global: 'admin', groups: {} }),
+    )
+    const initialProps: { userKey: string | null } = { userKey: 'u1' }
+    const { result, rerender } = renderHook(
+      ({ userKey }: { userKey: string | null }) => useScope(userKey),
+      { initialProps },
+    )
+    await waitFor(() => expect(result.current.state.kind).toBe('ready'))
+    rerender({ userKey: null })
+    expect(result.current.state.kind).toBe('loading')
+  })
 })

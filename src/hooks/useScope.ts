@@ -18,7 +18,17 @@ export type UseScope = {
 // unrestricted picker on the Group Roles tab; non-admins see the
 // table read-only. Backend enforcement is still the source of
 // truth; this is purely cosmetic.
-export function useScope(): UseScope {
+//
+// `userKey` is the authenticated user's identifier (typically
+// user.id) or `null` when no one is authenticated. Passing it
+// lets the hook refetch whenever the active session changes so
+// stale scope from a prior login can't leak into the next one —
+// the canonical trigger is the sidebar nav: log out as Global
+// Admin, log back in as a non-admin, the "Backup" entry would
+// otherwise linger until the page is refreshed. Callers that
+// only mount inside an authenticated tree (e.g. a route page)
+// can omit the argument and get the legacy "fetch once" behavior.
+export function useScope(userKey?: string | null): UseScope {
   const [state, setState] = useState<ScopeState>({ kind: 'loading' })
   const refresh = useCallback(async () => {
     try {
@@ -32,8 +42,23 @@ export function useScope(): UseScope {
     }
   }, [])
   useEffect(() => {
+    if (userKey === undefined) {
+      // Caller passed nothing (e.g. a page that mounts inside an
+      // authenticated tree). Fetch once on mount; no further
+      // re-runs since the dependency stays stable.
+      void refresh()
+      return
+    }
+    if (userKey === null) {
+      // Caller explicitly says "no one is signed in." Reset to
+      // loading so any previously-resolved scope can't surface to
+      // gates that skipped the auth check, and skip the fetch —
+      // /api/me/scope would just 401.
+      setState({ kind: 'loading' })
+      return
+    }
     void refresh()
-  }, [refresh])
+  }, [userKey, refresh])
   return { state, refresh }
 }
 
