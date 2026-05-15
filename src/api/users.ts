@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
+import { apiFetch } from './client'
 import { ApiError } from './systems'
 
 export type User = {
@@ -32,14 +33,14 @@ async function parseError(resp: Response): Promise<string> {
 }
 
 export async function listUsers(): Promise<User[]> {
-  const resp = await fetch('/api/admin/users')
+  const resp = await apiFetch('/api/admin/users')
   if (!resp.ok) throw new ApiError(resp.status, await parseError(resp))
   const body = (await resp.json()) as { users: User[] }
   return body.users
 }
 
 export async function createUser(input: CreateUserInput): Promise<User> {
-  const resp = await fetch('/api/admin/users', {
+  const resp = await apiFetch('/api/admin/users', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(input),
@@ -52,7 +53,7 @@ export async function setUserDisabled(
   id: string,
   disabled: boolean,
 ): Promise<User> {
-  const resp = await fetch(`/api/admin/users/${encodeURIComponent(id)}`, {
+  const resp = await apiFetch(`/api/admin/users/${encodeURIComponent(id)}`, {
     method: 'PATCH',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ disabled }),
@@ -62,7 +63,7 @@ export async function setUserDisabled(
 }
 
 export async function deleteUser(id: string): Promise<void> {
-  const resp = await fetch(`/api/admin/users/${encodeURIComponent(id)}`, {
+  const resp = await apiFetch(`/api/admin/users/${encodeURIComponent(id)}`, {
     method: 'DELETE',
   })
   if (!resp.ok) throw new ApiError(resp.status, await parseError(resp))
@@ -72,7 +73,7 @@ export async function adminResetPassword(
   id: string,
   password: string,
 ): Promise<void> {
-  const resp = await fetch(
+  const resp = await apiFetch(
     `/api/admin/users/${encodeURIComponent(id)}/password`,
     {
       method: 'POST',
@@ -84,7 +85,7 @@ export async function adminResetPassword(
 }
 
 export async function adminResetTotp(id: string): Promise<void> {
-  const resp = await fetch(
+  const resp = await apiFetch(
     `/api/admin/users/${encodeURIComponent(id)}/totp/reset`,
     {
       method: 'POST',

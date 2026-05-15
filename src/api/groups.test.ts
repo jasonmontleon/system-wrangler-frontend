@@ -35,7 +35,7 @@ describe('groups api', () => {
       jsonResponse([{ id: 'g', name: 'prod', createdAt: 't', systemCount: 0 }]),
     )
     const groups = await listGroups()
-    expect(fetchMock).toHaveBeenCalledWith('/api/groups')
+    expect(fetchMock.mock.calls[0][0]).toBe('/api/groups')
     expect(groups[0].name).toBe('prod')
   })
 

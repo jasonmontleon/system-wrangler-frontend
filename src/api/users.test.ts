@@ -41,7 +41,7 @@ describe('users API', () => {
         }),
       )
       const out = await listUsers()
-      expect(fetchMock).toHaveBeenCalledWith('/api/admin/users')
+      expect(fetchMock.mock.calls[0][0]).toBe('/api/admin/users')
       expect(out).toHaveLength(1)
       expect(out[0].username).toBe('alice')
     })
@@ -78,11 +78,13 @@ describe('users API', () => {
         ),
       )
       const out = await createUser({ username: 'bob', password: 'correctpassword' })
-      expect(fetchMock).toHaveBeenCalledWith('/api/admin/users', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ username: 'bob', password: 'correctpassword' }),
-      })
+      expect(fetchMock).toHaveBeenCalledWith(
+        '/api/admin/users',
+        expect.objectContaining({
+          method: 'POST',
+          body: JSON.stringify({ username: 'bob', password: 'correctpassword' }),
+        }),
+      )
       expect(out.username).toBe('bob')
     })
 
@@ -109,11 +111,13 @@ describe('users API', () => {
         }),
       )
       const out = await setUserDisabled('u2', true)
-      expect(fetchMock).toHaveBeenCalledWith('/api/admin/users/u2', {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ disabled: true }),
-      })
+      expect(fetchMock).toHaveBeenCalledWith(
+        '/api/admin/users/u2',
+        expect.objectContaining({
+          method: 'PATCH',
+          body: JSON.stringify({ disabled: true }),
+        }),
+      )
       expect(out.disabled).toBe(true)
     })
 

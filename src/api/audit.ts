@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
+import { apiFetch } from './client'
 import { ApiError } from './systems'
 
 export type AuditActorKind = 'user' | 'system' | 'unauthenticated'
@@ -58,7 +59,7 @@ export async function listAudit(
     qs.set('after_id', params.after.afterId)
   }
   const suffix = qs.toString() ? `?${qs.toString()}` : ''
-  const resp = await fetch(`/api/admin/audit${suffix}`)
+  const resp = await apiFetch(`/api/admin/audit${suffix}`)
   if (!resp.ok) throw new ApiError(resp.status, await parseError(resp))
   return (await resp.json()) as AuditListResponse
 }

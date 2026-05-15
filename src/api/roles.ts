@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
+import { apiFetch } from './client'
 import { ApiError } from './systems'
 
 export type Role = 'admin' | 'operator' | 'auditor'
@@ -32,7 +33,7 @@ async function parseError(resp: Response): Promise<string> {
 }
 
 export async function fetchMyScope(): Promise<Scope> {
-  const resp = await fetch('/api/me/scope')
+  const resp = await apiFetch('/api/me/scope')
   if (!resp.ok) throw new ApiError(resp.status, await parseError(resp))
   const body = (await resp.json()) as { global?: Role | ''; groups?: Record<string, Role> }
   return { global: body.global ?? '', groups: body.groups ?? {} }
@@ -41,7 +42,7 @@ export async function fetchMyScope(): Promise<Scope> {
 export async function listGroupRoleAssignments(
   groupId: string,
 ): Promise<RoleAssignment[]> {
-  const resp = await fetch(
+  const resp = await apiFetch(
     `/api/groups/${encodeURIComponent(groupId)}/role-assignments`,
   )
   if (!resp.ok) throw new ApiError(resp.status, await parseError(resp))
@@ -54,7 +55,7 @@ export async function grantGroupRole(
   userId: string,
   role: Role,
 ): Promise<RoleAssignment> {
-  const resp = await fetch(
+  const resp = await apiFetch(
     `/api/groups/${encodeURIComponent(groupId)}/role-assignments`,
     {
       method: 'POST',
@@ -71,7 +72,7 @@ export async function revokeGroupRole(
   userId: string,
   role: Role,
 ): Promise<void> {
-  const resp = await fetch(
+  const resp = await apiFetch(
     `/api/groups/${encodeURIComponent(groupId)}/role-assignments/${encodeURIComponent(
       userId,
     )}/${encodeURIComponent(role)}`,
@@ -81,7 +82,7 @@ export async function revokeGroupRole(
 }
 
 export async function listAdminRoleAssignments(): Promise<RoleAssignment[]> {
-  const resp = await fetch('/api/admin/role-assignments')
+  const resp = await apiFetch('/api/admin/role-assignments')
   if (!resp.ok) throw new ApiError(resp.status, await parseError(resp))
   const body = (await resp.json()) as { assignments: RoleAssignment[] }
   return body.assignments
@@ -92,7 +93,7 @@ export async function grantAdminRole(
   groupId: string | null,
   role: Role,
 ): Promise<RoleAssignment> {
-  const resp = await fetch('/api/admin/role-assignments', {
+  const resp = await apiFetch('/api/admin/role-assignments', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ userId, groupId, role }),
@@ -106,7 +107,7 @@ export async function revokeAdminRole(
   groupId: string | null,
   role: Role,
 ): Promise<void> {
-  const resp = await fetch('/api/admin/role-assignments', {
+  const resp = await apiFetch('/api/admin/role-assignments', {
     method: 'DELETE',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ userId, groupId, role }),

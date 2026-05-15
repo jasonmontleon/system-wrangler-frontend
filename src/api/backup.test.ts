@@ -55,7 +55,8 @@ describe('requestBackup', () => {
     fetchMock.mockResolvedValueOnce(resp)
 
     const out = await requestBackup()
-    expect(fetchMock).toHaveBeenCalledWith('/api/admin/backup', { method: 'POST' })
+    expect(fetchMock.mock.calls[0][0]).toBe('/api/admin/backup')
+    expect((fetchMock.mock.calls[0][1] as RequestInit).method).toBe('POST')
     expect(out.filename).toBe('system-wrangler-20260515T123456Z.db')
     expect(out.blob.size).toBe(body.byteLength)
   })

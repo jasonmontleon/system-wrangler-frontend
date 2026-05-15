@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
+import { apiFetch } from './client'
 import { ApiError } from './systems'
 
 export type Group = {
@@ -24,13 +25,13 @@ async function parseError(resp: Response): Promise<string> {
 }
 
 export async function listGroups(): Promise<Group[]> {
-  const resp = await fetch('/api/groups')
+  const resp = await apiFetch('/api/groups')
   if (!resp.ok) throw new ApiError(resp.status, await parseError(resp))
   return (await resp.json()) as Group[]
 }
 
 export async function createGroup(input: GroupInput): Promise<Group> {
-  const resp = await fetch('/api/groups', {
+  const resp = await apiFetch('/api/groups', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(input),
@@ -43,7 +44,7 @@ export async function renameGroup(
   id: string,
   input: GroupInput,
 ): Promise<Group> {
-  const resp = await fetch(`/api/groups/${encodeURIComponent(id)}`, {
+  const resp = await apiFetch(`/api/groups/${encodeURIComponent(id)}`, {
     method: 'PATCH',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(input),
@@ -53,7 +54,7 @@ export async function renameGroup(
 }
 
 export async function deleteGroup(id: string): Promise<void> {
-  const resp = await fetch(`/api/groups/${encodeURIComponent(id)}`, {
+  const resp = await apiFetch(`/api/groups/${encodeURIComponent(id)}`, {
     method: 'DELETE',
   })
   if (!resp.ok) throw new ApiError(resp.status, await parseError(resp))
@@ -63,7 +64,7 @@ export async function setSystemGroup(
   systemId: string,
   groupId: string | null,
 ): Promise<void> {
-  const resp = await fetch(
+  const resp = await apiFetch(
     `/api/systems/${encodeURIComponent(systemId)}/group`,
     {
       method: 'PUT',

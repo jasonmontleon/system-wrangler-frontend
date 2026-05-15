@@ -10,6 +10,7 @@ import {
   Spinner,
   Title,
 } from '@patternfly/react-core'
+import { apiFetch } from '../api/client'
 
 type Health = { status: string }
 
@@ -18,7 +19,7 @@ export default function DashboardPage() {
   const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
-    fetch('/api/health')
+    apiFetch('/api/health')
       .then((r) => r.json())
       .then(setHealth)
       .catch((e) => setError(String(e)))

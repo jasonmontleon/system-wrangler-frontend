@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
+import { apiFetch } from './client'
 import { ApiError } from './systems'
 
 export type BackupDownload = {
@@ -23,7 +24,7 @@ async function parseError(resp: Response): Promise<string> {
 // it as system-wrangler-<UTC timestamp>.db) and falls back to a
 // client-side default if the header is missing or malformed.
 export async function requestBackup(): Promise<BackupDownload> {
-  const resp = await fetch('/api/admin/backup', { method: 'POST' })
+  const resp = await apiFetch('/api/admin/backup', { method: 'POST' })
   if (!resp.ok) throw new ApiError(resp.status, await parseError(resp))
   const blob = await resp.blob()
   const filename = parseFilename(resp.headers.get('Content-Disposition'))

@@ -46,7 +46,7 @@ describe('fetchUndecryptableSecrets', () => {
       }),
     )
     const out = await fetchUndecryptableSecrets()
-    expect(fetchMock).toHaveBeenCalledWith('/api/admin/secrets/undecryptable')
+    expect(fetchMock.mock.calls[0][0]).toBe('/api/admin/secrets/undecryptable')
     expect(out.count).toBe(2)
     expect(out.items).toHaveLength(2)
     expect(out.items[0].targetLabel).toBe('alice')

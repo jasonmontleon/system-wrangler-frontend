@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
+import { apiFetch } from './client'
 import { ApiError } from './systems'
 
 // UndecryptableSecret mirrors one row from
@@ -36,7 +37,7 @@ async function parseError(resp: Response): Promise<string> {
 // scope before invoking, but the ApiError flows the status up for the
 // rare race-with-revoke case.
 export async function fetchUndecryptableSecrets(): Promise<UndecryptableScan> {
-  const resp = await fetch('/api/admin/secrets/undecryptable')
+  const resp = await apiFetch('/api/admin/secrets/undecryptable')
   if (!resp.ok) throw new ApiError(resp.status, await parseError(resp))
   const body = (await resp.json()) as {
     count?: number

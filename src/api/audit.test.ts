@@ -26,13 +26,13 @@ describe('listAudit', () => {
   it('issues a bare GET when no params are set', async () => {
     fetchMock.mockResolvedValueOnce(jsonResponse({ records: [] }))
     await listAudit()
-    expect(fetchMock).toHaveBeenCalledWith('/api/admin/audit')
+    expect(fetchMock.mock.calls[0][0]).toBe('/api/admin/audit')
   })
 
   it('serializes limit', async () => {
     fetchMock.mockResolvedValueOnce(jsonResponse({ records: [] }))
     await listAudit({ limit: 50 })
-    expect(fetchMock).toHaveBeenCalledWith('/api/admin/audit?limit=50')
+    expect(fetchMock.mock.calls[0][0]).toBe('/api/admin/audit?limit=50')
   })
 
   it('serializes the cursor', async () => {
@@ -41,7 +41,7 @@ describe('listAudit', () => {
       limit: 25,
       after: { afterMs: 1700000000000, afterId: 'abc-123' },
     })
-    expect(fetchMock).toHaveBeenCalledWith(
+    expect(fetchMock.mock.calls[0][0]).toBe(
       '/api/admin/audit?limit=25&after_ms=1700000000000&after_id=abc-123',
     )
   })

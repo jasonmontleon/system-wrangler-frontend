@@ -28,7 +28,7 @@ describe('systems api', () => {
       jsonResponse([{ id: 'a', name: 'h', hostname: '1.1.1.1', createdAt: 't' }]),
     )
     const systems = await listSystems()
-    expect(fetchMock).toHaveBeenCalledWith('/api/systems')
+    expect(fetchMock.mock.calls[0][0]).toBe('/api/systems')
     expect(systems).toHaveLength(1)
     expect(systems[0].id).toBe('a')
   })

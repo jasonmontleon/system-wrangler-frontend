@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
+import { apiFetch } from './client'
 import { ApiError } from './systems'
 
 export type AuthUser = {
@@ -58,7 +59,7 @@ async function parseError(resp: Response): Promise<string> {
 }
 
 export async function getAuthStatus(): Promise<AuthStatus> {
-  const resp = await fetch('/api/auth/status')
+  const resp = await apiFetch('/api/auth/status')
   if (!resp.ok) throw new ApiError(resp.status, await parseError(resp))
   return (await resp.json()) as AuthStatus
 }
@@ -67,7 +68,7 @@ export async function setupAdmin(
   username: string,
   password: string,
 ): Promise<AuthUser> {
-  const resp = await fetch('/api/auth/setup', {
+  const resp = await apiFetch('/api/auth/setup', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ username, password }),
@@ -80,7 +81,7 @@ export async function login(
   username: string,
   password: string,
 ): Promise<LoginResult> {
-  const resp = await fetch('/api/auth/login', {
+  const resp = await apiFetch('/api/auth/login', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ username, password }),
@@ -98,12 +99,12 @@ export async function login(
 }
 
 export async function logout(): Promise<void> {
-  const resp = await fetch('/api/auth/logout', { method: 'POST' })
+  const resp = await apiFetch('/api/auth/logout', { method: 'POST' })
   if (!resp.ok) throw new ApiError(resp.status, await parseError(resp))
 }
 
 export async function updateProfile(update: ProfileUpdate): Promise<AuthUser> {
-  const resp = await fetch('/api/auth/profile', {
+  const resp = await apiFetch('/api/auth/profile', {
     method: 'PATCH',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(update),
@@ -116,7 +117,7 @@ export async function changePassword(
   currentPassword: string,
   newPassword: string,
 ): Promise<void> {
-  const resp = await fetch('/api/auth/password', {
+  const resp = await apiFetch('/api/auth/password', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ currentPassword, newPassword }),
@@ -127,7 +128,7 @@ export async function changePassword(
 // totpSetup primes the enrollment flow. The backend stores the new secret
 // as `pending` until totpConfirm validates a code against it.
 export async function totpSetup(): Promise<TotpSetup> {
-  const resp = await fetch('/api/auth/totp/setup', { method: 'POST' })
+  const resp = await apiFetch('/api/auth/totp/setup', { method: 'POST' })
   if (!resp.ok) throw new ApiError(resp.status, await parseError(resp))
   return (await resp.json()) as TotpSetup
 }
@@ -135,7 +136,7 @@ export async function totpSetup(): Promise<TotpSetup> {
 // totpConfirm activates the pending secret if the supplied code verifies,
 // and returns the freshly-minted recovery codes for one-time display.
 export async function totpConfirm(code: string): Promise<string[]> {
-  const resp = await fetch('/api/auth/totp/confirm', {
+  const resp = await apiFetch('/api/auth/totp/confirm', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ code }),
@@ -158,7 +159,7 @@ export async function totpVerify(
   code: string,
   rememberDevice: boolean,
 ): Promise<TotpVerifyResult> {
-  const resp = await fetch('/api/auth/totp/verify', {
+  const resp = await apiFetch('/api/auth/totp/verify', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ code, rememberDevice }),
@@ -178,7 +179,7 @@ export async function totpDisable(
   password: string,
   code: string,
 ): Promise<void> {
-  const resp = await fetch('/api/auth/totp', {
+  const resp = await apiFetch('/api/auth/totp', {
     method: 'DELETE',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ password, code }),
@@ -187,13 +188,13 @@ export async function totpDisable(
 }
 
 export async function listTrustedDevices(): Promise<TrustedDevice[]> {
-  const resp = await fetch('/api/auth/devices')
+  const resp = await apiFetch('/api/auth/devices')
   if (!resp.ok) throw new ApiError(resp.status, await parseError(resp))
   return (await resp.json()) as TrustedDevice[]
 }
 
 export async function revokeTrustedDevice(id: string): Promise<void> {
-  const resp = await fetch(`/api/auth/devices/${encodeURIComponent(id)}`, {
+  const resp = await apiFetch(`/api/auth/devices/${encodeURIComponent(id)}`, {
     method: 'DELETE',
   })
   if (!resp.ok) throw new ApiError(resp.status, await parseError(resp))

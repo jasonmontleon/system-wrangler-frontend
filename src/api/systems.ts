@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
+import { apiFetch } from './client'
+
 export type SystemStatus = 'unprobed' | 'reachable' | 'unreachable'
 
 export type System = {
@@ -38,13 +40,13 @@ async function parseError(resp: Response): Promise<string> {
 }
 
 export async function listSystems(): Promise<System[]> {
-  const resp = await fetch('/api/systems')
+  const resp = await apiFetch('/api/systems')
   if (!resp.ok) throw new ApiError(resp.status, await parseError(resp))
   return (await resp.json()) as System[]
 }
 
 export async function createSystem(input: SystemInput): Promise<System> {
-  const resp = await fetch('/api/systems', {
+  const resp = await apiFetch('/api/systems', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(input),
@@ -54,7 +56,7 @@ export async function createSystem(input: SystemInput): Promise<System> {
 }
 
 export async function deleteSystem(id: string): Promise<void> {
-  const resp = await fetch(`/api/systems/${encodeURIComponent(id)}`, {
+  const resp = await apiFetch(`/api/systems/${encodeURIComponent(id)}`, {
     method: 'DELETE',
   })
   if (!resp.ok) throw new ApiError(resp.status, await parseError(resp))
