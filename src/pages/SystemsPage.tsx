@@ -42,6 +42,8 @@ import {
 } from '../api/systems'
 import { listGroups, type Group } from '../api/groups'
 import { useEventStream } from '../hooks/useEventStream'
+import { canAdminGroup, isGlobalAdmin, useScope } from '../hooks/useScope'
+import SystemCredentialsModal from '../components/SystemCredentialsModal'
 
 const STATUS_LABELS: Record<
   SystemStatus,
@@ -102,6 +104,18 @@ export default function SystemsPage() {
   const [sizeOpen, setSizeOpen] = useState(false)
   const [actionsOpen, setActionsOpen] = useState(false)
   const [selected, setSelected] = useState<Set<string>>(new Set())
+  const [credModalFor, setCredModalFor] = useState<System | null>(null)
+
+  // Scope is consulted only for the per-row "Credentials" action so
+  // Group Admins of the system's group can manage credentials too.
+  // Existing actions on this page (Remove) intentionally keep their
+  // pre-RBAC visibility — narrowing them is out of scope here.
+  const { state: scopeState } = useScope()
+  const canManageCredentialsFor = (s: System): boolean => {
+    if (isGlobalAdmin(scopeState)) return true
+    if (!s.groupId) return false
+    return canAdminGroup(scopeState, s.groupId)
+  }
 
   const refresh = useCallback(async () => {
     try {
@@ -553,6 +567,14 @@ export default function SystemsPage() {
                     <Td dataLabel="Actions" isActionCell>
                       <ActionsColumn
                         items={[
+                          ...(canManageCredentialsFor(s)
+                            ? [
+                                {
+                                  title: 'Credentials',
+                                  onClick: () => setCredModalFor(s),
+                                },
+                              ]
+                            : []),
                           {
                             title: `Remove ${s.name}`,
                             onClick: () =>
@@ -607,6 +629,14 @@ export default function SystemsPage() {
           await refresh()
         }}
       />
+
+      {credModalFor && (
+        <SystemCredentialsModal
+          system={credModalFor}
+          isOpen={true}
+          onClose={() => setCredModalFor(null)}
+        />
+      )}
 
       <ConfirmRemoveModal
         confirm={confirm}

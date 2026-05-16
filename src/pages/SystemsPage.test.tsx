@@ -66,6 +66,13 @@ describe('SystemsPage', () => {
     const wrapped = (input: FetchInput, init?: FetchInit) => {
       const url = typeof input === 'string' ? input : input.toString()
       if (url.startsWith('/api/groups')) return Promise.resolve(jsonResponse([]))
+      // useScope mounts inside SystemsPage now (for the per-row
+      // Credentials action gate). Short-circuit it to an empty
+      // scope so the existing mockResolvedValueOnce queues stay
+      // aligned. Individual tests that care about scope can
+      // override by stubbing fetch directly.
+      if (url === '/api/me/scope')
+        return Promise.resolve(jsonResponse({ groups: {} }))
       return (fetchMock as unknown as typeof fetch)(input, init)
     }
     vi.stubGlobal('fetch', wrapped)
@@ -361,5 +368,46 @@ describe('SystemsPage', () => {
     fetchMock.mockResolvedValueOnce(jsonResponse({ error: 'boom' }, 500))
     render(<SystemsPage />)
     expect(await screen.findByText(/could not load systems/i)).toBeInTheDocument()
+  })
+
+  it('opens the Credentials modal for a Global Admin caller', async () => {
+    // Override the wrapped fetch so /api/me/scope returns Global
+    // Admin and the new endpoints have stub responses.
+    vi.unstubAllGlobals()
+    const wrapped = (input: FetchInput, init?: FetchInit) => {
+      const url = typeof input === 'string' ? input : input.toString()
+      if (url === '/api/me/scope')
+        return Promise.resolve(jsonResponse({ global: 'admin', groups: {} }))
+      if (url.startsWith('/api/groups')) return Promise.resolve(jsonResponse([]))
+      if (url.endsWith('/effective-credential'))
+        return Promise.resolve(jsonResponse({ error: 'none' }, 404))
+      if (url.endsWith('/ansible-credential'))
+        return Promise.resolve(jsonResponse({ error: 'none' }, 404))
+      return (fetchMock as unknown as typeof fetch)(input, init)
+    }
+    vi.stubGlobal('fetch', wrapped)
+    vi.stubGlobal('EventSource', FakeEventSource)
+
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse([system({ id: '1', name: 'host-x', hostname: 'x.example' })]),
+    )
+    render(<SystemsPage />)
+    const row = (await screen.findByText('host-x')).closest('tr')!
+    clickRowKebab(row, /^credentials$/i)
+
+    expect(await screen.findByText(/Credentials — host-x/i)).toBeInTheDocument()
+    expect(
+      await screen.findByText(/no credentials resolve for this system/i),
+    ).toBeInTheDocument()
+  })
+
+  it('hides the Credentials action from a caller without scope', async () => {
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse([system({ id: '1', name: 'host-x', hostname: 'x.example' })]),
+    )
+    render(<SystemsPage />)
+    const row = (await screen.findByText('host-x')).closest('tr')!
+    fireEvent.click(within(row).getByRole('button', { name: /kebab toggle/i }))
+    expect(screen.queryByRole('menuitem', { name: /^credentials$/i })).toBeNull()
   })
 })

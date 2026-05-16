@@ -45,6 +45,12 @@ import {
 } from '../api/systems'
 import { ApiError } from '../api/systems'
 import { getGroup, setSystemGroup, type Group } from '../api/groups'
+import {
+  deleteGroupSlot,
+  getGroupSlot,
+  putGroupSlot,
+} from '../api/credentials'
+import CredentialSlotEditor from '../components/CredentialSlotEditor'
 import { useEventStream } from '../hooks/useEventStream'
 
 const STATUS_LABELS: Record<
@@ -86,7 +92,9 @@ export default function GroupDetailPage() {
   const [actionError, setActionError] = useState<string | null>(null)
   const [isAddOpen, setAddOpen] = useState(false)
   const [confirm, setConfirm] = useState<Confirm | null>(null)
-  const [activeTab, setActiveTab] = useState<'members' | 'roles'>('members')
+  const [activeTab, setActiveTab] = useState<'members' | 'roles' | 'credentials'>(
+    'members',
+  )
 
   const { state: scopeState } = useScope()
   const callerRole = roleOnGroup(scopeState, groupId)
@@ -353,12 +361,18 @@ export default function GroupDetailPage() {
       <PageSection>
         <Tabs
           activeKey={activeTab}
-          onSelect={(_, key) => setActiveTab(key as 'members' | 'roles')}
+          onSelect={(_, key) => setActiveTab(key as 'members' | 'roles' | 'credentials')}
           aria-label={`${group.name} tabs`}
         >
           <Tab eventKey="members" title={<TabTitleText>Members</TabTitleText>} />
           {showRolesTab && (
             <Tab eventKey="roles" title={<TabTitleText>Roles</TabTitleText>} />
+          )}
+          {canAdminThisGroup && (
+            <Tab
+              eventKey="credentials"
+              title={<TabTitleText>Credentials</TabTitleText>}
+            />
           )}
         </Tabs>
       </PageSection>
@@ -369,6 +383,16 @@ export default function GroupDetailPage() {
             groupName={group.name}
             canAdmin={canAdminThisGroup}
             canGrantAdminRole={canGrantAdminRole}
+          />
+        </PageSection>
+      )}
+      {activeTab === 'credentials' && canAdminThisGroup && (
+        <PageSection>
+          <CredentialSlotEditor
+            load={() => getGroupSlot(group.id)}
+            save={(input) => putGroupSlot(group.id, input)}
+            remove={() => deleteGroupSlot(group.id)}
+            scopeLabel={`Group "${group.name}"`}
           />
         </PageSection>
       )}

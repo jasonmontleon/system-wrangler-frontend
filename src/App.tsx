@@ -30,6 +30,7 @@ import {
 import { Navigate, Route, Routes, useLocation, useNavigate } from 'react-router-dom'
 import AuditPage from './pages/AuditPage'
 import BackupPage from './pages/BackupPage'
+import CredentialsPage from './pages/CredentialsPage'
 import DashboardPage from './pages/DashboardPage'
 import GroupDetailPage from './pages/GroupDetailPage'
 import GroupsPage from './pages/GroupsPage'
@@ -196,6 +197,9 @@ export default function App() {
             <RouterNavItem to="/users">Users</RouterNavItem>
             <RouterNavItem to="/audit">Audit</RouterNavItem>
             {isGlobalAdmin(scope.state) && (
+              <RouterNavItem to="/credentials">Credentials</RouterNavItem>
+            )}
+            {isGlobalAdmin(scope.state) && (
               <RouterNavItem to="/backup">Backup</RouterNavItem>
             )}
           </NavGroup>
@@ -227,6 +231,12 @@ export default function App() {
           path="/backup"
           element={
             isGlobalAdmin(scope.state) ? <BackupPage /> : <Navigate to="/" replace />
+          }
+        />
+        <Route
+          path="/credentials"
+          element={
+            isGlobalAdmin(scope.state) ? <CredentialsPage /> : <Navigate to="/" replace />
           }
         />
         <Route
