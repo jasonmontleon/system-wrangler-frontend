@@ -30,6 +30,7 @@ import {
 import { Navigate, Route, Routes, useLocation, useNavigate } from 'react-router-dom'
 import AuditPage from './pages/AuditPage'
 import BackupPage from './pages/BackupPage'
+import SettingsPage from './pages/SettingsPage'
 import CredentialsPage from './pages/CredentialsPage'
 import DashboardPage from './pages/DashboardPage'
 import GroupDetailPage from './pages/GroupDetailPage'
@@ -207,6 +208,9 @@ export default function App() {
             {isGlobalAdmin(scope.state) && (
               <RouterNavItem to="/backup">Backup</RouterNavItem>
             )}
+            {isGlobalAdmin(scope.state) && (
+              <RouterNavItem to="/settings">Settings</RouterNavItem>
+            )}
           </NavGroup>
           {/* Reserved for alerts, custom dashboards, and reports once those
               land; rendered now so the structure of the sidebar is visible. */}
@@ -217,7 +221,22 @@ export default function App() {
   )
 
   return (
-    <Page masthead={masthead} sidebar={sidebar}>
+    <Page
+      masthead={masthead}
+      sidebar={sidebar}
+      style={
+        {
+          // Override PatternFly's default 18.125rem sidebar width.
+          // The grid-template-columns rule that consumes this var
+          // lives on `.pf-v6-c-page` (the Page component itself),
+          // so setting it on PageSidebar has no effect — it has to
+          // be on the Page. Two-thirds frees horizontal space the
+          // primary content was feeling compressed for; the nav
+          // labels still fit comfortably in 12rem.
+          '--pf-v6-c-page__sidebar--Width--base': '12rem',
+        } as React.CSSProperties
+      }
+    >
       {isGlobalAdmin(scope.state) && (
         <PageSection>
           <UndecryptableSecretsBanner
@@ -249,6 +268,12 @@ export default function App() {
           path="/updaters"
           element={
             isGlobalAdmin(scope.state) ? <UpdatersPage /> : <Navigate to="/" replace />
+          }
+        />
+        <Route
+          path="/settings"
+          element={
+            isGlobalAdmin(scope.state) ? <SettingsPage /> : <Navigate to="/" replace />
           }
         />
         <Route

@@ -88,6 +88,10 @@ export type SystemUpdater = {
   installed: boolean
   enabled: boolean
   lastSeenAt?: string
+  // pendingPackages is the list the most recent check run surfaced
+  // via SW_PENDING_PACKAGE markers. Empty for updaters whose check
+  // playbook does not emit them or that have never been checked.
+  pendingPackages: string[]
 }
 
 async function parseError(resp: Response): Promise<string> {

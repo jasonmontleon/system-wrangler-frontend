@@ -123,6 +123,20 @@ describe('fanOutOnSystem', () => {
         durationMs: 1,
       }),
     )
+    // Auto-Check fires after a successful Apply so the pending
+    // count refreshes; satisfy the mock queue with a no-op
+    // success.
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse({
+        runId: 'r-1-check',
+        updaterId: 'builtin.dnf',
+        kind: 'check',
+        status: 'success',
+        exitCode: 0,
+        affectedCount: 0,
+        durationMs: 1,
+      }),
+    )
     fetchMock.mockResolvedValueOnce(
       new Response(JSON.stringify({ error: 'busy', conflictingRun: 'r-other' }), {
         status: 409,
@@ -147,6 +161,89 @@ describe('fanOutOnSystem', () => {
     const out = await fanOutOnSystem('host-1', 'web-1', 'check')
     expect(out.skipped).toBe(true)
     expect(out.skipReason).toMatch(/boom/i)
+  })
+
+  it('fires an auto-Check after a successful Apply', async () => {
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse({
+        updaters: [
+          {
+            updaterId: 'builtin.dnf',
+            source: 'builtin',
+            displayName: 'dnf',
+            installed: true,
+            enabled: true,
+          },
+        ],
+      }),
+    )
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse({
+        runId: 'r-apply',
+        updaterId: 'builtin.dnf',
+        kind: 'apply',
+        status: 'success',
+        exitCode: 0,
+        affectedCount: 3,
+        durationMs: 1,
+      }),
+    )
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse({
+        runId: 'r-check',
+        updaterId: 'builtin.dnf',
+        kind: 'check',
+        status: 'success',
+        exitCode: 0,
+        affectedCount: 0,
+        durationMs: 1,
+      }),
+    )
+    const out = await fanOutOnSystem('host-1', 'web-1', 'apply')
+    expect(out.results[0].ok).toBe(true)
+    expect(out.results[0].affectedCount).toBe(3)
+    // The fetch log should show: list, apply, auto-check.
+    const postUrls = fetchMock.mock.calls
+      .filter((c) => (c[1] as RequestInit | undefined)?.method === 'POST')
+      .map((c) => c[0] as string)
+    expect(postUrls).toHaveLength(2)
+    expect(postUrls[0]).toMatch(/\/apply$/)
+    expect(postUrls[1]).toMatch(/\/check$/)
+  })
+
+  it('does not auto-Check after a failed Apply', async () => {
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse({
+        updaters: [
+          {
+            updaterId: 'builtin.dnf',
+            source: 'builtin',
+            displayName: 'dnf',
+            installed: true,
+            enabled: true,
+          },
+        ],
+      }),
+    )
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse({
+        runId: 'r-apply',
+        updaterId: 'builtin.dnf',
+        kind: 'apply',
+        status: 'failure',
+        exitCode: 2,
+        affectedCount: 0,
+        reason: 'task failed',
+        durationMs: 1,
+      }),
+    )
+    const out = await fanOutOnSystem('host-1', 'web-1', 'apply')
+    expect(out.results[0].ok).toBe(false)
+    const postUrls = fetchMock.mock.calls
+      .filter((c) => (c[1] as RequestInit | undefined)?.method === 'POST')
+      .map((c) => c[0] as string)
+    expect(postUrls).toHaveLength(1)
+    expect(postUrls[0]).toMatch(/\/apply$/)
   })
 
   it('records playbook-side failure status from a 200 response', async () => {

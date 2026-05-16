@@ -48,9 +48,20 @@ describe('GroupsPage', () => {
 
   beforeEach(() => {
     fetchMock = vi.fn()
-    vi.stubGlobal('fetch', (input: FetchInput, init?: FetchInit) =>
-      (fetchMock as unknown as typeof fetch)(input, init),
-    )
+    // GroupsPage now loads scope + systems alongside groups so the
+    // per-row Check/Update actions can fan out across each group's
+    // members. The default wrapped fetch short-circuits both with
+    // empty results so the existing mockResolvedValueOnce queues
+    // for /api/groups stay aligned.
+    const wrapped = (input: FetchInput, init?: FetchInit) => {
+      const url = typeof input === 'string' ? input : input.toString()
+      if (url === '/api/me/scope')
+        return Promise.resolve(jsonResponse({ groups: {} }))
+      if (url === '/api/systems' && (init?.method ?? 'GET') === 'GET')
+        return Promise.resolve(jsonResponse([]))
+      return (fetchMock as unknown as typeof fetch)(input, init)
+    }
+    vi.stubGlobal('fetch', wrapped)
     FakeEventSource.instances = []
     vi.stubGlobal('EventSource', FakeEventSource)
   })
@@ -99,6 +110,148 @@ describe('GroupsPage', () => {
       (c[1] as RequestInit | undefined)?.method ?? 'GET',
     ])
     expect(calls).toContainEqual(['/api/groups', 'POST'])
+  })
+
+  it('row kebab Check on a group fans out across its member systems', async () => {
+    const checks: string[] = []
+    vi.unstubAllGlobals()
+    vi.stubGlobal('fetch', (input: FetchInput, init?: FetchInit) => {
+      const url = typeof input === 'string' ? input : input.toString()
+      const method = init?.method ?? 'GET'
+      if (url === '/api/me/scope')
+        return Promise.resolve(jsonResponse({ global: 'admin', groups: {} }))
+      if (url === '/api/groups' && method === 'GET')
+        return Promise.resolve(
+          jsonResponse([group({ id: 'g-1', name: 'prod', systemCount: 2 })]),
+        )
+      if (url === '/api/systems' && method === 'GET')
+        return Promise.resolve(
+          jsonResponse([
+            { id: 's-a', name: 'a', hostname: '10.0.0.1', createdAt: '2026-01-01T00:00:00Z', status: 'reachable', groupId: 'g-1' },
+            { id: 's-b', name: 'b', hostname: '10.0.0.2', createdAt: '2026-01-01T00:00:00Z', status: 'reachable', groupId: 'g-1' },
+            { id: 's-c', name: 'c', hostname: '10.0.0.3', createdAt: '2026-01-01T00:00:00Z', status: 'reachable', groupId: 'other' },
+          ]),
+        )
+      if (url.match(/\/api\/systems\/[^/]+\/updaters$/))
+        return Promise.resolve(
+          jsonResponse({
+            updaters: [
+              {
+                updaterId: 'builtin.dnf',
+                source: 'builtin',
+                displayName: 'dnf',
+                installed: true,
+                enabled: true,
+              },
+            ],
+          }),
+        )
+      if (url.endsWith('/check') && method === 'POST') {
+        checks.push(url)
+        return Promise.resolve(
+          jsonResponse({
+            runId: 'r',
+            updaterId: 'builtin.dnf',
+            kind: 'check',
+            status: 'success',
+            exitCode: 0,
+            affectedCount: 0,
+            durationMs: 1,
+          }),
+        )
+      }
+      return Promise.resolve(jsonResponse({}, 500))
+    })
+    vi.stubGlobal('EventSource', FakeEventSource)
+
+    renderWithRouter()
+    const row = (await screen.findByText('prod')).closest('tr')!
+    fireEvent.click(within(row).getByRole('button', { name: /kebab toggle/i }))
+    fireEvent.click(screen.getByRole('menuitem', { name: /^Check$/i }))
+    // Two member systems → two fan-outs; the third belongs to a
+    // different group and must not be touched.
+    await waitFor(() => expect(checks).toHaveLength(2))
+    expect(checks.some((u) => u.includes('/systems/s-a/'))).toBe(true)
+    expect(checks.some((u) => u.includes('/systems/s-b/'))).toBe(true)
+    expect(checks.every((u) => !u.includes('/systems/s-c/'))).toBe(true)
+  })
+
+  it('bulk Update selected groups asks for confirmation before firing apply', async () => {
+    const applies: string[] = []
+    vi.unstubAllGlobals()
+    vi.stubGlobal('fetch', (input: FetchInput, init?: FetchInit) => {
+      const url = typeof input === 'string' ? input : input.toString()
+      const method = init?.method ?? 'GET'
+      if (url === '/api/me/scope')
+        return Promise.resolve(jsonResponse({ global: 'admin', groups: {} }))
+      if (url === '/api/groups' && method === 'GET')
+        return Promise.resolve(
+          jsonResponse([group({ id: 'g-1', name: 'prod', systemCount: 1 })]),
+        )
+      if (url === '/api/systems' && method === 'GET')
+        return Promise.resolve(
+          jsonResponse([
+            { id: 's-a', name: 'a', hostname: '10.0.0.1', createdAt: '2026-01-01T00:00:00Z', status: 'reachable', groupId: 'g-1' },
+          ]),
+        )
+      if (url.match(/\/api\/systems\/[^/]+\/updaters$/))
+        return Promise.resolve(
+          jsonResponse({
+            updaters: [
+              {
+                updaterId: 'builtin.dnf',
+                source: 'builtin',
+                displayName: 'dnf',
+                installed: true,
+                enabled: true,
+              },
+            ],
+          }),
+        )
+      if (url.endsWith('/apply') && method === 'POST') {
+        applies.push(url)
+        return Promise.resolve(
+          jsonResponse({
+            runId: 'r',
+            updaterId: 'builtin.dnf',
+            kind: 'apply',
+            status: 'success',
+            exitCode: 0,
+            affectedCount: 2,
+            durationMs: 1,
+          }),
+        )
+      }
+      if (url.endsWith('/check') && method === 'POST') {
+        return Promise.resolve(
+          jsonResponse({
+            runId: 'r2',
+            updaterId: 'builtin.dnf',
+            kind: 'check',
+            status: 'success',
+            exitCode: 0,
+            affectedCount: 0,
+            durationMs: 1,
+          }),
+        )
+      }
+      return Promise.resolve(jsonResponse({}, 500))
+    })
+    vi.stubGlobal('EventSource', FakeEventSource)
+
+    renderWithRouter()
+    await screen.findByText('prod')
+    fireEvent.click(screen.getAllByRole('checkbox', { name: /select row/i })[0])
+    fireEvent.click(screen.getByRole('button', { name: /^Actions$/i }))
+    fireEvent.click(
+      screen.getByRole('menuitem', { name: /Update selected groups/i }),
+    )
+    expect(applies).toHaveLength(0)
+    expect(
+      await screen.findByText(/Update systems in 1 group\?/i),
+    ).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: /^Update$/i }))
+    await waitFor(() => expect(applies).toHaveLength(1))
   })
 
   it('surfaces an error when load fails', async () => {

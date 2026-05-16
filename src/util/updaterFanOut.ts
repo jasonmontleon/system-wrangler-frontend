@@ -72,16 +72,29 @@ export async function fanOutOnSystem(
   for (const u of targets) {
     try {
       const res: UpdaterRunResult = await runner(systemId, u.updaterId)
+      const ok = res.status === 'success'
       outcome.results.push({
         updaterId: u.updaterId,
         displayName: u.displayName,
-        ok: res.status === 'success',
+        ok,
         affectedCount: res.affectedCount,
-        error:
-          res.status === 'success'
-            ? undefined
-            : res.reason || `${res.status} (exit ${res.exitCode})`,
+        error: ok
+          ? undefined
+          : res.reason || `${res.status} (exit ${res.exitCode})`,
       })
+      // Auto-Check after a successful Apply so Updates Available
+      // reflects the post-update state. The stats query reads
+      // check runs only, so Apply alone doesn't move the pending
+      // count. Failures here are swallowed — the apply itself
+      // already succeeded; an inability to refresh the count is
+      // a cosmetic loss, not a reason to flip the row to red.
+      if (ok && action === 'apply') {
+        try {
+          await checkUpdater(systemId, u.updaterId)
+        } catch {
+          // intentionally ignored
+        }
+      }
     } catch (err) {
       outcome.results.push({
         updaterId: u.updaterId,

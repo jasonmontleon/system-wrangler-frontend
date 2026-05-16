@@ -31,6 +31,7 @@ const dnfDetectedEnabled: SystemUpdater = {
   installed: true,
   enabled: true,
   lastSeenAt: '2026-05-16T00:00:00Z',
+  pendingPackages: [],
 }
 
 function renderRoute(path = '/systems/host-1') {
@@ -157,6 +158,7 @@ describe('SystemDetailPage', () => {
           installed: true,
           enabled: false, // disabled — should NOT fire
           lastSeenAt: '2026-05-16T00:00:00Z',
+          pendingPackages: [],
         },
         {
           updaterId: 'custom.never-detected',
@@ -164,6 +166,7 @@ describe('SystemDetailPage', () => {
           displayName: 'never',
           installed: false,
           enabled: false,
+          pendingPackages: [],
         },
       ],
     })
@@ -245,6 +248,177 @@ describe('SystemDetailPage', () => {
     expect(
       await screen.findByText(/Failed to load system/i),
     ).toBeInTheDocument()
+  })
+
+  it('renders the health icon next to the name when reachable+pending', async () => {
+    seedHappy({
+      system: {
+        ...sampleSystem,
+        status: 'reachable',
+        pendingUpdates: 5,
+        lastCheckedAt: '2026-05-16T09:00:00Z',
+      },
+    })
+    renderRoute()
+    expect(
+      await screen.findByLabelText(/Updates available/i),
+    ).toBeInTheDocument()
+  })
+
+  it('renders the up-to-date icon when reachable+0 pending', async () => {
+    seedHappy({
+      system: {
+        ...sampleSystem,
+        status: 'reachable',
+        pendingUpdates: 0,
+        lastCheckedAt: '2026-05-16T09:00:00Z',
+      },
+    })
+    renderRoute()
+    expect(await screen.findByLabelText(/Up to date/i)).toBeInTheDocument()
+  })
+
+  it('renders the AvailableUpdatesCard rows for updaters with a pending list', async () => {
+    seedHappy({
+      updaters: [
+        {
+          ...dnfDetectedEnabled,
+          pendingPackages: ['kernel', 'glibc'],
+        },
+      ],
+    })
+    renderRoute()
+    // The card title should be present.
+    expect(await screen.findByText('Available updates')).toBeInTheDocument()
+    // The "Show 2 packages" toggle reveals both packages when clicked.
+    const toggle = await screen.findByRole('button', {
+      name: /Show 2 packages/i,
+    })
+    fireEvent.click(toggle)
+    expect(await screen.findByText('kernel')).toBeInTheDocument()
+    expect(await screen.findByText('glibc')).toBeInTheDocument()
+  })
+
+  it('AvailableUpdatesCard hides rows whose pending list is empty', async () => {
+    seedHappy({
+      updaters: [
+        { ...dnfDetectedEnabled, pendingPackages: [] },
+      ],
+    })
+    renderRoute()
+    expect(await screen.findByText('Available updates')).toBeInTheDocument()
+    expect(
+      screen.getByText(/No pending updates known/i),
+    ).toBeInTheDocument()
+  })
+
+  it('Recent runs card is collapsible', async () => {
+    seedHappy()
+    renderRoute()
+    const toggle = await screen.findByRole('button', {
+      name: /Toggle recent runs/i,
+    })
+    expect(toggle).toBeInTheDocument()
+    // Default state is expanded — the empty-state message is visible.
+    expect(
+      screen.getByText(/No runs yet\./i),
+    ).toBeInTheDocument()
+    fireEvent.click(toggle)
+    await waitFor(() => {
+      expect(screen.queryByText(/No runs yet\./i)).toBeNull()
+    })
+  })
+
+  it('flips the header icon to red when the last run failed', async () => {
+    seedHappy({
+      system: {
+        ...sampleSystem,
+        status: 'reachable',
+        pendingUpdates: 0,
+        lastCheckedAt: '2026-05-16T09:00:00Z',
+        lastRunFailed: true,
+        lastRunReason: 'apply exit 2',
+      },
+    })
+    renderRoute()
+    expect(await screen.findByLabelText(/Last run failed/i)).toBeInTheDocument()
+    // Healthy icon must not also render.
+    expect(screen.queryByLabelText(/Up to date/i)).toBeNull()
+  })
+
+  it('shows "Needs Attention" with the reason on the System information card when failing', async () => {
+    seedHappy({
+      system: {
+        ...sampleSystem,
+        status: 'reachable',
+        pendingUpdates: 0,
+        lastCheckedAt: '2026-05-16T09:00:00Z',
+        lastRunFailed: true,
+        lastRunReason: 'apply exit 2',
+      },
+    })
+    renderRoute()
+    expect(
+      await screen.findByText(/Needs Attention:/i),
+    ).toBeInTheDocument()
+    expect(screen.getByText(/apply exit 2/i)).toBeInTheDocument()
+  })
+
+  it('shows "Needs Attention: Unreachable" when the system is unreachable', async () => {
+    seedHappy({
+      system: { ...sampleSystem, status: 'unreachable' },
+    })
+    renderRoute()
+    const line = await screen.findByText(/Needs Attention:/i)
+    expect(line.textContent).toMatch(/Unreachable/i)
+  })
+
+  it('shows "Updates Available" when reachable with pending updates and no failure', async () => {
+    seedHappy({
+      system: {
+        ...sampleSystem,
+        status: 'reachable',
+        pendingUpdates: 7,
+        lastCheckedAt: '2026-05-16T09:00:00Z',
+      },
+    })
+    renderRoute()
+    expect(
+      await screen.findByText('Updates Available'),
+    ).toBeInTheDocument()
+  })
+
+  it('shows "System Healthy" when reachable, checked, zero pending', async () => {
+    seedHappy({
+      system: {
+        ...sampleSystem,
+        status: 'reachable',
+        pendingUpdates: 0,
+        lastCheckedAt: '2026-05-16T09:00:00Z',
+      },
+    })
+    renderRoute()
+    expect(await screen.findByText('System Healthy')).toBeInTheDocument()
+  })
+
+  it('omits the health line for an unprobed system', async () => {
+    seedHappy({ system: { ...sampleSystem, status: 'unprobed' } })
+    renderRoute()
+    await screen.findByRole('heading', { name: 'web-1' })
+    expect(screen.queryByText(/System Healthy/i)).toBeNull()
+    expect(screen.queryByText(/Needs Attention/i)).toBeNull()
+    expect(screen.queryByText(/Updates Available/i)).toBeNull()
+  })
+
+  it('renders no icon for an unprobed system', async () => {
+    seedHappy({
+      system: { ...sampleSystem, status: 'unprobed' },
+    })
+    renderRoute()
+    await screen.findByRole('heading', { name: 'web-1' })
+    expect(screen.queryByLabelText(/Up to date/i)).toBeNull()
+    expect(screen.queryByLabelText(/Updates available/i)).toBeNull()
+    expect(screen.queryByLabelText(/Unreachable/i)).toBeNull()
   })
 
   it('disables the action buttons when the caller cannot operate', async () => {

@@ -39,8 +39,19 @@ import {
   deleteSystem,
   listSystems,
   type System,
-  type SystemStatus,
 } from '../api/systems'
+import {
+  PendingUpdatesCell,
+  SystemStatusIcon,
+} from '../components/systemsTable'
+import {
+  STATUS_LABELS,
+  TABLE_DENSITY_STYLE,
+  TIGHT_END,
+  TIGHT_START,
+  formatLastChecked,
+  formatPendingUpdates,
+} from '../components/systemsTableHelpers'
 import { listGroups, type Group } from '../api/groups'
 import { useEventStream } from '../hooks/useEventStream'
 import {
@@ -51,38 +62,11 @@ import {
   useScope,
 } from '../hooks/useScope'
 import SystemCredentialsModal from '../components/SystemCredentialsModal'
-import UpdaterActionResults from '../components/UpdaterActionResults'
+import FanOutOutcomesPanel from '../components/FanOutOutcomesPanel'
 import {
   fanOutOnSystem,
   type FanOutOutcome,
 } from '../util/updaterFanOut'
-
-const STATUS_LABELS: Record<
-  SystemStatus,
-  { color: 'green' | 'red' | 'grey'; text: string }
-> = {
-  reachable: { color: 'green', text: 'Reachable' },
-  unreachable: { color: 'red', text: 'Unreachable' },
-  unprobed: { color: 'grey', text: 'Unprobed' },
-}
-
-// formatLastChecked renders the Last Checked column. Operators
-// want a clear "Never" when no check has been run; the system info
-// card uses a separate formatter for probe last-seen.
-function formatLastChecked(iso: string | undefined): string {
-  if (!iso) return 'Never'
-  const d = new Date(iso)
-  return Number.isNaN(d.getTime()) ? 'Never' : d.toLocaleString()
-}
-
-// formatPendingUpdates renders the Updates Available column.
-// Distinguishes "never checked" (—) from "checked, zero pending"
-// (0) so an operator who hasn't run a check yet doesn't get a
-// false sense of being up to date.
-function formatPendingUpdates(n: number | undefined): string {
-  if (n === undefined) return '—'
-  return String(n)
-}
 
 type PageSize = 25 | 50 | 100 | 'all'
 const PAGE_SIZE_OPTIONS: { value: PageSize; label: string }[] = [
@@ -165,6 +149,7 @@ export default function SystemsPage() {
     const outcome = await fanOutOnSystem(s.id, s.name, action)
     setUpdaterOutcomes([outcome])
     setUpdaterBusy(null)
+    await refresh()
   }
 
   // runBulk fans out an action across every currently-selected
@@ -194,6 +179,7 @@ export default function SystemsPage() {
     )
     setUpdaterOutcomes([...outcomes, ...notOperable])
     setUpdaterBusy(null)
+    await refresh()
   }
 
   const refresh = useCallback(async () => {
@@ -539,8 +525,8 @@ export default function SystemsPage() {
             {actionError}
           </Alert>
         )}
-        {updaterOutcomes && updaterOutcomes.length > 0 && (
-          <UpdaterActionResults
+        {updaterOutcomes && (
+          <FanOutOutcomesPanel
             outcomes={updaterOutcomes}
             onDismiss={() => setUpdaterOutcomes(null)}
             onRetry={(ids, action) => {
@@ -563,7 +549,11 @@ export default function SystemsPage() {
           </EmptyState>
         )}
         {systems !== null && systems.length > 0 && (
-          <Table aria-label="Systems" variant="compact">
+          <Table
+            aria-label="Systems"
+            variant="compact"
+            style={TABLE_DENSITY_STYLE}
+          >
             <Thead>
               <Tr>
                 <Th
@@ -572,6 +562,7 @@ export default function SystemsPage() {
                     isSelected: allVisibleSelected,
                     isDisabled: visible.length === 0,
                   }}
+                  style={TIGHT_END}
                 />
                 <Th width={20} sort={sortFor('name', 1)}>
                   Name
@@ -591,10 +582,10 @@ export default function SystemsPage() {
                 <Th width={10} sort={sortFor('pendingUpdates', 6)}>
                   Updates available
                 </Th>
-                <Th width={10} screenReaderText="Actions" />
+                <Th screenReaderText="Actions" style={TIGHT_START} />
               </Tr>
               <Tr>
-                <Th screenReaderText="Filter spacer" />
+                <Th screenReaderText="Filter spacer" style={TIGHT_END} />
                 <Th>
                   <SearchInput
                     aria-label="Filter name"
@@ -659,7 +650,7 @@ export default function SystemsPage() {
                     onClear={() => setFilters((f) => ({ ...f, pendingUpdates: '' }))}
                   />
                 </Th>
-                <Th screenReaderText="Actions spacer" />
+                <Th screenReaderText="Actions spacer" style={TIGHT_START} />
               </Tr>
             </Thead>
             <Tbody>
@@ -674,11 +665,25 @@ export default function SystemsPage() {
                           toggleRow(s.id, isSelecting),
                         isSelected: selected.has(s.id),
                       }}
+                      style={TIGHT_END}
                     />
                     <Td dataLabel="Name" modifier="truncate">
-                      <Link to={`/systems/${encodeURIComponent(s.id)}`}>
-                        {s.name}
-                      </Link>
+                      <span
+                        style={{
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          gap: '0.5rem',
+                        }}
+                      >
+                        <SystemStatusIcon
+                          status={s.status}
+                          pendingUpdates={s.pendingUpdates}
+                          lastRunFailed={s.lastRunFailed}
+                        />
+                        <Link to={`/systems/${encodeURIComponent(s.id)}`}>
+                          {s.name}
+                        </Link>
+                      </span>
                     </Td>
                     <Td dataLabel="Hostname" modifier="truncate">
                       {s.hostname}
@@ -693,9 +698,12 @@ export default function SystemsPage() {
                       {formatLastChecked(s.lastCheckedAt)}
                     </Td>
                     <Td dataLabel="Updates available">
-                      {formatPendingUpdates(s.pendingUpdates)}
+                      <PendingUpdatesCell
+                        count={s.pendingUpdates}
+                        packages={s.pendingPackages}
+                      />
                     </Td>
-                    <Td dataLabel="Actions" isActionCell>
+                    <Td dataLabel="Actions" isActionCell style={TIGHT_START}>
                       <ActionsColumn
                         items={[
                           ...(canOperateSystem(s)

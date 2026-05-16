@@ -39,8 +39,16 @@ import {
   listGroups,
   renameGroup,
 } from '../api/groups'
-import { ApiError } from '../api/systems'
+import { ApiError, listSystems, type System } from '../api/systems'
 import { useEventStream } from '../hooks/useEventStream'
+import {
+  isGlobalOperator,
+  roleOnGroup,
+  useScope,
+} from '../hooks/useScope'
+import FanOutOutcomesPanel from '../components/FanOutOutcomesPanel'
+import { fanOutOnSystem, type FanOutOutcome } from '../util/updaterFanOut'
+import { TABLE_DENSITY_STYLE, TIGHT_END, TIGHT_START } from '../components/systemsTableHelpers'
 
 type PageSize = 25 | 50 | 100 | 'all'
 const PAGE_SIZE_OPTIONS: { value: PageSize; label: string }[] = [
@@ -56,14 +64,35 @@ type SortDir = 'asc' | 'desc'
 type Confirm =
   | { kind: 'remove-one'; group: Group }
   | { kind: 'remove-bulk'; ids: string[] }
+  | { kind: 'apply-bulk'; groups: Group[] }
 
 export default function GroupsPage() {
   const [groups, setGroups] = useState<Group[] | null>(null)
+  const [systems, setSystems] = useState<System[]>([])
   const [loadError, setLoadError] = useState<string | null>(null)
   const [actionError, setActionError] = useState<string | null>(null)
   const [isAddOpen, setAddOpen] = useState(false)
   const [renameTarget, setRenameTarget] = useState<Group | null>(null)
   const [confirm, setConfirm] = useState<Confirm | null>(null)
+  // Updater fan-out state for the per-group Check/Update actions.
+  // Same shape as SystemsPage / GroupDetailPage so the same panel
+  // can render the results.
+  const [updaterOutcomes, setUpdaterOutcomes] = useState<
+    FanOutOutcome[] | null
+  >(null)
+  const [updaterBusy, setUpdaterBusy] = useState<string | null>(null)
+
+  const { state: scopeState } = useScope()
+  // canOperateSystem mirrors the SystemsPage gate so the per-group
+  // fan-out skips systems the caller can't operate on. The skipped
+  // outcomes still appear in the results panel so it's clear what
+  // was attempted vs. what was held back.
+  const canOperateSystem = (s: System): boolean => {
+    if (isGlobalOperator(scopeState)) return true
+    if (!s.groupId) return false
+    const r = roleOnGroup(scopeState, s.groupId)
+    return r === 'admin' || r === 'operator'
+  }
 
   const [filters, setFilters] = useState<Record<string, string>>({
     name: '',
@@ -80,13 +109,101 @@ export default function GroupsPage() {
 
   const refresh = useCallback(async () => {
     try {
-      const data = await listGroups()
-      setGroups(data)
+      const [groupData, systemData] = await Promise.all([
+        listGroups(),
+        listSystems(),
+      ])
+      setGroups(groupData)
+      setSystems(systemData)
       setLoadError(null)
     } catch (e) {
       setLoadError(e instanceof Error ? e.message : String(e))
     }
   }, [])
+
+  // membersOf returns every system whose groupId matches one of
+  // the provided group ids. Used to expand a group-level
+  // Check/Update into the underlying system fan-out.
+  const membersOf = useCallback(
+    (groupIds: string[]): System[] => {
+      const set = new Set(groupIds)
+      return systems.filter((s) => s.groupId !== undefined && s.groupId !== null && set.has(s.groupId))
+    },
+    [systems],
+  )
+
+  // runSystemBulk handles the Retry path from the results panel —
+  // by then the operator is targeting specific system ids, not
+  // group ids, so it's a regular system fan-out matching SystemsPage.
+  const runSystemBulk = async (
+    action: 'check' | 'apply',
+    targets: System[],
+  ) => {
+    if (targets.length === 0) return
+    setUpdaterOutcomes(null)
+    setUpdaterBusy(`system-bulk:${action}`)
+    const operable = targets.filter(canOperateSystem)
+    const notOperable: FanOutOutcome[] = targets
+      .filter((s) => !canOperateSystem(s))
+      .map((s) => ({
+        systemId: s.id,
+        systemName: s.name,
+        action,
+        attempted: 0,
+        skipped: true,
+        skipReason: 'No operator permission on this system.',
+        results: [],
+      }))
+    const outcomes = await Promise.all(
+      operable.map((s) => fanOutOnSystem(s.id, s.name, action)),
+    )
+    setUpdaterOutcomes([...outcomes, ...notOperable])
+    setUpdaterBusy(null)
+    await refresh()
+  }
+
+  const runGroupBulk = async (
+    action: 'check' | 'apply',
+    targetGroups: Group[],
+  ) => {
+    const ids = targetGroups.map((g) => g.id)
+    const targets = membersOf(ids)
+    if (targets.length === 0) {
+      setUpdaterOutcomes([
+        {
+          systemId: 'no-members',
+          systemName: targetGroups.map((g) => g.name).join(', ') || 'group',
+          action,
+          attempted: 0,
+          skipped: true,
+          skipReason:
+            'No systems in the selected group(s). Add systems before running an updater.',
+          results: [],
+        },
+      ])
+      return
+    }
+    setUpdaterOutcomes(null)
+    setUpdaterBusy(`group-bulk:${action}`)
+    const operable = targets.filter(canOperateSystem)
+    const notOperable: FanOutOutcome[] = targets
+      .filter((s) => !canOperateSystem(s))
+      .map((s) => ({
+        systemId: s.id,
+        systemName: s.name,
+        action,
+        attempted: 0,
+        skipped: true,
+        skipReason: 'No operator permission on this system.',
+        results: [],
+      }))
+    const outcomes = await Promise.all(
+      operable.map((s) => fanOutOnSystem(s.id, s.name, action)),
+    )
+    setUpdaterOutcomes([...outcomes, ...notOperable])
+    setUpdaterBusy(null)
+    await refresh()
+  }
 
   useEffect(() => {
     void refresh()
@@ -252,6 +369,17 @@ export default function GroupsPage() {
                       setConfirm({ kind: 'remove-bulk', ids })
                     }
                   }
+                  if (value === 'check-bulk' || value === 'apply-bulk') {
+                    const ids = selected
+                    const targetGroups =
+                      groups?.filter((g) => ids.has(g.id)) ?? []
+                    if (targetGroups.length === 0) return
+                    if (value === 'check-bulk') {
+                      void runGroupBulk('check', targetGroups)
+                    } else {
+                      setConfirm({ kind: 'apply-bulk', groups: targetGroups })
+                    }
+                  }
                 }}
                 onOpenChange={(open) => setActionsOpen(open)}
                 toggle={(ref: React.Ref<MenuToggleElement>) => (
@@ -269,6 +397,22 @@ export default function GroupsPage() {
                 <DropdownList>
                   <DropdownItem value="add" key="add">
                     Add system group
+                  </DropdownItem>
+                  <DropdownItem
+                    value="check-bulk"
+                    key="check-bulk"
+                    isDisabled={selectionCount === 0 || updaterBusy !== null}
+                  >
+                    Check selected groups
+                    {selectionCount > 0 ? ` (${selectionCount})` : ''}
+                  </DropdownItem>
+                  <DropdownItem
+                    value="apply-bulk"
+                    key="apply-bulk"
+                    isDisabled={selectionCount === 0 || updaterBusy !== null}
+                  >
+                    Update selected groups
+                    {selectionCount > 0 ? ` (${selectionCount})` : ''}
                   </DropdownItem>
                   <DropdownItem
                     value="remove"
@@ -334,6 +478,17 @@ export default function GroupsPage() {
             {actionError}
           </Alert>
         )}
+        {updaterOutcomes && (
+          <FanOutOutcomesPanel
+            outcomes={updaterOutcomes}
+            onDismiss={() => setUpdaterOutcomes(null)}
+            onRetry={(ids, action) => {
+              const targets = systems.filter((s) => ids.includes(s.id))
+              void runSystemBulk(action, targets)
+            }}
+            busy={updaterBusy !== null}
+          />
+        )}
         {!loadError && groups === null && (
           <Bullseye>
             <Spinner />
@@ -347,7 +502,11 @@ export default function GroupsPage() {
           </EmptyState>
         )}
         {groups !== null && groups.length > 0 && (
-          <Table aria-label="System groups" variant="compact">
+          <Table
+            aria-label="System groups"
+            variant="compact"
+            style={TABLE_DENSITY_STYLE}
+          >
             <Thead>
               <Tr>
                 <Th
@@ -356,6 +515,7 @@ export default function GroupsPage() {
                     isSelected: allVisibleSelected,
                     isDisabled: visible.length === 0,
                   }}
+                  style={TIGHT_END}
                 />
                 <Th width={50} sort={sortFor('name', 1)}>
                   Name
@@ -366,10 +526,10 @@ export default function GroupsPage() {
                 <Th width={20} sort={sortFor('createdAt', 3)}>
                   Created
                 </Th>
-                <Th width={10} screenReaderText="Actions" />
+                <Th screenReaderText="Actions" style={TIGHT_START} />
               </Tr>
               <Tr>
-                <Th screenReaderText="Filter spacer" />
+                <Th screenReaderText="Filter spacer" style={TIGHT_END} />
                 <Th>
                   <SearchInput
                     aria-label="Filter name"
@@ -401,7 +561,7 @@ export default function GroupsPage() {
                     onClear={() => setFilters((f) => ({ ...f, createdAt: '' }))}
                   />
                 </Th>
-                <Th screenReaderText="Actions spacer" />
+                <Th screenReaderText="Actions spacer" style={TIGHT_START} />
               </Tr>
             </Thead>
             <Tbody>
@@ -413,6 +573,7 @@ export default function GroupsPage() {
                       onSelect: (_, isSelecting) => toggleRow(g.id, isSelecting),
                       isSelected: selected.has(g.id),
                     }}
+                    style={TIGHT_END}
                   />
                   <Td dataLabel="Name" modifier="truncate">
                     <Link to={`/groups/${encodeURIComponent(g.id)}`}>
@@ -423,9 +584,31 @@ export default function GroupsPage() {
                   <Td dataLabel="Created">
                     {new Date(g.createdAt).toLocaleString()}
                   </Td>
-                  <Td dataLabel="Actions" isActionCell>
+                  <Td dataLabel="Actions" isActionCell style={TIGHT_START}>
                     <ActionsColumn
                       items={[
+                        {
+                          title:
+                            updaterBusy === `group:check:${g.id}`
+                              ? 'Checking…'
+                              : 'Check',
+                          isDisabled: updaterBusy !== null,
+                          onClick: () => {
+                            setUpdaterBusy(`group:check:${g.id}`)
+                            void runGroupBulk('check', [g]).finally(() =>
+                              setUpdaterBusy(null),
+                            )
+                          },
+                        },
+                        {
+                          title:
+                            updaterBusy === `group:apply:${g.id}`
+                              ? 'Updating…'
+                              : 'Update',
+                          isDisabled: updaterBusy !== null,
+                          onClick: () =>
+                            setConfirm({ kind: 'apply-bulk', groups: [g] }),
+                        },
                         {
                           title: `Rename ${g.name}`,
                           onClick: () => setRenameTarget(g),
@@ -500,7 +683,7 @@ export default function GroupsPage() {
           if (!confirm) return
           if (confirm.kind === 'remove-one') {
             await removeOne(confirm.group.id)
-          } else {
+          } else if (confirm.kind === 'remove-bulk') {
             for (const id of confirm.ids) {
               await removeOne(id)
             }
@@ -508,6 +691,16 @@ export default function GroupsPage() {
           }
           setConfirm(null)
           await refresh()
+        }}
+      />
+      <ConfirmApplyBulkModal
+        confirm={confirm}
+        onCancel={() => setConfirm(null)}
+        onConfirm={async () => {
+          if (confirm?.kind !== 'apply-bulk') return
+          const targets = confirm.groups
+          setConfirm(null)
+          await runGroupBulk('apply', targets)
         }}
       />
     </>
@@ -693,7 +886,11 @@ type ConfirmRemoveModalProps = {
 }
 
 function ConfirmRemoveModal({ confirm, onCancel, onConfirm }: ConfirmRemoveModalProps) {
-  const isOpen = confirm !== null
+  // Only the remove-* kinds use this modal. apply-bulk has its own
+  // confirmation surface so the wording can lean "update", not
+  // "remove".
+  const isOpen =
+    confirm?.kind === 'remove-one' || confirm?.kind === 'remove-bulk'
   const isBulk = confirm?.kind === 'remove-bulk'
   const title = isBulk ? 'Remove system groups?' : 'Remove system group?'
   const body = isBulk
@@ -711,6 +908,42 @@ function ConfirmRemoveModal({ confirm, onCancel, onConfirm }: ConfirmRemoveModal
       <ModalFooter>
         <Button variant="danger" onClick={() => void onConfirm()}>
           Remove
+        </Button>
+        <Button variant="link" onClick={onCancel}>
+          Cancel
+        </Button>
+      </ModalFooter>
+    </Modal>
+  )
+}
+
+function ConfirmApplyBulkModal({
+  confirm,
+  onCancel,
+  onConfirm,
+}: ConfirmRemoveModalProps) {
+  const isOpen = confirm?.kind === 'apply-bulk'
+  const count = confirm?.kind === 'apply-bulk' ? confirm.groups.length : 0
+  return (
+    <Modal
+      variant="small"
+      isOpen={isOpen}
+      onClose={onCancel}
+      aria-labelledby="apply-group-bulk-title"
+    >
+      <ModalHeader
+        title={`Update systems in ${count} group${count === 1 ? '' : 's'}?`}
+        labelId="apply-group-bulk-title"
+      />
+      <ModalBody>
+        Apply pending updates on every system in the selected group
+        {count === 1 ? '' : 's'}. Each system runs every updater that is
+        detected and enabled on it. The result panel reports per-system
+        outcomes when the run completes.
+      </ModalBody>
+      <ModalFooter>
+        <Button variant="primary" onClick={() => void onConfirm()}>
+          Update
         </Button>
         <Button variant="link" onClick={onCancel}>
           Cancel

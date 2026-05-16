@@ -36,12 +36,17 @@ import {
 } from '@patternfly/react-core'
 import { Link, useParams } from 'react-router-dom'
 import GroupRolesTab from '../components/GroupRolesTab'
-import { canAdminGroup, isGlobalAdmin, roleOnGroup, useScope } from '../hooks/useScope'
+import {
+  canAdminGroup,
+  isGlobalAdmin,
+  isGlobalOperator,
+  roleOnGroup,
+  useScope,
+} from '../hooks/useScope'
 import { ActionsColumn, Table, Tbody, Td, Th, Thead, Tr } from '@patternfly/react-table'
 import {
   listSystems,
   type System,
-  type SystemStatus,
 } from '../api/systems'
 import { ApiError } from '../api/systems'
 import { getGroup, setSystemGroup, type Group } from '../api/groups'
@@ -52,21 +57,20 @@ import {
 } from '../api/credentials'
 import CredentialSlotEditor from '../components/CredentialSlotEditor'
 import { useEventStream } from '../hooks/useEventStream'
-
-const STATUS_LABELS: Record<
-  SystemStatus,
-  { color: 'green' | 'red' | 'grey'; text: string }
-> = {
-  reachable: { color: 'green', text: 'Reachable' },
-  unreachable: { color: 'red', text: 'Unreachable' },
-  unprobed: { color: 'grey', text: 'Unprobed' },
-}
-
-function formatLastSeen(iso: string | undefined): string {
-  if (!iso) return '—'
-  const d = new Date(iso)
-  return Number.isNaN(d.getTime()) ? '—' : d.toLocaleString()
-}
+import FanOutOutcomesPanel from '../components/FanOutOutcomesPanel'
+import {
+  PendingUpdatesCell,
+  SystemStatusIcon,
+} from '../components/systemsTable'
+import {
+  STATUS_LABELS,
+  TABLE_DENSITY_STYLE,
+  TIGHT_END,
+  TIGHT_START,
+  formatLastChecked,
+  formatPendingUpdates,
+} from '../components/systemsTableHelpers'
+import { fanOutOnSystem, type FanOutOutcome } from '../util/updaterFanOut'
 
 type PageSize = 25 | 50 | 100 | 'all'
 const PAGE_SIZE_OPTIONS: { value: PageSize; label: string }[] = [
@@ -76,12 +80,18 @@ const PAGE_SIZE_OPTIONS: { value: PageSize; label: string }[] = [
   { value: 'all', label: 'All' },
 ]
 
-type SortKey = 'name' | 'hostname' | 'status' | 'lastSeen' | 'createdAt'
+type SortKey =
+  | 'name'
+  | 'hostname'
+  | 'status'
+  | 'lastChecked'
+  | 'pendingUpdates'
 type SortDir = 'asc' | 'desc'
 
 type Confirm =
   | { kind: 'remove-one'; system: System }
   | { kind: 'remove-bulk'; ids: string[] }
+  | { kind: 'apply-bulk'; systems: System[] }
 
 export default function GroupDetailPage() {
   const { groupId = '' } = useParams<{ groupId: string }>()
@@ -108,13 +118,22 @@ export default function GroupDetailPage() {
   // (matching the GET endpoint's gate). Group Operator / Auditor see
   // it read-only.
   const showRolesTab = callerIsGlobalAdmin || callerRole !== ''
+  // canOperateSystem mirrors SystemsPage's RBAC gate for the per-
+  // row Check/Update items. Global Operator+ may operate anywhere;
+  // Group Admin/Operator may operate systems in this specific group.
+  const canOperateSystem = (s: System): boolean => {
+    if (isGlobalOperator(scopeState)) return true
+    if (!s.groupId) return false
+    const r = roleOnGroup(scopeState, s.groupId)
+    return r === 'admin' || r === 'operator'
+  }
 
   const [filters, setFilters] = useState<Record<string, string>>({
     name: '',
     hostname: '',
     status: '',
-    lastSeen: '',
-    createdAt: '',
+    lastChecked: '',
+    pendingUpdates: '',
   })
   const [sortKey, setSortKey] = useState<SortKey>('name')
   const [sortDir, setSortDir] = useState<SortDir>('asc')
@@ -123,6 +142,13 @@ export default function GroupDetailPage() {
   const [sizeOpen, setSizeOpen] = useState(false)
   const [actionsOpen, setActionsOpen] = useState(false)
   const [selected, setSelected] = useState<Set<string>>(new Set())
+  // Updater fan-out state, mirroring SystemsPage. The same
+  // FanOutOutcomesPanel renders the results so the operator sees
+  // an identical confirmation surface across pages.
+  const [updaterOutcomes, setUpdaterOutcomes] = useState<
+    FanOutOutcome[] | null
+  >(null)
+  const [updaterBusy, setUpdaterBusy] = useState<string | null>(null)
 
   const refresh = useCallback(async () => {
     try {
@@ -133,6 +159,46 @@ export default function GroupDetailPage() {
       setLoadError(e instanceof Error ? e.message : String(e))
     }
   }, [])
+
+  // runOnRow fires fanOut against a single system from the row
+  // kebab. Mirrors SystemsPage so an operator drilling into a
+  // group sees the same outcomes panel they would on the systems
+  // list.
+  const runOnRow = async (s: System, action: 'check' | 'apply') => {
+    setUpdaterOutcomes(null)
+    setUpdaterBusy(`${action}:${s.id}`)
+    const outcome = await fanOutOnSystem(s.id, s.name, action)
+    setUpdaterOutcomes([outcome])
+    setUpdaterBusy(null)
+    await refresh()
+  }
+
+  const runBulk = async (
+    action: 'check' | 'apply',
+    targets: System[],
+  ) => {
+    if (targets.length === 0) return
+    setUpdaterOutcomes(null)
+    setUpdaterBusy(`bulk:${action}`)
+    const operable = targets.filter(canOperateSystem)
+    const notOperable: FanOutOutcome[] = targets
+      .filter((s) => !canOperateSystem(s))
+      .map((s) => ({
+        systemId: s.id,
+        systemName: s.name,
+        action,
+        attempted: 0,
+        skipped: true,
+        skipReason: 'No operator permission on this system.',
+        results: [],
+      }))
+    const outcomes = await Promise.all(
+      operable.map((s) => fanOutOnSystem(s.id, s.name, action)),
+    )
+    setUpdaterOutcomes([...outcomes, ...notOperable])
+    setUpdaterBusy(null)
+    await refresh()
+  }
 
   useEffect(() => {
     if (!groupId) return
@@ -187,8 +253,8 @@ export default function GroupDetailPage() {
     const n = filters.name.trim().toLowerCase()
     const h = filters.hostname.trim().toLowerCase()
     const st = filters.status.trim().toLowerCase()
-    const ls = filters.lastSeen.trim().toLowerCase()
-    const c = filters.createdAt.trim().toLowerCase()
+    const lc = filters.lastChecked.trim().toLowerCase()
+    const pu = filters.pendingUpdates.trim().toLowerCase()
     return members.filter((row) => {
       if (n && !row.name.toLowerCase().includes(n)) return false
       if (h && !row.hostname.toLowerCase().includes(h)) return false
@@ -196,13 +262,14 @@ export default function GroupDetailPage() {
         const label = STATUS_LABELS[row.status]?.text.toLowerCase() ?? row.status
         if (!label.includes(st)) return false
       }
-      if (ls && !formatLastSeen(row.lastSeen).toLowerCase().includes(ls))
-        return false
-      if (
-        c &&
-        !new Date(row.createdAt).toLocaleString().toLowerCase().includes(c)
-      )
-        return false
+      if (lc) {
+        if (!formatLastChecked(row.lastCheckedAt).toLowerCase().includes(lc))
+          return false
+      }
+      if (pu) {
+        if (!formatPendingUpdates(row.pendingUpdates).toLowerCase().includes(pu))
+          return false
+      }
       return true
     })
   }, [members, filters])
@@ -221,12 +288,13 @@ export default function GroupDetailPage() {
       } else if (sortKey === 'status') {
         av = a.status
         bv = b.status
-      } else if (sortKey === 'lastSeen') {
-        av = a.lastSeen ? new Date(a.lastSeen).getTime() : 0
-        bv = b.lastSeen ? new Date(b.lastSeen).getTime() : 0
+      } else if (sortKey === 'lastChecked') {
+        av = a.lastCheckedAt ? new Date(a.lastCheckedAt).getTime() : 0
+        bv = b.lastCheckedAt ? new Date(b.lastCheckedAt).getTime() : 0
       } else {
-        av = new Date(a.createdAt).getTime()
-        bv = new Date(b.createdAt).getTime()
+        // pendingUpdates: undefined sorts as -1 (distinct from 0)
+        av = a.pendingUpdates ?? -1
+        bv = b.pendingUpdates ?? -1
       }
       if (av < bv) return sortDir === 'asc' ? -1 : 1
       if (av > bv) return sortDir === 'asc' ? 1 : -1
@@ -412,6 +480,19 @@ export default function GroupDetailPage() {
                       setConfirm({ kind: 'remove-bulk', ids })
                     }
                   }
+                  if (value === 'check-bulk' || value === 'apply-bulk') {
+                    const ids = selected
+                    const targets =
+                      members.filter((s) => ids.has(s.id))
+                    if (targets.length === 0) return
+                    if (value === 'check-bulk') {
+                      void runBulk('check', targets)
+                    } else {
+                      // Apply is destructive enough to warrant a
+                      // confirm modal — matches SystemsPage's flow.
+                      setConfirm({ kind: 'apply-bulk', systems: targets })
+                    }
+                  }
                 }}
                 onOpenChange={(open) => setActionsOpen(open)}
                 toggle={(ref: React.Ref<MenuToggleElement>) => (
@@ -429,6 +510,22 @@ export default function GroupDetailPage() {
                 <DropdownList>
                   <DropdownItem value="add" key="add">
                     Add systems
+                  </DropdownItem>
+                  <DropdownItem
+                    value="check-bulk"
+                    key="check-bulk"
+                    isDisabled={selectionCount === 0 || updaterBusy !== null}
+                  >
+                    Check selected
+                    {selectionCount > 0 ? ` (${selectionCount})` : ''}
+                  </DropdownItem>
+                  <DropdownItem
+                    value="apply-bulk"
+                    key="apply-bulk"
+                    isDisabled={selectionCount === 0 || updaterBusy !== null}
+                  >
+                    Update selected
+                    {selectionCount > 0 ? ` (${selectionCount})` : ''}
                   </DropdownItem>
                   <DropdownItem
                     value="remove"
@@ -498,6 +595,17 @@ export default function GroupDetailPage() {
             {actionError}
           </Alert>
         )}
+        {updaterOutcomes && (
+          <FanOutOutcomesPanel
+            outcomes={updaterOutcomes}
+            onDismiss={() => setUpdaterOutcomes(null)}
+            onRetry={(ids, action) => {
+              const targets = members.filter((s) => ids.includes(s.id))
+              void runBulk(action, targets)
+            }}
+            busy={updaterBusy !== null}
+          />
+        )}
         {!loadError && systems === null && (
           <Bullseye>
             <Spinner />
@@ -511,7 +619,11 @@ export default function GroupDetailPage() {
           </EmptyState>
         )}
         {systems !== null && members.length > 0 && (
-          <Table aria-label={`Systems in ${group.name}`} variant="compact">
+          <Table
+            aria-label={`Systems in ${group.name}`}
+            variant="compact"
+            style={TABLE_DENSITY_STYLE}
+          >
             <Thead>
               <Tr>
                 <Th
@@ -520,26 +632,27 @@ export default function GroupDetailPage() {
                     isSelected: allVisibleSelected,
                     isDisabled: visible.length === 0,
                   }}
+                  style={TIGHT_END}
                 />
-                <Th width={25} sort={sortFor('name', 1)}>
+                <Th width={20} sort={sortFor('name', 1)}>
                   Name
                 </Th>
-                <Th width={25} sort={sortFor('hostname', 2)}>
+                <Th width={20} sort={sortFor('hostname', 2)}>
                   Hostname
                 </Th>
-                <Th width={15} sort={sortFor('status', 3)}>
+                <Th width={10} sort={sortFor('status', 3)}>
                   Status
                 </Th>
-                <Th width={20} sort={sortFor('lastSeen', 4)}>
-                  Last seen
+                <Th width={15} sort={sortFor('lastChecked', 4)}>
+                  Last checked
                 </Th>
-                <Th width={10} sort={sortFor('createdAt', 5)}>
-                  Added
+                <Th width={10} sort={sortFor('pendingUpdates', 5)}>
+                  Updates available
                 </Th>
-                <Th width={10} screenReaderText="Actions" />
+                <Th screenReaderText="Actions" style={TIGHT_START} />
               </Tr>
               <Tr>
-                <Th screenReaderText="Filter spacer" />
+                <Th screenReaderText="Filter spacer" style={TIGHT_END} />
                 <Th>
                   <SearchInput
                     aria-label="Filter name"
@@ -573,27 +686,31 @@ export default function GroupDetailPage() {
                 </Th>
                 <Th>
                   <SearchInput
-                    aria-label="Filter last seen"
-                    placeholder="Filter last seen"
-                    value={filters.lastSeen}
+                    aria-label="Filter last checked"
+                    placeholder="Filter last checked"
+                    value={filters.lastChecked}
                     onChange={(_, v) =>
-                      setFilters((f) => ({ ...f, lastSeen: v }))
+                      setFilters((f) => ({ ...f, lastChecked: v }))
                     }
-                    onClear={() => setFilters((f) => ({ ...f, lastSeen: '' }))}
+                    onClear={() =>
+                      setFilters((f) => ({ ...f, lastChecked: '' }))
+                    }
                   />
                 </Th>
                 <Th>
                   <SearchInput
-                    aria-label="Filter added"
-                    placeholder="Filter added"
-                    value={filters.createdAt}
+                    aria-label="Filter updates available"
+                    placeholder="Filter updates available"
+                    value={filters.pendingUpdates}
                     onChange={(_, v) =>
-                      setFilters((f) => ({ ...f, createdAt: v }))
+                      setFilters((f) => ({ ...f, pendingUpdates: v }))
                     }
-                    onClear={() => setFilters((f) => ({ ...f, createdAt: '' }))}
+                    onClear={() =>
+                      setFilters((f) => ({ ...f, pendingUpdates: '' }))
+                    }
                   />
                 </Th>
-                <Th screenReaderText="Actions spacer" />
+                <Th screenReaderText="Actions spacer" style={TIGHT_START} />
               </Tr>
             </Thead>
             <Tbody>
@@ -608,9 +725,25 @@ export default function GroupDetailPage() {
                           toggleRow(s.id, isSelecting),
                         isSelected: selected.has(s.id),
                       }}
+                      style={TIGHT_END}
                     />
                     <Td dataLabel="Name" modifier="truncate">
-                      {s.name}
+                      <span
+                        style={{
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          gap: '0.5rem',
+                        }}
+                      >
+                        <SystemStatusIcon
+                          status={s.status}
+                          pendingUpdates={s.pendingUpdates}
+                          lastRunFailed={s.lastRunFailed}
+                        />
+                        <Link to={`/systems/${encodeURIComponent(s.id)}`}>
+                          {s.name}
+                        </Link>
+                      </span>
                     </Td>
                     <Td dataLabel="Hostname" modifier="truncate">
                       {s.hostname}
@@ -620,13 +753,38 @@ export default function GroupDetailPage() {
                         {label.text}
                       </Label>
                     </Td>
-                    <Td dataLabel="Last seen">{formatLastSeen(s.lastSeen)}</Td>
-                    <Td dataLabel="Added">
-                      {new Date(s.createdAt).toLocaleString()}
+                    <Td dataLabel="Last checked">
+                      {formatLastChecked(s.lastCheckedAt)}
                     </Td>
-                    <Td dataLabel="Actions" isActionCell>
+                    <Td dataLabel="Updates available">
+                      <PendingUpdatesCell
+                        count={s.pendingUpdates}
+                        packages={s.pendingPackages}
+                      />
+                    </Td>
+                    <Td dataLabel="Actions" isActionCell style={TIGHT_START}>
                       <ActionsColumn
                         items={[
+                          ...(canOperateSystem(s)
+                            ? [
+                                {
+                                  title:
+                                    updaterBusy === `check:${s.id}`
+                                      ? 'Checking…'
+                                      : 'Check',
+                                  isDisabled: updaterBusy !== null,
+                                  onClick: () => void runOnRow(s, 'check'),
+                                },
+                                {
+                                  title:
+                                    updaterBusy === `apply:${s.id}`
+                                      ? 'Updating…'
+                                      : 'Update',
+                                  isDisabled: updaterBusy !== null,
+                                  onClick: () => void runOnRow(s, 'apply'),
+                                },
+                              ]
+                            : []),
                           {
                             title: `Remove ${s.name} from group`,
                             onClick: () =>
@@ -700,7 +858,7 @@ export default function GroupDetailPage() {
           if (!confirm) return
           if (confirm.kind === 'remove-one') {
             await removeFromGroup(confirm.system.id)
-          } else {
+          } else if (confirm.kind === 'remove-bulk') {
             for (const id of confirm.ids) {
               await removeFromGroup(id)
             }
@@ -708,6 +866,16 @@ export default function GroupDetailPage() {
           }
           setConfirm(null)
           await refresh()
+        }}
+      />
+      <ConfirmApplyBulkModal
+        confirm={confirm}
+        onCancel={() => setConfirm(null)}
+        onConfirm={async () => {
+          if (confirm?.kind !== 'apply-bulk') return
+          const targets = confirm.systems
+          setConfirm(null)
+          await runBulk('apply', targets)
         }}
       />
     </>
@@ -839,7 +1007,10 @@ function ConfirmRemoveModal({
   onCancel,
   onConfirm,
 }: ConfirmRemoveModalProps) {
-  const isOpen = confirm !== null
+  // Only the remove-* kinds use this modal. apply-bulk has its own
+  // confirmation surface below.
+  const isOpen =
+    confirm?.kind === 'remove-one' || confirm?.kind === 'remove-bulk'
   const isBulk = confirm?.kind === 'remove-bulk'
   const title = isBulk ? 'Remove from group?' : 'Remove from group?'
   const body = isBulk
@@ -857,6 +1028,41 @@ function ConfirmRemoveModal({
       <ModalFooter>
         <Button variant="danger" onClick={() => void onConfirm()}>
           Remove
+        </Button>
+        <Button variant="link" onClick={onCancel}>
+          Cancel
+        </Button>
+      </ModalFooter>
+    </Modal>
+  )
+}
+
+function ConfirmApplyBulkModal({
+  confirm,
+  onCancel,
+  onConfirm,
+}: ConfirmRemoveModalProps) {
+  const isOpen = confirm?.kind === 'apply-bulk'
+  const count = confirm?.kind === 'apply-bulk' ? confirm.systems.length : 0
+  return (
+    <Modal
+      variant="small"
+      isOpen={isOpen}
+      onClose={onCancel}
+      aria-labelledby="apply-bulk-group-title"
+    >
+      <ModalHeader
+        title={`Update ${count} system${count === 1 ? '' : 's'}?`}
+        labelId="apply-bulk-group-title"
+      />
+      <ModalBody>
+        Apply pending updates on the selected systems. Each system runs every
+        updater that is detected and enabled on it. The result panel reports
+        per-system outcomes when the run completes.
+      </ModalBody>
+      <ModalFooter>
+        <Button variant="primary" onClick={() => void onConfirm()}>
+          Update
         </Button>
         <Button variant="link" onClick={onCancel}>
           Cancel

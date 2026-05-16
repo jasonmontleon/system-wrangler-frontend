@@ -17,6 +17,17 @@ export type System = {
   // ever run against the system (renders as "Never" / "—").
   lastCheckedAt?: string
   pendingUpdates?: number
+  // pendingPackages is the union across every enabled updater on
+  // this system from each updater's latest check. Powers the row
+  // hover-tooltip without a per-row /updaters fetch. Absent when
+  // no check has produced markers.
+  pendingPackages?: string[]
+  // lastRunFailed flips the row glyph to red when the most recent
+  // terminated updater run exited non-zero, even on a reachable
+  // system. lastRunReason carries a short summary ("apply exit 2")
+  // for the detail page's "Needs Attention" line.
+  lastRunFailed?: boolean
+  lastRunReason?: string
 }
 
 export type SystemInput = {

@@ -9,6 +9,8 @@ import {
   Button,
   Card,
   CardBody,
+  CardExpandableContent,
+  CardHeader,
   CardTitle,
   Checkbox,
   DescriptionList,
@@ -27,6 +29,11 @@ import {
   ToolbarItem,
 } from '@patternfly/react-core'
 import { Table, Tbody, Td, Th, Thead, Tr } from '@patternfly/react-table'
+import {
+  CheckCircleIcon,
+  ExclamationTriangleIcon,
+  TimesCircleIcon,
+} from '@patternfly/react-icons'
 import { Link, useParams } from 'react-router-dom'
 import { ApiError, getSystem, type System } from '../api/systems'
 import {
@@ -208,7 +215,22 @@ export default function SystemDetailPage() {
         {state.kind === 'ready' && (
           <>
             <StackItem>
-              <Title headingLevel="h1">{state.system.name}</Title>
+              <Title headingLevel="h1">
+                <span
+                  style={{
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: '0.5rem',
+                  }}
+                >
+                  <SystemHealthIcon
+                    status={state.system.status}
+                    pendingUpdates={state.system.pendingUpdates}
+                    lastRunFailed={state.system.lastRunFailed}
+                  />
+                  {state.system.name}
+                </span>
+              </Title>
               <small>
                 {state.system.hostname} ·{' '}
                 <StatusBadge status={state.system.status} />
@@ -266,6 +288,9 @@ export default function SystemDetailPage() {
               />
             </StackItem>
             <StackItem>
+              <AvailableUpdatesCard updaters={state.updaters} />
+            </StackItem>
+            <StackItem>
               <RunsCard runs={state.runs} />
             </StackItem>
             {/* Surface unused scope helpers so the import stays
@@ -290,6 +315,138 @@ function StatusBadge({ status }: { status: System['status'] }) {
   }
   const c = cfg[status]
   return <Label color={c.color}>{c.text}</Label>
+}
+
+// SystemHealthIcon mirrors SystemsPage's row glyph on the detail
+// header. Precedence (most-actionable wins): unreachable → red,
+// last-run failed → red, reachable+pending → yellow, reachable+0 →
+// green, unprobed → no icon.
+function SystemHealthIcon({
+  status,
+  pendingUpdates,
+  lastRunFailed,
+}: {
+  status: System['status']
+  pendingUpdates: number | undefined
+  lastRunFailed: boolean | undefined
+}) {
+  if (status === 'unreachable') {
+    return (
+      <TimesCircleIcon
+        aria-label="Unreachable"
+        color="var(--pf-t--global--icon--color--status--danger--default)"
+      />
+    )
+  }
+  if (lastRunFailed) {
+    return (
+      <TimesCircleIcon
+        aria-label="Last run failed"
+        color="var(--pf-t--global--icon--color--status--danger--default)"
+      />
+    )
+  }
+  if (status === 'reachable' && pendingUpdates !== undefined) {
+    if (pendingUpdates === 0) {
+      return (
+        <CheckCircleIcon
+          aria-label="Up to date"
+          color="var(--pf-t--global--icon--color--status--success--default)"
+        />
+      )
+    }
+    return (
+      <ExclamationTriangleIcon
+        aria-label="Updates available"
+        color="var(--pf-t--global--icon--color--status--warning--default)"
+      />
+    )
+  }
+  return null
+}
+
+// HealthSummary derives the "Needs Attention / Updates Available /
+// System Healthy" line shown on the System information card. Same
+// precedence as the row glyph; an unprobed system returns null
+// because we have no probe data to verdict on.
+type HealthSummary =
+  | { kind: 'attention'; reason: string }
+  | { kind: 'updates' }
+  | { kind: 'healthy' }
+  | null
+
+function healthSummaryFor(system: System): HealthSummary {
+  if (system.status === 'unreachable') {
+    return { kind: 'attention', reason: 'Unreachable' }
+  }
+  if (system.lastRunFailed) {
+    return {
+      kind: 'attention',
+      reason: system.lastRunReason
+        ? `Last run failed (${system.lastRunReason})`
+        : 'Last run failed',
+    }
+  }
+  if (system.status === 'reachable' && system.pendingUpdates !== undefined) {
+    return system.pendingUpdates === 0
+      ? { kind: 'healthy' }
+      : { kind: 'updates' }
+  }
+  return null
+}
+
+function HealthSummaryLine({ system }: { system: System }) {
+  const summary = healthSummaryFor(system)
+  if (!summary) return null
+  if (summary.kind === 'attention') {
+    return (
+      <span
+        style={{
+          display: 'inline-flex',
+          alignItems: 'center',
+          gap: '0.5rem',
+        }}
+      >
+        <TimesCircleIcon
+          aria-hidden
+          color="var(--pf-t--global--icon--color--status--danger--default)"
+        />
+        Needs Attention: {summary.reason}
+      </span>
+    )
+  }
+  if (summary.kind === 'updates') {
+    return (
+      <span
+        style={{
+          display: 'inline-flex',
+          alignItems: 'center',
+          gap: '0.5rem',
+        }}
+      >
+        <ExclamationTriangleIcon
+          aria-hidden
+          color="var(--pf-t--global--icon--color--status--warning--default)"
+        />
+        Updates Available
+      </span>
+    )
+  }
+  return (
+    <span
+      style={{
+        display: 'inline-flex',
+        alignItems: 'center',
+        gap: '0.5rem',
+      }}
+    >
+      <CheckCircleIcon
+        aria-hidden
+        color="var(--pf-t--global--icon--color--status--success--default)"
+      />
+      System Healthy
+    </span>
+  )
 }
 
 function UpdatersCard({
@@ -355,42 +512,133 @@ function UpdatersCard({
   )
 }
 
-function RunsCard({ runs }: { runs: UpdaterRun[] }) {
+// AvailableUpdatesCard surfaces the per-updater pending list pulled
+// from the latest check run. Empty list / never-checked rows are
+// hidden — the card only renders updaters with a non-zero pending
+// count so an operator can scan to "what's actionable" without
+// scrolling past zero-rows. The whole card is collapsible so a
+// busy detail page can be condensed without losing the section.
+function AvailableUpdatesCard({ updaters }: { updaters: SystemUpdater[] }) {
+  const [isExpanded, setExpanded] = useState(true)
+  const rows = updaters.filter(
+    (u) => u.installed && (u.pendingPackages?.length ?? 0) > 0,
+  )
   return (
-    <Card>
-      <CardTitle>Recent runs</CardTitle>
-      <CardBody>
-        {runs.length === 0 ? (
-          <p>No runs yet. Try Inspect now to detect installed updaters, then Check or Update.</p>
-        ) : (
-          <Table aria-label="Recent updater runs" variant="compact">
-            <Thead>
-              <Tr>
-                <Th>Kind</Th>
-                <Th>Updater</Th>
-                <Th>Started</Th>
-                <Th>Exit</Th>
-                <Th>Log tail</Th>
-              </Tr>
-            </Thead>
-            <Tbody>
-              {runs.map((r) => (
-                <Tr key={r.id}>
-                  <Td>{r.kind}</Td>
-                  <Td>{r.updaterId ?? '—'}</Td>
-                  <Td>{new Date(r.startedAt).toLocaleString()}</Td>
-                  <Td>{r.exitCode ?? '…'}</Td>
-                  <Td>
-                    <ExpandableSection toggleText="Show">
-                      <pre style={{ whiteSpace: 'pre-wrap' }}>{r.logTail ?? ''}</pre>
-                    </ExpandableSection>
-                  </Td>
+    <Card id="available-updates-card" isExpanded={isExpanded}>
+      <CardHeader
+        onExpand={() => setExpanded((v) => !v)}
+        toggleButtonProps={{
+          'aria-label': 'Toggle available updates',
+          'aria-expanded': isExpanded,
+        }}
+      >
+        <CardTitle>Available updates</CardTitle>
+      </CardHeader>
+      <CardExpandableContent>
+        <CardBody>
+          {rows.length === 0 ? (
+            <p>
+              No pending updates known. Run Check to refresh the list, or
+              wait for the next scheduled check.
+            </p>
+          ) : (
+            <Table aria-label="Available updates" variant="compact">
+              <Thead>
+                <Tr>
+                  <Th>Updater</Th>
+                  <Th>Pending</Th>
+                  <Th>As of</Th>
+                  <Th>Packages</Th>
                 </Tr>
-              ))}
-            </Tbody>
-          </Table>
-        )}
-      </CardBody>
+              </Thead>
+              <Tbody>
+                {rows.map((u) => (
+                  <Tr key={u.updaterId}>
+                    <Td>
+                      <Stack>
+                        <StackItem>{u.displayName}</StackItem>
+                        <StackItem>
+                          <small>{u.updaterId}</small>
+                        </StackItem>
+                      </Stack>
+                    </Td>
+                    <Td>{u.pendingPackages.length}</Td>
+                    <Td>
+                      {u.lastSeenAt
+                        ? new Date(u.lastSeenAt).toLocaleString()
+                        : '—'}
+                    </Td>
+                    <Td>
+                      <ExpandableSection
+                        toggleText={`Show ${u.pendingPackages.length} package${u.pendingPackages.length === 1 ? '' : 's'}`}
+                      >
+                        <ul style={{ margin: 0, paddingLeft: '1.25rem' }}>
+                          {u.pendingPackages.map((p) => (
+                            <li key={p}>
+                              <code>{p}</code>
+                            </li>
+                          ))}
+                        </ul>
+                      </ExpandableSection>
+                    </Td>
+                  </Tr>
+                ))}
+              </Tbody>
+            </Table>
+          )}
+        </CardBody>
+      </CardExpandableContent>
+    </Card>
+  )
+}
+
+function RunsCard({ runs }: { runs: UpdaterRun[] }) {
+  const [isExpanded, setExpanded] = useState(true)
+  return (
+    <Card id="recent-runs-card" isExpanded={isExpanded}>
+      <CardHeader
+        onExpand={() => setExpanded((v) => !v)}
+        toggleButtonProps={{
+          'aria-label': 'Toggle recent runs',
+          'aria-expanded': isExpanded,
+        }}
+      >
+        <CardTitle>Recent runs</CardTitle>
+      </CardHeader>
+      <CardExpandableContent>
+        <CardBody>
+          {runs.length === 0 ? (
+            <p>No runs yet. Try Inspect now to detect installed updaters, then Check or Update.</p>
+          ) : (
+            <Table aria-label="Recent updater runs" variant="compact">
+              <Thead>
+                <Tr>
+                  <Th>Kind</Th>
+                  <Th>Updater</Th>
+                  <Th>Started</Th>
+                  <Th>Exit</Th>
+                  <Th>Log tail</Th>
+                </Tr>
+              </Thead>
+              <Tbody>
+                {runs.map((r) => (
+                  <Tr key={r.id}>
+                    <Td>{r.kind}</Td>
+                    <Td>{r.updaterId ?? '—'}</Td>
+                    <Td>{new Date(r.startedAt).toLocaleString()}</Td>
+                    <Td>{r.exitCode ?? '…'}</Td>
+                    <Td>
+                      <ExpandableSection toggleText="Show">
+                        <pre style={{ whiteSpace: 'pre-wrap' }}>{r.logTail ?? ''}</pre>
+                      </ExpandableSection>
+                    </Td>
+                  </Tr>
+                ))}
+              </Tbody>
+            </Table>
+          )}
+        </CardBody>
+      </CardExpandableContent>
     </Card>
   )
 }
@@ -410,11 +658,20 @@ function extractActionError(err: unknown): string {
 function SystemInfoCard({ system }: { system: System }) {
   const lastSeen = formatDateOrFallback(system.lastSeen, 'Never')
   const createdAt = formatDateOrFallback(system.createdAt, '—')
+  const health = healthSummaryFor(system)
   return (
     <Card>
       <CardTitle>System information</CardTitle>
       <CardBody>
         <DescriptionList isHorizontal>
+          {health && (
+            <DescriptionListGroup>
+              <DescriptionListTerm>Health</DescriptionListTerm>
+              <DescriptionListDescription>
+                <HealthSummaryLine system={system} />
+              </DescriptionListDescription>
+            </DescriptionListGroup>
+          )}
           <DescriptionListGroup>
             <DescriptionListTerm>Hostname</DescriptionListTerm>
             <DescriptionListDescription>

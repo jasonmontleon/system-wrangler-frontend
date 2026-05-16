@@ -32,6 +32,9 @@ function system(
     lastSeen: string
     lastCheckedAt: string
     pendingUpdates: number
+    pendingPackages: string[]
+    lastRunFailed: boolean
+    lastRunReason: string
   }> = {},
 ) {
   return {
@@ -516,6 +519,197 @@ describe('SystemsPage', () => {
     expect(listSystemsCalls).toBeGreaterThan(0)
   })
 
+  it('renders the fan-out results as a fixed-position overlay that does not shift layout', async () => {
+    vi.unstubAllGlobals()
+    const wrapped = (input: FetchInput, init?: FetchInit) => {
+      const url = typeof input === 'string' ? input : input.toString()
+      const method = init?.method ?? 'GET'
+      if (url === '/api/me/scope')
+        return Promise.resolve(jsonResponse({ global: 'admin', groups: {} }))
+      if (url.startsWith('/api/groups')) return Promise.resolve(jsonResponse([]))
+      if (url === '/api/systems' && method === 'GET') {
+        return Promise.resolve(
+          jsonResponse([system({ id: '1', name: 'host-x', hostname: 'x.example' })]),
+        )
+      }
+      if (url.match(/\/api\/systems\/[^/]+\/updaters$/)) {
+        return Promise.resolve(
+          jsonResponse({
+            updaters: [
+              {
+                updaterId: 'builtin.dnf',
+                source: 'builtin',
+                displayName: 'dnf',
+                installed: true,
+                enabled: true,
+              },
+            ],
+          }),
+        )
+      }
+      if (url.endsWith('/check') && method === 'POST') {
+        return Promise.resolve(
+          jsonResponse({
+            runId: 'r',
+            updaterId: 'builtin.dnf',
+            kind: 'check',
+            status: 'success',
+            exitCode: 0,
+            affectedCount: 0,
+            durationMs: 1,
+          }),
+        )
+      }
+      return Promise.resolve(jsonResponse({}, 500))
+    }
+    vi.stubGlobal('fetch', wrapped)
+    vi.stubGlobal('EventSource', FakeEventSource)
+
+    render(<SystemsPage />)
+    const row = (await screen.findByText('host-x')).closest('tr')!
+    clickRowKebab(row, /^Check$/i)
+    const card = await screen.findByLabelText(/Updater action results/i)
+    // The wrapper that the card lives in must use fixed positioning
+    // — that's what stops the table beneath from shifting on
+    // appear / dismiss. The wrapper is the card's parentElement.
+    const wrapper = card.parentElement as HTMLElement
+    expect(wrapper).toBeTruthy()
+    expect(wrapper.style.position).toBe('fixed')
+  })
+
+  it('auto-dismisses the results panel after the idle timeout', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true })
+    try {
+      vi.unstubAllGlobals()
+      const wrapped = (input: FetchInput, init?: FetchInit) => {
+        const url = typeof input === 'string' ? input : input.toString()
+        const method = init?.method ?? 'GET'
+        if (url === '/api/me/scope')
+          return Promise.resolve(jsonResponse({ global: 'admin', groups: {} }))
+        if (url.startsWith('/api/groups')) return Promise.resolve(jsonResponse([]))
+        if (url === '/api/systems' && method === 'GET') {
+          return Promise.resolve(
+            jsonResponse([system({ id: '1', name: 'host-x', hostname: 'x.example' })]),
+          )
+        }
+        if (url.match(/\/api\/systems\/[^/]+\/updaters$/)) {
+          return Promise.resolve(
+            jsonResponse({
+              updaters: [
+                {
+                  updaterId: 'builtin.dnf',
+                  source: 'builtin',
+                  displayName: 'dnf',
+                  installed: true,
+                  enabled: true,
+                },
+              ],
+            }),
+          )
+        }
+        if (url.endsWith('/check') && method === 'POST') {
+          return Promise.resolve(
+            jsonResponse({
+              runId: 'r',
+              updaterId: 'builtin.dnf',
+              kind: 'check',
+              status: 'success',
+              exitCode: 0,
+              affectedCount: 0,
+              durationMs: 1,
+            }),
+          )
+        }
+        return Promise.resolve(jsonResponse({}, 500))
+      }
+      vi.stubGlobal('fetch', wrapped)
+      vi.stubGlobal('EventSource', FakeEventSource)
+
+      render(<SystemsPage />)
+      const row = (await screen.findByText('host-x')).closest('tr')!
+      clickRowKebab(row, /^Check$/i)
+      const card = await screen.findByLabelText(/Updater action results/i)
+      expect(card).toBeInTheDocument()
+      // Advance past the 8s auto-dismiss window.
+      await vi.advanceTimersByTimeAsync(8100)
+      await waitFor(() =>
+        expect(screen.queryByLabelText(/Updater action results/i)).toBeNull(),
+      )
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('does not auto-dismiss the results panel while the operator hovers it', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true })
+    try {
+      vi.unstubAllGlobals()
+      const wrapped = (input: FetchInput, init?: FetchInit) => {
+        const url = typeof input === 'string' ? input : input.toString()
+        const method = init?.method ?? 'GET'
+        if (url === '/api/me/scope')
+          return Promise.resolve(jsonResponse({ global: 'admin', groups: {} }))
+        if (url.startsWith('/api/groups')) return Promise.resolve(jsonResponse([]))
+        if (url === '/api/systems' && method === 'GET') {
+          return Promise.resolve(
+            jsonResponse([system({ id: '1', name: 'host-x', hostname: 'x.example' })]),
+          )
+        }
+        if (url.match(/\/api\/systems\/[^/]+\/updaters$/)) {
+          return Promise.resolve(
+            jsonResponse({
+              updaters: [
+                {
+                  updaterId: 'builtin.dnf',
+                  source: 'builtin',
+                  displayName: 'dnf',
+                  installed: true,
+                  enabled: true,
+                },
+              ],
+            }),
+          )
+        }
+        if (url.endsWith('/check') && method === 'POST') {
+          return Promise.resolve(
+            jsonResponse({
+              runId: 'r',
+              updaterId: 'builtin.dnf',
+              kind: 'check',
+              status: 'success',
+              exitCode: 0,
+              affectedCount: 0,
+              durationMs: 1,
+            }),
+          )
+        }
+        return Promise.resolve(jsonResponse({}, 500))
+      }
+      vi.stubGlobal('fetch', wrapped)
+      vi.stubGlobal('EventSource', FakeEventSource)
+
+      render(<SystemsPage />)
+      const row = (await screen.findByText('host-x')).closest('tr')!
+      clickRowKebab(row, /^Check$/i)
+      const card = await screen.findByLabelText(/Updater action results/i)
+      const wrapper = card.parentElement as HTMLElement
+      fireEvent.mouseEnter(wrapper)
+      await vi.advanceTimersByTimeAsync(8100)
+      // Still present despite the idle window having passed.
+      expect(
+        screen.getByLabelText(/Updater action results/i),
+      ).toBeInTheDocument()
+      // Leaving restarts the window; advancing through it clears the panel.
+      fireEvent.mouseLeave(wrapper)
+      await vi.advanceTimersByTimeAsync(8100)
+      await waitFor(() =>
+        expect(screen.queryByLabelText(/Updater action results/i)).toBeNull(),
+      )
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
   it('bulk Check selected fans out across selected systems in parallel', async () => {
     vi.unstubAllGlobals()
     const checkCalls: string[] = []
@@ -688,6 +882,189 @@ describe('SystemsPage', () => {
       expect(screen.queryByText(/Update 1 system\?/i)).toBeNull(),
     )
     expect(applyCalls).toHaveLength(0)
+  })
+
+  it('shows a hover tooltip listing the pending packages when count > 0', async () => {
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse([
+        system({
+          id: '1',
+          name: 'busy',
+          hostname: '10.0.0.1',
+          status: 'reachable',
+          lastCheckedAt: '2026-05-16T09:00:00Z',
+          pendingUpdates: 2,
+          pendingPackages: ['kernel', 'glibc'],
+        }),
+      ]),
+    )
+    render(<SystemsPage />)
+    const row = (await screen.findByText('busy')).closest('tr')!
+    const cell = row.querySelector(
+      'td[data-label="Updates available"]',
+    ) as HTMLElement
+    // The cell renders the count and decorates the trigger with the
+    // dotted-underline affordance.
+    const trigger = within(cell).getByText('2')
+    expect(trigger).toBeInTheDocument()
+    expect(trigger).toHaveStyle({ cursor: 'help' })
+    // Hovering reveals the package list. PatternFly Tooltip portals
+    // its content into the document body and toggles role=tooltip
+    // visibility on focus / hover.
+    fireEvent.mouseEnter(trigger)
+    expect(await screen.findByText('kernel')).toBeInTheDocument()
+    expect(screen.getByText('glibc')).toBeInTheDocument()
+  })
+
+  it('does not wrap the count in a tooltip when pending = 0', async () => {
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse([
+        system({
+          id: '1',
+          name: 'idle',
+          hostname: '10.0.0.1',
+          status: 'reachable',
+          lastCheckedAt: '2026-05-16T09:00:00Z',
+          pendingUpdates: 0,
+          pendingPackages: [],
+        }),
+      ]),
+    )
+    render(<SystemsPage />)
+    const row = (await screen.findByText('idle')).closest('tr')!
+    const cell = row.querySelector(
+      'td[data-label="Updates available"]',
+    ) as HTMLElement
+    const zero = within(cell).getByText('0')
+    // No help-cursor / dotted affordance on a non-tooltip cell.
+    expect(zero).not.toHaveStyle({ cursor: 'help' })
+  })
+
+  it('renders a red X for reachable systems whose last run failed', async () => {
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse([
+        system({
+          id: '1',
+          name: 'sad',
+          hostname: '10.0.0.1',
+          status: 'reachable',
+          lastCheckedAt: '2026-05-16T09:00:00Z',
+          pendingUpdates: 0,
+          lastRunFailed: true,
+          lastRunReason: 'apply exit 2',
+        }),
+      ]),
+    )
+    render(<SystemsPage />)
+    const row = (await screen.findByText('sad')).closest('tr')!
+    // The Up-to-date glyph must not win — the failed-run glyph takes
+    // precedence even though pendingUpdates is 0.
+    expect(within(row).queryByLabelText(/Up to date/i)).toBeNull()
+    expect(within(row).getByLabelText(/Last run failed/i)).toBeInTheDocument()
+  })
+
+  it('renders the per-row status icon for reachable, pending, and unreachable systems', async () => {
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse([
+        system({
+          id: '1',
+          name: 'green',
+          hostname: '10.0.0.1',
+          status: 'reachable',
+          lastCheckedAt: '2026-05-16T09:00:00Z',
+          pendingUpdates: 0,
+        }),
+        system({
+          id: '2',
+          name: 'yellow',
+          hostname: '10.0.0.2',
+          status: 'reachable',
+          lastCheckedAt: '2026-05-16T09:00:00Z',
+          pendingUpdates: 7,
+        }),
+        system({
+          id: '3',
+          name: 'red',
+          hostname: '10.0.0.3',
+          status: 'unreachable',
+        }),
+        system({
+          id: '4',
+          name: 'gray',
+          hostname: '10.0.0.4',
+          status: 'unprobed',
+        }),
+      ]),
+    )
+    render(<SystemsPage />)
+    const greenRow = (await screen.findByText('green')).closest('tr')!
+    expect(within(greenRow).getByLabelText(/Up to date/i)).toBeInTheDocument()
+    const yellowRow = screen.getByText('yellow').closest('tr')!
+    expect(within(yellowRow).getByLabelText(/Updates available/i)).toBeInTheDocument()
+    const redRow = screen.getByText('red').closest('tr')!
+    expect(within(redRow).getByLabelText(/Unreachable/i)).toBeInTheDocument()
+    // The unprobed row gets no icon.
+    const grayRow = screen.getByText('gray').closest('tr')!
+    expect(within(grayRow).queryByLabelText(/Up to date/i)).toBeNull()
+    expect(within(grayRow).queryByLabelText(/Updates available/i)).toBeNull()
+    expect(within(grayRow).queryByLabelText(/Unreachable/i)).toBeNull()
+  })
+
+  it('refreshes the systems list after a kebab fan-out completes', async () => {
+    vi.unstubAllGlobals()
+    let listCalls = 0
+    const wrapped = (input: FetchInput, init?: FetchInit) => {
+      const url = typeof input === 'string' ? input : input.toString()
+      const method = init?.method ?? 'GET'
+      if (url === '/api/me/scope')
+        return Promise.resolve(jsonResponse({ global: 'admin', groups: {} }))
+      if (url.startsWith('/api/groups')) return Promise.resolve(jsonResponse([]))
+      if (url === '/api/systems' && method === 'GET') {
+        listCalls++
+        return Promise.resolve(
+          jsonResponse([system({ id: '1', name: 'host-x', hostname: 'x.example' })]),
+        )
+      }
+      if (url.match(/\/api\/systems\/[^/]+\/updaters$/)) {
+        return Promise.resolve(
+          jsonResponse({
+            updaters: [
+              {
+                updaterId: 'builtin.dnf',
+                source: 'builtin',
+                displayName: 'dnf',
+                installed: true,
+                enabled: true,
+              },
+            ],
+          }),
+        )
+      }
+      if (url.endsWith('/check') && method === 'POST') {
+        return Promise.resolve(
+          jsonResponse({
+            runId: 'r',
+            updaterId: 'builtin.dnf',
+            kind: 'check',
+            status: 'success',
+            exitCode: 0,
+            affectedCount: 0,
+            durationMs: 1,
+          }),
+        )
+      }
+      return Promise.resolve(jsonResponse({}, 500))
+    }
+    vi.stubGlobal('fetch', wrapped)
+    vi.stubGlobal('EventSource', FakeEventSource)
+
+    render(<SystemsPage />)
+    const row = (await screen.findByText('host-x')).closest('tr')!
+    const before = listCalls
+    clickRowKebab(row, /^Check$/i)
+    await screen.findByText(/Ran check on 1 system/i)
+    // Initial mount fetch + one refresh after fan-out.
+    expect(listCalls).toBeGreaterThan(before)
   })
 
   it('Update from the kebab banners a warning when no updaters are enabled', async () => {
