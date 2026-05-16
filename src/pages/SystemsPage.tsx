@@ -32,6 +32,7 @@ import {
   ToolbarItem,
 } from '@patternfly/react-core'
 import { ActionsColumn, Table, Tbody, Td, Th, Thead, Tr } from '@patternfly/react-table'
+import { Link } from 'react-router-dom'
 import {
   ApiError,
   createSystem,
@@ -42,8 +43,19 @@ import {
 } from '../api/systems'
 import { listGroups, type Group } from '../api/groups'
 import { useEventStream } from '../hooks/useEventStream'
-import { canAdminGroup, isGlobalAdmin, useScope } from '../hooks/useScope'
+import {
+  canAdminGroup,
+  isGlobalAdmin,
+  isGlobalOperator,
+  roleOnGroup,
+  useScope,
+} from '../hooks/useScope'
 import SystemCredentialsModal from '../components/SystemCredentialsModal'
+import UpdaterActionResults from '../components/UpdaterActionResults'
+import {
+  fanOutOnSystem,
+  type FanOutOutcome,
+} from '../util/updaterFanOut'
 
 const STATUS_LABELS: Record<
   SystemStatus,
@@ -54,10 +66,22 @@ const STATUS_LABELS: Record<
   unprobed: { color: 'grey', text: 'Unprobed' },
 }
 
-function formatLastSeen(iso: string | undefined): string {
-  if (!iso) return '—'
+// formatLastChecked renders the Last Checked column. Operators
+// want a clear "Never" when no check has been run; the system info
+// card uses a separate formatter for probe last-seen.
+function formatLastChecked(iso: string | undefined): string {
+  if (!iso) return 'Never'
   const d = new Date(iso)
-  return Number.isNaN(d.getTime()) ? '—' : d.toLocaleString()
+  return Number.isNaN(d.getTime()) ? 'Never' : d.toLocaleString()
+}
+
+// formatPendingUpdates renders the Updates Available column.
+// Distinguishes "never checked" (—) from "checked, zero pending"
+// (0) so an operator who hasn't run a check yet doesn't get a
+// false sense of being up to date.
+function formatPendingUpdates(n: number | undefined): string {
+  if (n === undefined) return '—'
+  return String(n)
 }
 
 type PageSize = 25 | 50 | 100 | 'all'
@@ -73,13 +97,14 @@ type SortKey =
   | 'hostname'
   | 'status'
   | 'group'
-  | 'lastSeen'
-  | 'createdAt'
+  | 'lastChecked'
+  | 'pendingUpdates'
 type SortDir = 'asc' | 'desc'
 
 type Confirm =
   | { kind: 'remove-one'; system: System }
   | { kind: 'remove-bulk'; ids: string[] }
+  | { kind: 'apply-bulk'; systems: System[] }
 
 export default function SystemsPage() {
   const [systems, setSystems] = useState<System[] | null>(null)
@@ -94,8 +119,8 @@ export default function SystemsPage() {
     hostname: '',
     status: '',
     group: '',
-    lastSeen: '',
-    createdAt: '',
+    lastChecked: '',
+    pendingUpdates: '',
   })
   const [sortKey, setSortKey] = useState<SortKey>('name')
   const [sortDir, setSortDir] = useState<SortDir>('asc')
@@ -115,6 +140,60 @@ export default function SystemsPage() {
     if (isGlobalAdmin(scopeState)) return true
     if (!s.groupId) return false
     return canAdminGroup(scopeState, s.groupId)
+  }
+  // canOperateSystem mirrors the backend's CanOperateSystem gate:
+  // Global Operator+ on any system, Group Admin/Operator on this
+  // system's group. Ungrouped systems are only operable by global
+  // roles.
+  const canOperateSystem = (s: System): boolean => {
+    if (isGlobalOperator(scopeState)) return true
+    if (!s.groupId) return false
+    const r = roleOnGroup(scopeState, s.groupId)
+    return r === 'admin' || r === 'operator'
+  }
+
+  // Updater fan-out state: when an action runs we record the
+  // outcomes so the page can show a banner. Phase 5 will replace
+  // this with a richer toast / drawer; for now a stacked alert is
+  // enough to know what happened.
+  const [updaterOutcomes, setUpdaterOutcomes] = useState<FanOutOutcome[] | null>(null)
+  const [updaterBusy, setUpdaterBusy] = useState<string | null>(null)
+
+  const runOnRow = async (s: System, action: 'check' | 'apply') => {
+    setUpdaterOutcomes(null)
+    setUpdaterBusy(`${action}:${s.id}`)
+    const outcome = await fanOutOnSystem(s.id, s.name, action)
+    setUpdaterOutcomes([outcome])
+    setUpdaterBusy(null)
+  }
+
+  // runBulk fans out an action across every currently-selected
+  // system. Per-system advisory locks on the backend already
+  // serialize concurrent runs against the same host, so the
+  // outer Promise.all runs all selected hosts in parallel. Systems
+  // the caller cannot operate are not POSTed against; they show up
+  // as `skipped` outcomes so the banner still accounts for them.
+  const runBulk = async (action: 'check' | 'apply', targets: System[]) => {
+    if (targets.length === 0) return
+    setUpdaterOutcomes(null)
+    setUpdaterBusy(`bulk:${action}`)
+    const operable = targets.filter(canOperateSystem)
+    const notOperable: FanOutOutcome[] = targets
+      .filter((s) => !canOperateSystem(s))
+      .map((s) => ({
+        systemId: s.id,
+        systemName: s.name,
+        action,
+        attempted: 0,
+        skipped: true,
+        skipReason: 'No operator permission on this system.',
+        results: [],
+      }))
+    const outcomes = await Promise.all(
+      operable.map((s) => fanOutOnSystem(s.id, s.name, action)),
+    )
+    setUpdaterOutcomes([...outcomes, ...notOperable])
+    setUpdaterBusy(null)
   }
 
   const refresh = useCallback(async () => {
@@ -185,8 +264,8 @@ export default function SystemsPage() {
     const h = filters.hostname.trim().toLowerCase()
     const st = filters.status.trim().toLowerCase()
     const gr = filters.group.trim().toLowerCase()
-    const ls = filters.lastSeen.trim().toLowerCase()
-    const c = filters.createdAt.trim().toLowerCase()
+    const lc = filters.lastChecked.trim().toLowerCase()
+    const pu = filters.pendingUpdates.trim().toLowerCase()
     return systems.filter((row) => {
       if (n && !row.name.toLowerCase().includes(n)) return false
       if (h && !row.hostname.toLowerCase().includes(h)) return false
@@ -198,11 +277,11 @@ export default function SystemsPage() {
         const display = (groupNameFor(row) || '—').toLowerCase()
         if (!display.includes(gr)) return false
       }
-      if (ls) {
-        if (!formatLastSeen(row.lastSeen).toLowerCase().includes(ls)) return false
+      if (lc) {
+        if (!formatLastChecked(row.lastCheckedAt).toLowerCase().includes(lc)) return false
       }
-      if (c) {
-        if (!new Date(row.createdAt).toLocaleString().toLowerCase().includes(c))
+      if (pu) {
+        if (!formatPendingUpdates(row.pendingUpdates).toLowerCase().includes(pu))
           return false
       }
       return true
@@ -226,12 +305,18 @@ export default function SystemsPage() {
       } else if (sortKey === 'group') {
         av = groupNameFor(a).toLowerCase()
         bv = groupNameFor(b).toLowerCase()
-      } else if (sortKey === 'lastSeen') {
-        av = a.lastSeen ? new Date(a.lastSeen).getTime() : 0
-        bv = b.lastSeen ? new Date(b.lastSeen).getTime() : 0
+      } else if (sortKey === 'lastChecked') {
+        // Never-checked rows sort as 0 (oldest) so the operator
+        // sees "stale or untouched first" when sorting ascending.
+        av = a.lastCheckedAt ? new Date(a.lastCheckedAt).getTime() : 0
+        bv = b.lastCheckedAt ? new Date(b.lastCheckedAt).getTime() : 0
       } else {
-        av = new Date(a.createdAt).getTime()
-        bv = new Date(b.createdAt).getTime()
+        // pendingUpdates: undefined sorts as -1 so "never checked"
+        // rows are distinct from "0 pending" — sorting ascending
+        // puts unknown state at the top, where the operator can
+        // act on it.
+        av = a.pendingUpdates ?? -1
+        bv = b.pendingUpdates ?? -1
       }
       if (av < bv) return sortDir === 'asc' ? -1 : 1
       if (av > bv) return sortDir === 'asc' ? 1 : -1
@@ -341,6 +426,21 @@ export default function SystemsPage() {
                       setConfirm({ kind: 'remove-bulk', ids })
                     }
                   }
+                  if (value === 'check-bulk' || value === 'apply-bulk') {
+                    const ids = selected
+                    const targets =
+                      systems?.filter((s) => ids.has(s.id)) ?? []
+                    if (targets.length === 0) return
+                    if (value === 'check-bulk') {
+                      void runBulk('check', targets)
+                    } else {
+                      // Apply confirmation: this mutates fleet
+                      // state, so make the operator acknowledge
+                      // the count before firing. Check is
+                      // read-only and runs immediately.
+                      setConfirm({ kind: 'apply-bulk', systems: targets })
+                    }
+                  }
                 }}
                 onOpenChange={(open) => setActionsOpen(open)}
                 toggle={(ref: React.Ref<MenuToggleElement>) => (
@@ -358,6 +458,22 @@ export default function SystemsPage() {
                 <DropdownList>
                   <DropdownItem value="add" key="add">
                     Add system
+                  </DropdownItem>
+                  <DropdownItem
+                    value="check-bulk"
+                    key="check-bulk"
+                    isDisabled={selectionCount === 0 || updaterBusy !== null}
+                  >
+                    Check selected
+                    {selectionCount > 0 ? ` (${selectionCount})` : ''}
+                  </DropdownItem>
+                  <DropdownItem
+                    value="apply-bulk"
+                    key="apply-bulk"
+                    isDisabled={selectionCount === 0 || updaterBusy !== null}
+                  >
+                    Update selected
+                    {selectionCount > 0 ? ` (${selectionCount})` : ''}
                   </DropdownItem>
                   <DropdownItem
                     value="remove"
@@ -423,6 +539,17 @@ export default function SystemsPage() {
             {actionError}
           </Alert>
         )}
+        {updaterOutcomes && updaterOutcomes.length > 0 && (
+          <UpdaterActionResults
+            outcomes={updaterOutcomes}
+            onDismiss={() => setUpdaterOutcomes(null)}
+            onRetry={(ids, action) => {
+              const targets = systems?.filter((s) => ids.includes(s.id)) ?? []
+              void runBulk(action, targets)
+            }}
+            busy={updaterBusy !== null}
+          />
+        )}
         {!loadError && systems === null && (
           <Bullseye>
             <Spinner />
@@ -458,11 +585,11 @@ export default function SystemsPage() {
                 <Th width={15} sort={sortFor('group', 4)}>
                   Group
                 </Th>
-                <Th width={15} sort={sortFor('lastSeen', 5)}>
-                  Last seen
+                <Th width={15} sort={sortFor('lastChecked', 5)}>
+                  Last checked
                 </Th>
-                <Th width={10} sort={sortFor('createdAt', 6)}>
-                  Added
+                <Th width={10} sort={sortFor('pendingUpdates', 6)}>
+                  Updates available
                 </Th>
                 <Th width={10} screenReaderText="Actions" />
               </Tr>
@@ -512,24 +639,24 @@ export default function SystemsPage() {
                 </Th>
                 <Th>
                   <SearchInput
-                    aria-label="Filter last seen"
-                    placeholder="Filter last seen"
-                    value={filters.lastSeen}
+                    aria-label="Filter last checked"
+                    placeholder="Filter last checked"
+                    value={filters.lastChecked}
                     onChange={(_, v) =>
-                      setFilters((f) => ({ ...f, lastSeen: v }))
+                      setFilters((f) => ({ ...f, lastChecked: v }))
                     }
-                    onClear={() => setFilters((f) => ({ ...f, lastSeen: '' }))}
+                    onClear={() => setFilters((f) => ({ ...f, lastChecked: '' }))}
                   />
                 </Th>
                 <Th>
                   <SearchInput
-                    aria-label="Filter added"
-                    placeholder="Filter added"
-                    value={filters.createdAt}
+                    aria-label="Filter updates available"
+                    placeholder="Filter updates available"
+                    value={filters.pendingUpdates}
                     onChange={(_, v) =>
-                      setFilters((f) => ({ ...f, createdAt: v }))
+                      setFilters((f) => ({ ...f, pendingUpdates: v }))
                     }
-                    onClear={() => setFilters((f) => ({ ...f, createdAt: '' }))}
+                    onClear={() => setFilters((f) => ({ ...f, pendingUpdates: '' }))}
                   />
                 </Th>
                 <Th screenReaderText="Actions spacer" />
@@ -549,7 +676,9 @@ export default function SystemsPage() {
                       }}
                     />
                     <Td dataLabel="Name" modifier="truncate">
-                      {s.name}
+                      <Link to={`/systems/${encodeURIComponent(s.id)}`}>
+                        {s.name}
+                      </Link>
                     </Td>
                     <Td dataLabel="Hostname" modifier="truncate">
                       {s.hostname}
@@ -560,13 +689,35 @@ export default function SystemsPage() {
                       </Label>
                     </Td>
                     <Td dataLabel="Group">{groupNameFor(s) || '—'}</Td>
-                    <Td dataLabel="Last seen">{formatLastSeen(s.lastSeen)}</Td>
-                    <Td dataLabel="Added">
-                      {new Date(s.createdAt).toLocaleString()}
+                    <Td dataLabel="Last checked">
+                      {formatLastChecked(s.lastCheckedAt)}
+                    </Td>
+                    <Td dataLabel="Updates available">
+                      {formatPendingUpdates(s.pendingUpdates)}
                     </Td>
                     <Td dataLabel="Actions" isActionCell>
                       <ActionsColumn
                         items={[
+                          ...(canOperateSystem(s)
+                            ? [
+                                {
+                                  title:
+                                    updaterBusy === `check:${s.id}`
+                                      ? 'Checking…'
+                                      : 'Check',
+                                  isDisabled: updaterBusy !== null,
+                                  onClick: () => void runOnRow(s, 'check'),
+                                },
+                                {
+                                  title:
+                                    updaterBusy === `apply:${s.id}`
+                                      ? 'Updating…'
+                                      : 'Update',
+                                  isDisabled: updaterBusy !== null,
+                                  onClick: () => void runOnRow(s, 'apply'),
+                                },
+                              ]
+                            : []),
                           ...(canManageCredentialsFor(s)
                             ? [
                                 {
@@ -645,7 +796,7 @@ export default function SystemsPage() {
           if (!confirm) return
           if (confirm.kind === 'remove-one') {
             await removeOne(confirm.system.id)
-          } else {
+          } else if (confirm.kind === 'remove-bulk') {
             for (const id of confirm.ids) {
               await removeOne(id)
             }
@@ -653,6 +804,16 @@ export default function SystemsPage() {
           }
           setConfirm(null)
           await refresh()
+        }}
+      />
+      <ConfirmApplyBulkModal
+        confirm={confirm}
+        onCancel={() => setConfirm(null)}
+        onConfirm={async () => {
+          if (confirm?.kind !== 'apply-bulk') return
+          const targets = confirm.systems
+          setConfirm(null)
+          await runBulk('apply', targets)
         }}
       />
     </>
@@ -775,7 +936,10 @@ type ConfirmRemoveModalProps = {
 }
 
 function ConfirmRemoveModal({ confirm, onCancel, onConfirm }: ConfirmRemoveModalProps) {
-  const isOpen = confirm !== null
+  // Only the remove-* kinds use this modal. The apply-bulk kind has
+  // its own confirm component with different wording and a
+  // non-destructive button label.
+  const isOpen = confirm?.kind === 'remove-one' || confirm?.kind === 'remove-bulk'
   const isBulk = confirm?.kind === 'remove-bulk'
   const title = isBulk ? 'Remove systems?' : 'Remove system?'
   const body = isBulk
@@ -793,6 +957,38 @@ function ConfirmRemoveModal({ confirm, onCancel, onConfirm }: ConfirmRemoveModal
       <ModalFooter>
         <Button variant="danger" onClick={() => void onConfirm()}>
           Remove
+        </Button>
+        <Button variant="link" onClick={onCancel}>
+          Cancel
+        </Button>
+      </ModalFooter>
+    </Modal>
+  )
+}
+
+function ConfirmApplyBulkModal({
+  confirm,
+  onCancel,
+  onConfirm,
+}: ConfirmRemoveModalProps) {
+  const isOpen = confirm?.kind === 'apply-bulk'
+  const count = confirm?.kind === 'apply-bulk' ? confirm.systems.length : 0
+  return (
+    <Modal
+      variant="small"
+      isOpen={isOpen}
+      onClose={onCancel}
+      aria-labelledby="apply-bulk-title"
+    >
+      <ModalHeader title={`Update ${count} system${count === 1 ? '' : 's'}?`} labelId="apply-bulk-title" />
+      <ModalBody>
+        Apply pending updates on the selected systems. Each system runs every
+        updater that is detected and enabled on it. The result banner above
+        the table reports per-system outcomes when the run completes.
+      </ModalBody>
+      <ModalFooter>
+        <Button variant="primary" onClick={() => void onConfirm()}>
+          Update
         </Button>
         <Button variant="link" onClick={onCancel}>
           Cancel

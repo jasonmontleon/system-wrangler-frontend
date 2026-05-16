@@ -12,6 +12,11 @@ export type System = {
   status: SystemStatus
   lastSeen?: string
   groupId?: string | null
+  // lastCheckedAt and pendingUpdates come from the per-system
+  // updater stats hook on the backend; omitted when no check has
+  // ever run against the system (renders as "Never" / "—").
+  lastCheckedAt?: string
+  pendingUpdates?: number
 }
 
 export type SystemInput = {
@@ -43,6 +48,12 @@ export async function listSystems(): Promise<System[]> {
   const resp = await apiFetch('/api/systems')
   if (!resp.ok) throw new ApiError(resp.status, await parseError(resp))
   return (await resp.json()) as System[]
+}
+
+export async function getSystem(id: string): Promise<System> {
+  const resp = await apiFetch(`/api/systems/${encodeURIComponent(id)}`)
+  if (!resp.ok) throw new ApiError(resp.status, await parseError(resp))
+  return (await resp.json()) as System
 }
 
 export async function createSystem(input: SystemInput): Promise<System> {

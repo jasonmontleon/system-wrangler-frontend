@@ -69,6 +69,15 @@ export function isGlobalAdmin(state: ScopeState): boolean {
   return state.kind === 'ready' && state.scope.global === 'admin'
 }
 
+// isGlobalOperator returns true for callers who can act on any
+// group — Global Admin OR Global Operator. Used by the updater
+// surfaces, where "operator on the group" is the unit of access
+// and a global role short-circuits the per-group lookup.
+export function isGlobalOperator(state: ScopeState): boolean {
+  if (state.kind !== 'ready') return false
+  return state.scope.global === 'admin' || state.scope.global === 'operator'
+}
+
 export function roleOnGroup(state: ScopeState, groupId: string): Role | '' {
   if (state.kind !== 'ready') return ''
   return state.scope.groups[groupId] ?? ''

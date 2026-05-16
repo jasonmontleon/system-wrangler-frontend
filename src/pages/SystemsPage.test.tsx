@@ -1,8 +1,17 @@
 // SPDX-License-Identifier: Apache-2.0
 
-import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+import { fireEvent, render as rtlRender, screen, waitFor, within } from '@testing-library/react'
+import { MemoryRouter } from 'react-router-dom'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import type { ReactElement } from 'react'
 import SystemsPage from './SystemsPage'
+
+// render wraps every SystemsPage mount in a MemoryRouter so the
+// per-row <Link to="/systems/:id"> resolves a routing context. The
+// router is otherwise inert — tests don't navigate.
+function render(ui: ReactElement) {
+  return rtlRender(<MemoryRouter>{ui}</MemoryRouter>)
+}
 
 type FetchInput = RequestInfo | URL
 type FetchInit = RequestInit | undefined
@@ -14,7 +23,17 @@ function jsonResponse(body: unknown, status = 200): Response {
   })
 }
 
-function system(overrides: Partial<{ id: string; name: string; hostname: string; status: string; lastSeen: string }> = {}) {
+function system(
+  overrides: Partial<{
+    id: string
+    name: string
+    hostname: string
+    status: string
+    lastSeen: string
+    lastCheckedAt: string
+    pendingUpdates: number
+  }> = {},
+) {
   return {
     id: '1',
     name: 'sys-1',
@@ -90,10 +109,18 @@ describe('SystemsPage', () => {
     expect(await screen.findByText(/no systems yet/i)).toBeInTheDocument()
   })
 
-  it('renders status labels and last-seen for each system', async () => {
+  it('renders status, last-checked, and updates-available columns', async () => {
     fetchMock.mockResolvedValueOnce(
       jsonResponse([
-        system({ id: '1', name: 'up', hostname: '10.0.0.1', status: 'reachable', lastSeen: '2026-05-05T12:00:00Z' }),
+        system({
+          id: '1',
+          name: 'up',
+          hostname: '10.0.0.1',
+          status: 'reachable',
+          lastSeen: '2026-05-05T12:00:00Z',
+          lastCheckedAt: '2026-05-16T09:00:00Z',
+          pendingUpdates: 3,
+        }),
         system({ id: '2', name: 'down', hostname: '10.0.0.2', status: 'unreachable' }),
         system({ id: '3', name: 'fresh', hostname: '10.0.0.3', status: 'unprobed' }),
       ]),
@@ -105,10 +132,16 @@ describe('SystemsPage', () => {
     expect(within(downRow).getByText('Unreachable')).toBeInTheDocument()
     const freshRow = screen.getByText('fresh').closest('tr')!
     expect(within(freshRow).getByText('Unprobed')).toBeInTheDocument()
-    const lastSeenCell = (row: HTMLElement) =>
-      row.querySelector('td[data-label="Last seen"]') as HTMLElement
-    expect(lastSeenCell(downRow)).toHaveTextContent('—')
-    expect(lastSeenCell(freshRow)).toHaveTextContent('—')
+    const lastChecked = (row: HTMLElement) =>
+      row.querySelector('td[data-label="Last checked"]') as HTMLElement
+    const updates = (row: HTMLElement) =>
+      row.querySelector('td[data-label="Updates available"]') as HTMLElement
+    // Never-checked systems show "Never" + "—".
+    expect(lastChecked(downRow)).toHaveTextContent('Never')
+    expect(updates(downRow)).toHaveTextContent('—')
+    // Checked system shows a formatted date + the integer count.
+    expect(lastChecked(upRow).textContent).not.toMatch(/^Never$/)
+    expect(updates(upRow)).toHaveTextContent('3')
   })
 
   it('opens Add system from the Actions menu, defaults Name from Hostname, and submits', async () => {
@@ -409,5 +442,283 @@ describe('SystemsPage', () => {
     const row = (await screen.findByText('host-x')).closest('tr')!
     fireEvent.click(within(row).getByRole('button', { name: /kebab toggle/i }))
     expect(screen.queryByRole('menuitem', { name: /^credentials$/i })).toBeNull()
+  })
+
+  it('hides Check/Update from a caller without operator role', async () => {
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse([system({ id: '1', name: 'host-x', hostname: 'x.example' })]),
+    )
+    render(<SystemsPage />)
+    const row = (await screen.findByText('host-x')).closest('tr')!
+    fireEvent.click(within(row).getByRole('button', { name: /kebab toggle/i }))
+    expect(screen.queryByRole('menuitem', { name: /^Check$/i })).toBeNull()
+    expect(screen.queryByRole('menuitem', { name: /^Update$/i })).toBeNull()
+  })
+
+  it('fan-out Check from the kebab fires per enabled updater and banners the result', async () => {
+    vi.unstubAllGlobals()
+    let listSystemsCalls = 0
+    const wrapped = (input: FetchInput, init?: FetchInit) => {
+      const url = typeof input === 'string' ? input : input.toString()
+      const method = init?.method ?? 'GET'
+      if (url === '/api/me/scope')
+        return Promise.resolve(jsonResponse({ global: 'admin', groups: {} }))
+      if (url.startsWith('/api/groups')) return Promise.resolve(jsonResponse([]))
+      if (url === '/api/systems' && method === 'GET') {
+        listSystemsCalls++
+        return Promise.resolve(
+          jsonResponse([system({ id: '1', name: 'host-x', hostname: 'x.example' })]),
+        )
+      }
+      if (url.match(/\/api\/systems\/[^/]+\/updaters$/)) {
+        return Promise.resolve(
+          jsonResponse({
+            updaters: [
+              {
+                updaterId: 'builtin.dnf',
+                source: 'builtin',
+                displayName: 'dnf',
+                installed: true,
+                enabled: true,
+              },
+            ],
+          }),
+        )
+      }
+      if (url.endsWith('/check') && method === 'POST') {
+        return Promise.resolve(
+          jsonResponse({
+            runId: 'r-1',
+            updaterId: 'builtin.dnf',
+            kind: 'check',
+            status: 'success',
+            exitCode: 0,
+            affectedCount: 0,
+            durationMs: 1,
+          }),
+        )
+      }
+      return Promise.resolve(jsonResponse({}, 500))
+    }
+    vi.stubGlobal('fetch', wrapped)
+    vi.stubGlobal('EventSource', FakeEventSource)
+
+    render(<SystemsPage />)
+    const row = (await screen.findByText('host-x')).closest('tr')!
+    clickRowKebab(row, /^Check$/i)
+    // Phase 5 results card: aggregate "Ran check on 1 system" header
+    // plus a per-system row linking to /systems/host-x with the
+    // "1/1 updater(s) ok" summary.
+    expect(
+      await screen.findByText(/Ran check on 1 system/i),
+    ).toBeInTheDocument()
+    expect(screen.getByText(/1\/1 updater\(s\) ok/i)).toBeInTheDocument()
+    expect(listSystemsCalls).toBeGreaterThan(0)
+  })
+
+  it('bulk Check selected fans out across selected systems in parallel', async () => {
+    vi.unstubAllGlobals()
+    const checkCalls: string[] = []
+    const wrapped = (input: FetchInput, init?: FetchInit) => {
+      const url = typeof input === 'string' ? input : input.toString()
+      const method = init?.method ?? 'GET'
+      if (url === '/api/me/scope')
+        return Promise.resolve(jsonResponse({ global: 'admin', groups: {} }))
+      if (url.startsWith('/api/groups')) return Promise.resolve(jsonResponse([]))
+      if (url === '/api/systems' && method === 'GET') {
+        return Promise.resolve(
+          jsonResponse([
+            system({ id: 'a', name: 'host-a', hostname: 'a.example' }),
+            system({ id: 'b', name: 'host-b', hostname: 'b.example' }),
+          ]),
+        )
+      }
+      if (url.match(/\/api\/systems\/[^/]+\/updaters$/)) {
+        return Promise.resolve(
+          jsonResponse({
+            updaters: [
+              {
+                updaterId: 'builtin.dnf',
+                source: 'builtin',
+                displayName: 'dnf',
+                installed: true,
+                enabled: true,
+              },
+            ],
+          }),
+        )
+      }
+      if (url.endsWith('/check') && method === 'POST') {
+        checkCalls.push(url)
+        return Promise.resolve(
+          jsonResponse({
+            runId: 'r',
+            updaterId: 'builtin.dnf',
+            kind: 'check',
+            status: 'success',
+            exitCode: 0,
+            affectedCount: 0,
+            durationMs: 1,
+          }),
+        )
+      }
+      return Promise.resolve(jsonResponse({}, 500))
+    }
+    vi.stubGlobal('fetch', wrapped)
+    vi.stubGlobal('EventSource', FakeEventSource)
+
+    render(<SystemsPage />)
+    await screen.findByText('host-a')
+    // Select both rows via the per-row checkboxes.
+    const checkboxes = screen.getAllByRole('checkbox', { name: /select row/i })
+    fireEvent.click(checkboxes[0])
+    fireEvent.click(checkboxes[1])
+    // Open the Actions dropdown and trigger Check selected.
+    fireEvent.click(screen.getByRole('button', { name: /^Actions$/i }))
+    fireEvent.click(screen.getByRole('menuitem', { name: /Check selected/i }))
+    await waitFor(() => expect(checkCalls).toHaveLength(2))
+    expect(checkCalls.some((u) => u.includes('/systems/a/'))).toBe(true)
+    expect(checkCalls.some((u) => u.includes('/systems/b/'))).toBe(true)
+    // Both systems show up as their own rows inside the results
+    // card (scope by aria-label to avoid colliding with the table's
+    // own row links).
+    const card = await screen.findByLabelText(/Updater action results/i)
+    expect(within(card).getByRole('link', { name: 'host-a' })).toBeInTheDocument()
+    expect(within(card).getByRole('link', { name: 'host-b' })).toBeInTheDocument()
+    expect(within(card).getByText(/Ran check on 2 systems/i)).toBeInTheDocument()
+  })
+
+  it('bulk Update selected opens a confirm modal and fires apply on confirm', async () => {
+    vi.unstubAllGlobals()
+    const applyCalls: string[] = []
+    const wrapped = (input: FetchInput, init?: FetchInit) => {
+      const url = typeof input === 'string' ? input : input.toString()
+      const method = init?.method ?? 'GET'
+      if (url === '/api/me/scope')
+        return Promise.resolve(jsonResponse({ global: 'admin', groups: {} }))
+      if (url.startsWith('/api/groups')) return Promise.resolve(jsonResponse([]))
+      if (url === '/api/systems' && method === 'GET') {
+        return Promise.resolve(
+          jsonResponse([
+            system({ id: 'a', name: 'host-a', hostname: 'a.example' }),
+          ]),
+        )
+      }
+      if (url.match(/\/api\/systems\/[^/]+\/updaters$/)) {
+        return Promise.resolve(
+          jsonResponse({
+            updaters: [
+              {
+                updaterId: 'builtin.dnf',
+                source: 'builtin',
+                displayName: 'dnf',
+                installed: true,
+                enabled: true,
+              },
+            ],
+          }),
+        )
+      }
+      if (url.endsWith('/apply') && method === 'POST') {
+        applyCalls.push(url)
+        return Promise.resolve(
+          jsonResponse({
+            runId: 'r',
+            updaterId: 'builtin.dnf',
+            kind: 'apply',
+            status: 'success',
+            exitCode: 0,
+            affectedCount: 3,
+            durationMs: 1,
+          }),
+        )
+      }
+      return Promise.resolve(jsonResponse({}, 500))
+    }
+    vi.stubGlobal('fetch', wrapped)
+    vi.stubGlobal('EventSource', FakeEventSource)
+
+    render(<SystemsPage />)
+    await screen.findByText('host-a')
+    fireEvent.click(screen.getAllByRole('checkbox', { name: /select row/i })[0])
+    fireEvent.click(screen.getByRole('button', { name: /^Actions$/i }))
+    fireEvent.click(screen.getByRole('menuitem', { name: /Update selected/i }))
+    // Confirm modal — no POST should have fired yet.
+    expect(applyCalls).toHaveLength(0)
+    expect(await screen.findByText(/Update 1 system\?/i)).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: /^Update$/i }))
+    await waitFor(() => expect(applyCalls).toHaveLength(1))
+    expect(applyCalls[0]).toContain('/systems/a/updaters/builtin.dnf/apply')
+  })
+
+  it('bulk Update cancel does not fire any apply', async () => {
+    vi.unstubAllGlobals()
+    const applyCalls: string[] = []
+    const wrapped = (input: FetchInput, init?: FetchInit) => {
+      const url = typeof input === 'string' ? input : input.toString()
+      const method = init?.method ?? 'GET'
+      if (url === '/api/me/scope')
+        return Promise.resolve(jsonResponse({ global: 'admin', groups: {} }))
+      if (url.startsWith('/api/groups')) return Promise.resolve(jsonResponse([]))
+      if (url === '/api/systems' && method === 'GET') {
+        return Promise.resolve(
+          jsonResponse([
+            system({ id: 'a', name: 'host-a', hostname: 'a.example' }),
+          ]),
+        )
+      }
+      if (url.endsWith('/apply') && method === 'POST') {
+        applyCalls.push(url)
+        return Promise.resolve(jsonResponse({}, 500))
+      }
+      return Promise.resolve(jsonResponse({}, 500))
+    }
+    vi.stubGlobal('fetch', wrapped)
+    vi.stubGlobal('EventSource', FakeEventSource)
+
+    render(<SystemsPage />)
+    await screen.findByText('host-a')
+    fireEvent.click(screen.getAllByRole('checkbox', { name: /select row/i })[0])
+    fireEvent.click(screen.getByRole('button', { name: /^Actions$/i }))
+    fireEvent.click(screen.getByRole('menuitem', { name: /Update selected/i }))
+    await screen.findByText(/Update 1 system\?/i)
+    fireEvent.click(screen.getByRole('button', { name: /^Cancel$/i }))
+    // Modal closes without firing any apply.
+    await waitFor(() =>
+      expect(screen.queryByText(/Update 1 system\?/i)).toBeNull(),
+    )
+    expect(applyCalls).toHaveLength(0)
+  })
+
+  it('Update from the kebab banners a warning when no updaters are enabled', async () => {
+    vi.unstubAllGlobals()
+    const wrapped = (input: FetchInput, init?: FetchInit) => {
+      const url = typeof input === 'string' ? input : input.toString()
+      const method = init?.method ?? 'GET'
+      if (url === '/api/me/scope')
+        return Promise.resolve(jsonResponse({ global: 'admin', groups: {} }))
+      if (url.startsWith('/api/groups')) return Promise.resolve(jsonResponse([]))
+      if (url === '/api/systems' && method === 'GET') {
+        return Promise.resolve(
+          jsonResponse([system({ id: '1', name: 'host-x', hostname: 'x.example' })]),
+        )
+      }
+      if (url.match(/\/api\/systems\/[^/]+\/updaters$/)) {
+        return Promise.resolve(jsonResponse({ updaters: [] }))
+      }
+      return Promise.resolve(jsonResponse({}, 500))
+    }
+    vi.stubGlobal('fetch', wrapped)
+    vi.stubGlobal('EventSource', FakeEventSource)
+
+    render(<SystemsPage />)
+    const row = (await screen.findByText('host-x')).closest('tr')!
+    clickRowKebab(row, /^Update$/i)
+    // Skipped row renders the reason inline next to the Skipped
+    // label (no expandable body for skipped outcomes).
+    expect(
+      await screen.findByText(/No enabled updaters/i),
+    ).toBeInTheDocument()
+    expect(screen.getByText(/1 skipped/i)).toBeInTheDocument()
   })
 })

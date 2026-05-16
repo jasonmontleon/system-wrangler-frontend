@@ -36,7 +36,9 @@ import GroupDetailPage from './pages/GroupDetailPage'
 import GroupsPage from './pages/GroupsPage'
 import NotFoundPage from './pages/NotFoundPage'
 import ProfilePage from './pages/ProfilePage'
+import SystemDetailPage from './pages/SystemDetailPage'
 import SystemsPage from './pages/SystemsPage'
+import UpdatersPage from './pages/UpdatersPage'
 import UsersPage from './pages/UsersPage'
 import ForcePasswordChange from './components/ForcePasswordChange'
 import LoginForm from './components/LoginForm'
@@ -200,6 +202,9 @@ export default function App() {
               <RouterNavItem to="/credentials">Credentials</RouterNavItem>
             )}
             {isGlobalAdmin(scope.state) && (
+              <RouterNavItem to="/updaters">Updaters</RouterNavItem>
+            )}
+            {isGlobalAdmin(scope.state) && (
               <RouterNavItem to="/backup">Backup</RouterNavItem>
             )}
           </NavGroup>
@@ -223,6 +228,7 @@ export default function App() {
       <Routes>
         <Route path="/" element={<DashboardPage />} />
         <Route path="/systems" element={<SystemsPage />} />
+        <Route path="/systems/:systemId" element={<SystemDetailPage />} />
         <Route path="/groups" element={<GroupsPage />} />
         <Route path="/groups/:groupId" element={<GroupDetailPage />} />
         <Route path="/users" element={<UsersPage currentUserId={user.id} />} />
@@ -237,6 +243,12 @@ export default function App() {
           path="/credentials"
           element={
             isGlobalAdmin(scope.state) ? <CredentialsPage /> : <Navigate to="/" replace />
+          }
+        />
+        <Route
+          path="/updaters"
+          element={
+            isGlobalAdmin(scope.state) ? <UpdatersPage /> : <Navigate to="/" replace />
           }
         />
         <Route
