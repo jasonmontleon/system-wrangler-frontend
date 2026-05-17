@@ -23,25 +23,35 @@ describe('SettingsPage', () => {
     vi.unstubAllGlobals()
   })
 
-  it('renders the run_history_limit value from /api/admin/settings', async () => {
+  it('renders the run_history_limit and update_concurrency_limit values', async () => {
     fetchMock.mockResolvedValueOnce(
-      jsonResponse({ settings: { run_history_limit: '250' } }),
+      jsonResponse({
+        settings: { run_history_limit: '250', update_concurrency_limit: '6' },
+      }),
     )
     render(<SettingsPage />)
-    const input = (await screen.findByLabelText(
+    const retention = (await screen.findByLabelText(
       /Per-system row cap/i,
     )) as HTMLInputElement
-    expect(input.value).toBe('250')
+    expect(retention.value).toBe('250')
+    const concurrency = (await screen.findByLabelText(
+      /Simultaneous check \/ update runs/i,
+    )) as HTMLInputElement
+    expect(concurrency.value).toBe('6')
   })
 
-  it('PUTs the new value on Save and shows the success alert', async () => {
+  it('PUTs the new run_history_limit on Save and shows the success alert', async () => {
     fetchMock
       .mockResolvedValueOnce(
-        jsonResponse({ settings: { run_history_limit: '100' } }),
+        jsonResponse({
+          settings: { run_history_limit: '100', update_concurrency_limit: '4' },
+        }),
       )
       .mockResolvedValueOnce(new Response(null, { status: 204 }))
       .mockResolvedValueOnce(
-        jsonResponse({ settings: { run_history_limit: '500' } }),
+        jsonResponse({
+          settings: { run_history_limit: '500', update_concurrency_limit: '4' },
+        }),
       )
 
     render(<SettingsPage />)
@@ -49,7 +59,8 @@ describe('SettingsPage', () => {
       /Per-system row cap/i,
     )) as HTMLInputElement
     fireEvent.change(input, { target: { value: '500' } })
-    fireEvent.click(screen.getByRole('button', { name: /^Save$/i }))
+    // Two Save buttons render — the first belongs to the retention card.
+    fireEvent.click(screen.getAllByRole('button', { name: /^Save$/i })[0])
 
     await waitFor(() => {
       const put = fetchMock.mock.calls.find(
@@ -63,10 +74,45 @@ describe('SettingsPage', () => {
     expect(await screen.findByText(/^Saved$/i)).toBeInTheDocument()
   })
 
+  it('PUTs the new update_concurrency_limit on Save', async () => {
+    fetchMock
+      .mockResolvedValueOnce(
+        jsonResponse({
+          settings: { run_history_limit: '100', update_concurrency_limit: '4' },
+        }),
+      )
+      .mockResolvedValueOnce(new Response(null, { status: 204 }))
+      .mockResolvedValueOnce(
+        jsonResponse({
+          settings: { run_history_limit: '100', update_concurrency_limit: '8' },
+        }),
+      )
+
+    render(<SettingsPage />)
+    const input = (await screen.findByLabelText(
+      /Simultaneous check \/ update runs/i,
+    )) as HTMLInputElement
+    fireEvent.change(input, { target: { value: '8' } })
+    fireEvent.click(screen.getAllByRole('button', { name: /^Save$/i })[1])
+
+    await waitFor(() => {
+      const put = fetchMock.mock.calls.find(
+        (c) => (c[1] as RequestInit | undefined)?.method === 'PUT',
+      )
+      expect(put?.[0]).toBe('/api/admin/settings/update_concurrency_limit')
+      expect(JSON.parse((put?.[1] as RequestInit).body as string)).toEqual({
+        value: '8',
+      })
+    })
+    expect(await screen.findByText(/^Saved$/i)).toBeInTheDocument()
+  })
+
   it('surfaces a 400 error from the backend without losing the input', async () => {
     fetchMock
       .mockResolvedValueOnce(
-        jsonResponse({ settings: { run_history_limit: '100' } }),
+        jsonResponse({
+          settings: { run_history_limit: '100', update_concurrency_limit: '4' },
+        }),
       )
       .mockResolvedValueOnce(
         jsonResponse(
@@ -80,7 +126,7 @@ describe('SettingsPage', () => {
       /Per-system row cap/i,
     )) as HTMLInputElement
     fireEvent.change(input, { target: { value: '0' } })
-    fireEvent.click(screen.getByRole('button', { name: /^Save$/i }))
+    fireEvent.click(screen.getAllByRole('button', { name: /^Save$/i })[0])
 
     expect(
       await screen.findByText(/must be between 1 and 10000/i),

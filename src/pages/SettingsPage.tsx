@@ -27,6 +27,7 @@ import { listSettings, setSetting, type Settings } from '../api/settings'
 // keys (left over from a downgrade) still surface as read-only
 // rows so an operator can see what's stored without losing data.
 const KEY_RUN_HISTORY_LIMIT = 'run_history_limit'
+const KEY_UPDATE_CONCURRENCY_LIMIT = 'update_concurrency_limit'
 
 type LoadState =
   | { kind: 'loading' }
@@ -73,12 +74,20 @@ export default function SettingsPage() {
           </StackItem>
         )}
         {state.kind === 'ready' && (
-          <StackItem>
-            <RunHistoryLimitCard
-              value={state.settings[KEY_RUN_HISTORY_LIMIT] ?? ''}
-              onSaved={() => void refresh()}
-            />
-          </StackItem>
+          <>
+            <StackItem>
+              <RunHistoryLimitCard
+                value={state.settings[KEY_RUN_HISTORY_LIMIT] ?? ''}
+                onSaved={() => void refresh()}
+              />
+            </StackItem>
+            <StackItem>
+              <UpdateConcurrencyLimitCard
+                value={state.settings[KEY_UPDATE_CONCURRENCY_LIMIT] ?? ''}
+                onSaved={() => void refresh()}
+              />
+            </StackItem>
+          </>
         )}
       </Stack>
     </PageSection>
@@ -174,6 +183,94 @@ function RunHistoryLimitCard({
           <Button
             type="submit"
             form="run-history-limit-form"
+            variant="primary"
+            isLoading={save.kind === 'saving'}
+            isDisabled={save.kind === 'saving' || input.trim() === ''}
+          >
+            Save
+          </Button>
+        </Form>
+      </CardBody>
+    </Card>
+  )
+}
+
+function UpdateConcurrencyLimitCard({
+  value,
+  onSaved,
+}: {
+  value: string
+  onSaved: () => void
+}) {
+  const [input, setInput] = useState(value)
+  const [save, setSave] = useState<SaveState>({ kind: 'idle' })
+
+  useEffect(() => {
+    if (value !== input) {
+      setInput(value)
+      setSave({ kind: 'idle' })
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [value])
+
+  const onSubmit = async (e: React.FormEvent) => {
+    e.preventDefault()
+    setSave({ kind: 'saving' })
+    try {
+      await setSetting(KEY_UPDATE_CONCURRENCY_LIMIT, input.trim())
+      setSave({ kind: 'saved' })
+      onSaved()
+    } catch (err) {
+      const msg =
+        err instanceof ApiError
+          ? err.message
+          : err instanceof Error
+            ? err.message
+            : String(err)
+      setSave({ kind: 'error', message: msg })
+    }
+  }
+
+  return (
+    <Card>
+      <CardTitle>Update concurrency</CardTitle>
+      <CardBody>
+        <Form id="update-concurrency-limit-form" onSubmit={onSubmit}>
+          <FormGroup
+            label="Simultaneous check / update runs"
+            fieldId="update-concurrency-limit-input"
+            isRequired
+          >
+            <TextInput
+              id="update-concurrency-limit-input"
+              type="number"
+              min={1}
+              max={100}
+              value={input}
+              onChange={(_e, v) => setInput(v)}
+              isDisabled={save.kind === 'saving'}
+            />
+            <FormHelperText>
+              <HelperText>
+                <HelperTextItem>
+                  Cap on how many Check or Update tasks run at once across
+                  the fleet. Extras queue in arrival order and start as
+                  earlier runs finish. Range 1–100; default 4.
+                </HelperTextItem>
+              </HelperText>
+            </FormHelperText>
+          </FormGroup>
+          {save.kind === 'error' && (
+            <Alert variant="danger" title="Could not save" isInline>
+              {save.message}
+            </Alert>
+          )}
+          {save.kind === 'saved' && (
+            <Alert variant="success" title="Saved" isInline />
+          )}
+          <Button
+            type="submit"
+            form="update-concurrency-limit-form"
             variant="primary"
             isLoading={save.kind === 'saving'}
             isDisabled={save.kind === 'saving' || input.trim() === ''}
