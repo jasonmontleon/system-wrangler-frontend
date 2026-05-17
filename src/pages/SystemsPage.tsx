@@ -576,10 +576,10 @@ export default function SystemsPage() {
                 <Th width={15} sort={sortFor('group', 4)}>
                   Group
                 </Th>
-                <Th width={15} sort={sortFor('lastChecked', 5)}>
+                <Th width={20} sort={sortFor('lastChecked', 5)}>
                   Last checked
                 </Th>
-                <Th width={10} sort={sortFor('pendingUpdates', 6)}>
+                <Th width={15} sort={sortFor('pendingUpdates', 6)}>
                   Updates available
                 </Th>
                 <Th screenReaderText="Actions" style={TIGHT_START} />

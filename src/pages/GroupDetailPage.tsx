@@ -634,19 +634,19 @@ export default function GroupDetailPage() {
                   }}
                   style={TIGHT_END}
                 />
-                <Th width={20} sort={sortFor('name', 1)}>
+                <Th width={25} sort={sortFor('name', 1)}>
                   Name
                 </Th>
-                <Th width={20} sort={sortFor('hostname', 2)}>
+                <Th width={25} sort={sortFor('hostname', 2)}>
                   Hostname
                 </Th>
                 <Th width={10} sort={sortFor('status', 3)}>
                   Status
                 </Th>
-                <Th width={15} sort={sortFor('lastChecked', 4)}>
+                <Th width={25} sort={sortFor('lastChecked', 4)}>
                   Last checked
                 </Th>
-                <Th width={10} sort={sortFor('pendingUpdates', 5)}>
+                <Th width={15} sort={sortFor('pendingUpdates', 5)}>
                   Updates available
                 </Th>
                 <Th screenReaderText="Actions" style={TIGHT_START} />
