@@ -141,14 +141,41 @@ export default function SystemsPage() {
   // this with a richer toast / drawer; for now a stacked alert is
   // enough to know what happened.
   const [updaterOutcomes, setUpdaterOutcomes] = useState<FanOutOutcome[] | null>(null)
-  const [updaterBusy, setUpdaterBusy] = useState<string | null>(null)
+  // rowBusy holds the per-system in-flight tasks this tab has
+  // initiated. The map's presence drives the row spinner and the
+  // toolbar pill; the value tells the kebab whether to label
+  // itself "Checking…" or "Updating…". Scope is intentionally
+  // local-only — concurrent activity from other operators is not
+  // visible here. See the roadmap entry on SSE-backed progress.
+  const [rowBusy, setRowBusy] = useState<Map<string, 'check' | 'apply'>>(
+    () => new Map(),
+  )
+
+  const markBusy = (id: string, kind: 'check' | 'apply') => {
+    setRowBusy((prev) => {
+      const next = new Map(prev)
+      next.set(id, kind)
+      return next
+    })
+  }
+  const clearBusy = (id: string) => {
+    setRowBusy((prev) => {
+      if (!prev.has(id)) return prev
+      const next = new Map(prev)
+      next.delete(id)
+      return next
+    })
+  }
 
   const runOnRow = async (s: System, action: 'check' | 'apply') => {
     setUpdaterOutcomes(null)
-    setUpdaterBusy(`${action}:${s.id}`)
-    const outcome = await fanOutOnSystem(s.id, s.name, action)
-    setUpdaterOutcomes([outcome])
-    setUpdaterBusy(null)
+    markBusy(s.id, action)
+    try {
+      const outcome = await fanOutOnSystem(s.id, s.name, action)
+      setUpdaterOutcomes([outcome])
+    } finally {
+      clearBusy(s.id)
+    }
     await refresh()
   }
 
@@ -161,7 +188,6 @@ export default function SystemsPage() {
   const runBulk = async (action: 'check' | 'apply', targets: System[]) => {
     if (targets.length === 0) return
     setUpdaterOutcomes(null)
-    setUpdaterBusy(`bulk:${action}`)
     const operable = targets.filter(canOperateSystem)
     const notOperable: FanOutOutcome[] = targets
       .filter((s) => !canOperateSystem(s))
@@ -174,13 +200,21 @@ export default function SystemsPage() {
         skipReason: 'No operator permission on this system.',
         results: [],
       }))
+    operable.forEach((s) => markBusy(s.id, action))
     const outcomes = await Promise.all(
-      operable.map((s) => fanOutOnSystem(s.id, s.name, action)),
+      operable.map(async (s) => {
+        try {
+          return await fanOutOnSystem(s.id, s.name, action)
+        } finally {
+          clearBusy(s.id)
+        }
+      }),
     )
     setUpdaterOutcomes([...outcomes, ...notOperable])
-    setUpdaterBusy(null)
     await refresh()
   }
+
+  const busyCount = rowBusy.size
 
   const refresh = useCallback(async () => {
     try {
@@ -400,6 +434,17 @@ export default function SystemsPage() {
             <ToolbarItem>
               <Title headingLevel="h1">Systems</Title>
             </ToolbarItem>
+            {busyCount > 0 && (
+              <ToolbarItem>
+                <Label
+                  color="blue"
+                  icon={<Spinner size="sm" aria-hidden />}
+                  aria-label="In-flight tasks"
+                >
+                  {busyCount} {busyCount === 1 ? 'task' : 'tasks'} running
+                </Label>
+              </ToolbarItem>
+            )}
             <ToolbarItem align={{ default: 'alignEnd' }}>
               <Dropdown
                 isOpen={actionsOpen}
@@ -448,7 +493,7 @@ export default function SystemsPage() {
                   <DropdownItem
                     value="check-bulk"
                     key="check-bulk"
-                    isDisabled={selectionCount === 0 || updaterBusy !== null}
+                    isDisabled={selectionCount === 0 || busyCount > 0}
                   >
                     Check selected
                     {selectionCount > 0 ? ` (${selectionCount})` : ''}
@@ -456,7 +501,7 @@ export default function SystemsPage() {
                   <DropdownItem
                     value="apply-bulk"
                     key="apply-bulk"
-                    isDisabled={selectionCount === 0 || updaterBusy !== null}
+                    isDisabled={selectionCount === 0 || busyCount > 0}
                   >
                     Update selected
                     {selectionCount > 0 ? ` (${selectionCount})` : ''}
@@ -533,7 +578,7 @@ export default function SystemsPage() {
               const targets = systems?.filter((s) => ids.includes(s.id)) ?? []
               void runBulk(action, targets)
             }}
-            busy={updaterBusy !== null}
+            busy={busyCount > 0}
           />
         )}
         {!loadError && systems === null && (
@@ -675,11 +720,22 @@ export default function SystemsPage() {
                           gap: '0.5rem',
                         }}
                       >
-                        <SystemStatusIcon
-                          status={s.status}
-                          pendingUpdates={s.pendingUpdates}
-                          lastRunFailed={s.lastRunFailed}
-                        />
+                        {rowBusy.has(s.id) ? (
+                          <Spinner
+                            size="sm"
+                            aria-label={
+                              rowBusy.get(s.id) === 'check'
+                                ? 'Check in progress'
+                                : 'Update in progress'
+                            }
+                          />
+                        ) : (
+                          <SystemStatusIcon
+                            status={s.status}
+                            pendingUpdates={s.pendingUpdates}
+                            lastRunFailed={s.lastRunFailed}
+                          />
+                        )}
                         <Link to={`/systems/${encodeURIComponent(s.id)}`}>
                           {s.name}
                         </Link>
@@ -710,18 +766,18 @@ export default function SystemsPage() {
                             ? [
                                 {
                                   title:
-                                    updaterBusy === `check:${s.id}`
+                                    rowBusy.get(s.id) === 'check'
                                       ? 'Checking…'
                                       : 'Check',
-                                  isDisabled: updaterBusy !== null,
+                                  isDisabled: rowBusy.has(s.id),
                                   onClick: () => void runOnRow(s, 'check'),
                                 },
                                 {
                                   title:
-                                    updaterBusy === `apply:${s.id}`
+                                    rowBusy.get(s.id) === 'apply'
                                       ? 'Updating…'
                                       : 'Update',
-                                  isDisabled: updaterBusy !== null,
+                                  isDisabled: rowBusy.has(s.id),
                                   onClick: () => void runOnRow(s, 'apply'),
                                 },
                               ]

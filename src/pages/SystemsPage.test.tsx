@@ -519,6 +519,75 @@ describe('SystemsPage', () => {
     expect(listSystemsCalls).toBeGreaterThan(0)
   })
 
+  it('shows an in-flight spinner on the row and a toolbar pill while a Check is running', async () => {
+    vi.unstubAllGlobals()
+    // Hold the /check response so we can observe the busy state.
+    let resolveCheck: (r: Response) => void = () => {}
+    const checkPending = new Promise<Response>((res) => {
+      resolveCheck = res
+    })
+    const wrapped = (input: FetchInput, init?: FetchInit) => {
+      const url = typeof input === 'string' ? input : input.toString()
+      const method = init?.method ?? 'GET'
+      if (url === '/api/me/scope')
+        return Promise.resolve(jsonResponse({ global: 'admin', groups: {} }))
+      if (url.startsWith('/api/groups')) return Promise.resolve(jsonResponse([]))
+      if (url === '/api/systems' && method === 'GET')
+        return Promise.resolve(
+          jsonResponse([system({ id: '1', name: 'host-x' })]),
+        )
+      if (url.match(/\/api\/systems\/[^/]+\/updaters$/))
+        return Promise.resolve(
+          jsonResponse({
+            updaters: [
+              {
+                updaterId: 'builtin.dnf',
+                source: 'builtin',
+                displayName: 'dnf',
+                installed: true,
+                enabled: true,
+              },
+            ],
+          }),
+        )
+      if (url.endsWith('/check') && method === 'POST') return checkPending
+      return Promise.resolve(jsonResponse({}, 500))
+    }
+    vi.stubGlobal('fetch', wrapped)
+    vi.stubGlobal('EventSource', FakeEventSource)
+
+    render(<SystemsPage />)
+    const row = (await screen.findByText('host-x')).closest('tr')!
+    clickRowKebab(row, /^Check$/i)
+
+    // While the /check request is in flight, the row should swap its
+    // status icon for a spinner and the toolbar should show a pill
+    // labelling the in-flight count.
+    expect(
+      await within(row).findByLabelText(/Check in progress/i),
+    ).toBeInTheDocument()
+    expect(
+      screen.getByLabelText(/In-flight tasks/i).textContent,
+    ).toMatch(/1 task running/i)
+
+    // Let the /check resolve; both spinner and pill should clear.
+    resolveCheck(
+      jsonResponse({
+        runId: 'r',
+        updaterId: 'builtin.dnf',
+        kind: 'check',
+        status: 'success',
+        exitCode: 0,
+        affectedCount: 0,
+        durationMs: 1,
+      }),
+    )
+    await waitFor(() =>
+      expect(within(row).queryByLabelText(/Check in progress/i)).toBeNull(),
+    )
+    expect(screen.queryByLabelText(/In-flight tasks/i)).toBeNull()
+  })
+
   it('renders the fan-out results as a fixed-position overlay that does not shift layout', async () => {
     vi.unstubAllGlobals()
     const wrapped = (input: FetchInput, init?: FetchInit) => {
