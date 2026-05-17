@@ -39,6 +39,7 @@ type EditorState =
   | { kind: 'closed' }
   | { kind: 'create' }
   | { kind: 'edit'; original: UpdaterDefinition }
+  | { kind: 'view'; original: UpdaterDefinition }
 
 // UpdatersPage is the Administration → Updaters page. Lists every
 // registered updater (builtins + custom); the create/edit form
@@ -114,6 +115,7 @@ export default function UpdatersPage() {
             <DefinitionsTable
               definitions={state.definitions}
               onEdit={(d) => setEditor({ kind: 'edit', original: d })}
+              onView={(d) => setEditor({ kind: 'view', original: d })}
               onDelete={onDelete}
               deletingID={deleting}
             />
@@ -137,11 +139,13 @@ export default function UpdatersPage() {
 function DefinitionsTable({
   definitions,
   onEdit,
+  onView,
   onDelete,
   deletingID,
 }: {
   definitions: UpdaterDefinition[]
   onEdit: (d: UpdaterDefinition) => void
+  onView: (d: UpdaterDefinition) => void
   onDelete: (d: UpdaterDefinition) => void
   deletingID: string | null
 }) {
@@ -185,7 +189,9 @@ function DefinitionsTable({
                   </Button>
                 </>
               ) : (
-                <em>builtin</em>
+                <Button variant="link" onClick={() => onView(d)}>
+                  View
+                </Button>
               )}
             </Td>
           </Tr>
@@ -205,7 +211,10 @@ function EditorModal({
   onSaved: () => void
 }) {
   const isEdit = state.kind === 'edit'
-  const original = isEdit ? state.original : null
+  const isView = state.kind === 'view'
+  const readOnly = isView
+  const original =
+    state.kind === 'edit' || state.kind === 'view' ? state.original : null
   const [form, setForm] = useState<UpdaterDefinitionInput>({
     id: original?.id.replace(/^custom\./, '') ?? '',
     displayName: original?.displayName ?? '',
@@ -246,9 +255,15 @@ function EditorModal({
     }
   }
 
+  const title = isView
+    ? `View ${original?.id}`
+    : isEdit
+      ? `Edit ${original?.id}`
+      : 'New custom updater'
+
   return (
     <Modal isOpen onClose={onClose} variant="large">
-      <ModalHeader title={isEdit ? `Edit ${original?.id}` : 'New custom updater'} />
+      <ModalHeader title={title} />
       <ModalBody>
         <Form>
           {error && (
@@ -256,7 +271,7 @@ function EditorModal({
               {error}
             </Alert>
           )}
-          {!isEdit && (
+          {!isEdit && !isView && (
             <FormGroup label="ID slug" isRequired fieldId="updater-id">
               <TextInput
                 id="updater-id"
@@ -266,11 +281,17 @@ function EditorModal({
               />
             </FormGroup>
           )}
-          <FormGroup label="Display name" isRequired fieldId="updater-display">
+          {isView && (
+            <FormGroup label="ID" fieldId="updater-id-view">
+              <TextInput id="updater-id-view" value={original?.id ?? ''} readOnlyVariant="default" />
+            </FormGroup>
+          )}
+          <FormGroup label="Display name" isRequired={!readOnly} fieldId="updater-display">
             <TextInput
               id="updater-display"
               value={form.displayName}
               onChange={(_e, value) => setForm({ ...form, displayName: value })}
+              readOnlyVariant={readOnly ? 'default' : undefined}
             />
           </FormGroup>
           <FormGroup label="Description" fieldId="updater-description">
@@ -278,42 +299,48 @@ function EditorModal({
               id="updater-description"
               value={form.description}
               onChange={(_e, value) => setForm({ ...form, description: value })}
+              readOnlyVariant={readOnly ? 'default' : undefined}
             />
           </FormGroup>
-          <FormGroup label="Detect binary" isRequired fieldId="updater-binary">
+          <FormGroup label="Detect binary" isRequired={!readOnly} fieldId="updater-binary">
             <TextInput
               id="updater-binary"
               value={form.detectBinary}
               onChange={(_e, value) => setForm({ ...form, detectBinary: value })}
               placeholder="dnf"
+              readOnlyVariant={readOnly ? 'default' : undefined}
             />
           </FormGroup>
-          <FormGroup label="Check playbook (YAML)" isRequired fieldId="updater-check">
+          <FormGroup label="Check playbook (YAML)" isRequired={!readOnly} fieldId="updater-check">
             <TextArea
               id="updater-check"
               rows={8}
               value={form.checkPlaybook}
               onChange={(_e, value) => setForm({ ...form, checkPlaybook: value })}
               spellCheck={false}
+              readOnlyVariant={readOnly ? 'default' : undefined}
             />
           </FormGroup>
-          <FormGroup label="Apply playbook (YAML)" isRequired fieldId="updater-apply">
+          <FormGroup label="Apply playbook (YAML)" isRequired={!readOnly} fieldId="updater-apply">
             <TextArea
               id="updater-apply"
               rows={8}
               value={form.applyPlaybook}
               onChange={(_e, value) => setForm({ ...form, applyPlaybook: value })}
               spellCheck={false}
+              readOnlyVariant={readOnly ? 'default' : undefined}
             />
           </FormGroup>
         </Form>
       </ModalBody>
       <ModalFooter>
-        <Button variant="primary" isDisabled={busy} onClick={onSubmit}>
-          {busy ? 'Saving…' : isEdit ? 'Save changes' : 'Create'}
-        </Button>
+        {!readOnly && (
+          <Button variant="primary" isDisabled={busy} onClick={onSubmit}>
+            {busy ? 'Saving…' : isEdit ? 'Save changes' : 'Create'}
+          </Button>
+        )}
         <Button variant="link" isDisabled={busy} onClick={onClose}>
-          Cancel
+          {readOnly ? 'Close' : 'Cancel'}
         </Button>
       </ModalFooter>
     </Modal>

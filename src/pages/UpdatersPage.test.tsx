@@ -52,6 +52,39 @@ describe('UpdatersPage', () => {
     expect(screen.getByText('builtin.dnf')).toBeInTheDocument()
     // Only one Edit button — custom row.
     expect(screen.getAllByRole('button', { name: /^Edit$/i })).toHaveLength(1)
+    // Builtin rows expose a View button instead of Edit/Delete.
+    expect(screen.getAllByRole('button', { name: /^View$/i })).toHaveLength(1)
+  })
+
+  it('opens the builtin updater in a read-only modal via View', async () => {
+    fetchMock.mockResolvedValueOnce(jsonResponse({ definitions: [builtin] }))
+    render(<UpdatersPage />)
+    await screen.findByText('builtin.dnf')
+    fireEvent.click(screen.getByRole('button', { name: /^View$/i }))
+    expect(
+      await screen.findByRole('heading', { name: /View builtin\.dnf/i }),
+    ).toBeInTheDocument()
+    // No Save/Create button — only Close.
+    expect(
+      screen.queryByRole('button', { name: /^Save|^Create|^Save changes$/i }),
+    ).toBeNull()
+    // Every text input/textarea is read-only.
+    const textboxes = screen.getAllByRole('textbox')
+    for (const el of textboxes) {
+      expect(el).toHaveAttribute('readonly')
+    }
+    // Click the footer Close link (the one visible as text, not the
+    // modal's aria-only "Close" icon button).
+    const closeFooter = screen
+      .getAllByRole('button', { name: /^Close$/i })
+      .find((b) => b.textContent?.trim() === 'Close')
+    expect(closeFooter).toBeTruthy()
+    fireEvent.click(closeFooter!)
+    await waitFor(() =>
+      expect(
+        screen.queryByRole('heading', { name: /View builtin\.dnf/i }),
+      ).toBeNull(),
+    )
   })
 
   it('creates a new custom updater via the form modal', async () => {
