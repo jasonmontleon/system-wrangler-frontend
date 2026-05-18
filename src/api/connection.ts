@@ -15,6 +15,11 @@ export type ConnectionTestResult = {
   reason: string
   exitCode: number
   durationMs: number
+  // details is a capped diagnostic blurb extracted from
+  // stdout/stderr on failure (e.g. the trailing
+  // "fatal: ... FAILED!" lines with the module's stderr).
+  // Empty on success.
+  details?: string
 }
 
 async function parseError(resp: Response): Promise<string> {

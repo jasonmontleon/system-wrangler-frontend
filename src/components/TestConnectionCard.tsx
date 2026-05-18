@@ -7,6 +7,7 @@ import {
   Card,
   CardBody,
   CardTitle,
+  ExpandableSection,
   Stack,
   StackItem,
 } from '@patternfly/react-core'
@@ -59,8 +60,31 @@ export default function TestConnectionCard({ systemId }: Props) {
                 isInline
                 title={titleFor(state.result.status)}
               >
-                {state.result.reason} (exit {state.result.exitCode},{' '}
-                {state.result.durationMs}ms)
+                <Stack>
+                  <StackItem>
+                    {state.result.reason} (exit {state.result.exitCode},{' '}
+                    {state.result.durationMs}ms)
+                  </StackItem>
+                  {state.result.details && (
+                    <StackItem>
+                      <ExpandableSection
+                        toggleTextExpanded="Hide ansible output"
+                        toggleTextCollapsed="Show ansible output"
+                      >
+                        <pre
+                          style={{
+                            whiteSpace: 'pre-wrap',
+                            wordBreak: 'break-word',
+                            margin: 0,
+                            fontSize: '0.85rem',
+                          }}
+                        >
+                          {state.result.details}
+                        </pre>
+                      </ExpandableSection>
+                    </StackItem>
+                  )}
+                </Stack>
               </Alert>
             </StackItem>
           )}

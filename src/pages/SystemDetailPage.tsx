@@ -53,6 +53,7 @@ import {
   roleOnGroup,
   useScope,
 } from '../hooks/useScope'
+import PlatformCard from '../components/PlatformCard'
 import SystemCredentialsSection from '../components/SystemCredentialsSection'
 
 type LoadState =
@@ -245,6 +246,13 @@ export default function SystemDetailPage() {
             </StackItem>
             <StackItem>
               <SystemInfoCard system={state.system} />
+            </StackItem>
+            <StackItem>
+              <PlatformCard
+                system={state.system}
+                canEdit={operateAllowed}
+                onChange={refresh}
+              />
             </StackItem>
             {canManageCreds(state.system) && (
               <StackItem>

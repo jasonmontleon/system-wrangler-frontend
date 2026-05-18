@@ -29,6 +29,11 @@ export type System = {
   // for the detail page's "Needs Attention" line.
   lastRunFailed?: boolean
   lastRunReason?: string
+  // isWindows is the operator-declared platform flag. True means the
+  // Ansible runner uses the PowerShell-on-OpenSSH path
+  // (ansible_shell_type=powershell in inventory, win_ping / win_command
+  // modules); false / absent treats the host as Unix-like.
+  isWindows?: boolean
 }
 
 export type SystemInput = {
@@ -81,6 +86,15 @@ export async function createSystem(input: SystemInput): Promise<System> {
 export async function deleteSystem(id: string): Promise<void> {
   const resp = await apiFetch(`/api/systems/${encodeURIComponent(id)}`, {
     method: 'DELETE',
+  })
+  if (!resp.ok) throw new ApiError(resp.status, await parseError(resp))
+}
+
+export async function setSystemPlatform(id: string, isWindows: boolean): Promise<void> {
+  const resp = await apiFetch(`/api/systems/${encodeURIComponent(id)}/platform`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ isWindows }),
   })
   if (!resp.ok) throw new ApiError(resp.status, await parseError(resp))
 }

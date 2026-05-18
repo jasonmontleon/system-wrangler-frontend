@@ -57,7 +57,7 @@ export default function SystemCredentialsSection({ system }: Props) {
   const removeSlot = useCallback(() => deleteSystemSlot(system.id), [system.id])
   return (
     <Card>
-      <CardTitle>Credentials</CardTitle>
+      <CardTitle>SSH Credentials</CardTitle>
       <CardBody>
         <Stack hasGutter>
           <StackItem>
@@ -72,11 +72,6 @@ export default function SystemCredentialsSection({ system }: Props) {
               onReadyChange={setHostKeysReady}
             />
           </StackItem>
-          {credsReady && hostKeysReady && (
-            <StackItem>
-              <TestConnectionCard systemId={system.id} />
-            </StackItem>
-          )}
           <StackItem>
             <CredentialSlotEditor
               load={loadSlot}
@@ -85,6 +80,11 @@ export default function SystemCredentialsSection({ system }: Props) {
               scopeLabel={`System "${system.name}"`}
             />
           </StackItem>
+          {credsReady && hostKeysReady && (
+            <StackItem>
+              <TestConnectionCard systemId={system.id} />
+            </StackItem>
+          )}
         </Stack>
       </CardBody>
     </Card>
