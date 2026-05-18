@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { apiFetch } from './client'
+import type { PendingPackage } from './updaters'
 
 export type SystemStatus = 'unprobed' | 'reachable' | 'unreachable'
 
@@ -21,7 +22,7 @@ export type System = {
   // this system from each updater's latest check. Powers the row
   // hover-tooltip without a per-row /updaters fetch. Absent when
   // no check has produced markers.
-  pendingPackages?: string[]
+  pendingPackages?: PendingPackage[]
   // lastRunFailed flips the row glyph to red when the most recent
   // terminated updater run exited non-zero, even on a reachable
   // system. lastRunReason carries a short summary ("apply exit 2")

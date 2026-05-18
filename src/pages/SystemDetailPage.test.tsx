@@ -292,7 +292,10 @@ describe('SystemDetailPage', () => {
       updaters: [
         {
           ...dnfDetectedEnabled,
-          pendingPackages: ['kernel', 'glibc'],
+          pendingPackages: [
+            { name: 'kernel', oldVersion: '6.8.0-31', newVersion: '6.8.0-45' },
+            { name: 'glibc', oldVersion: '2.39-1', newVersion: '2.39-3' },
+          ],
         },
       ],
     })
@@ -306,6 +309,10 @@ describe('SystemDetailPage', () => {
     fireEvent.click(toggle)
     expect(await screen.findByText('kernel')).toBeInTheDocument()
     expect(await screen.findByText('glibc')).toBeInTheDocument()
+    // Version transition is rendered alongside the package name.
+    expect(
+      await screen.findByText(/6\.8\.0-31\s+→\s+6\.8\.0-45/),
+    ).toBeInTheDocument()
   })
 
   it('AvailableUpdatesCard hides rows whose pending list is empty', async () => {

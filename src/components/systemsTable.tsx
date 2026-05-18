@@ -7,6 +7,7 @@ import {
 } from '@patternfly/react-icons'
 import { Tooltip } from '@patternfly/react-core'
 import type { SystemStatus } from '../api/systems'
+import type { PendingPackage } from '../api/updaters'
 import { formatPendingUpdates } from './systemsTableHelpers'
 
 // Component exports for the shared systems table. Non-component
@@ -70,7 +71,7 @@ export function PendingUpdatesCell({
   packages,
 }: {
   count: number | undefined
-  packages: string[] | undefined
+  packages: PendingPackage[] | undefined
 }) {
   const label = formatPendingUpdates(count)
   if (!count || count <= 0 || !packages || packages.length === 0) {
@@ -82,7 +83,17 @@ export function PendingUpdatesCell({
   const content = (
     <ul style={{ margin: 0, paddingLeft: '1.25rem' }}>
       {preview.map((p) => (
-        <li key={p}>{p}</li>
+        <li key={`${p.name}|${p.oldVersion}|${p.newVersion}`}>
+          {p.name}
+          {(p.oldVersion || p.newVersion) && (
+            <>
+              {' '}
+              <small>
+                {p.oldVersion || '—'} → {p.newVersion || '—'}
+              </small>
+            </>
+          )}
+        </li>
       ))}
       {more > 0 && (
         <li>

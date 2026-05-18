@@ -32,7 +32,11 @@ function system(
     lastSeen: string
     lastCheckedAt: string
     pendingUpdates: number
-    pendingPackages: string[]
+    pendingPackages: Array<{
+      name: string
+      oldVersion: string
+      newVersion: string
+    }>
     lastRunFailed: boolean
     lastRunReason: string
   }> = {},
@@ -922,7 +926,10 @@ describe('SystemsPage', () => {
           status: 'reachable',
           lastCheckedAt: '2026-05-16T09:00:00Z',
           pendingUpdates: 2,
-          pendingPackages: ['kernel', 'glibc'],
+          pendingPackages: [
+            { name: 'kernel', oldVersion: '6.8.0-31', newVersion: '6.8.0-45' },
+            { name: 'glibc', oldVersion: '2.39-1', newVersion: '2.39-3' },
+          ],
         }),
       ]),
     )
@@ -942,6 +949,10 @@ describe('SystemsPage', () => {
     fireEvent.mouseEnter(trigger)
     expect(await screen.findByText('kernel')).toBeInTheDocument()
     expect(screen.getByText('glibc')).toBeInTheDocument()
+    // Version transition is rendered alongside each package name.
+    expect(
+      await screen.findByText(/6\.8\.0-31\s+→\s+6\.8\.0-45/),
+    ).toBeInTheDocument()
   })
 
   it('does not wrap the count in a tooltip when pending = 0', async () => {

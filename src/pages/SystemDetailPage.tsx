@@ -579,8 +579,16 @@ function AvailableUpdatesCard({ updaters }: { updaters: SystemUpdater[] }) {
                       >
                         <ul style={{ margin: 0, paddingLeft: '1.25rem' }}>
                           {u.pendingPackages.map((p) => (
-                            <li key={p}>
-                              <code>{p}</code>
+                            <li key={`${p.name}|${p.oldVersion}|${p.newVersion}`}>
+                              <code>{p.name}</code>
+                              {(p.oldVersion || p.newVersion) && (
+                                <>
+                                  {' '}
+                                  <small>
+                                    {p.oldVersion || '—'} → {p.newVersion || '—'}
+                                  </small>
+                                </>
+                              )}
                             </li>
                           ))}
                         </ul>

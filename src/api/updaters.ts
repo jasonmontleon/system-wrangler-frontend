@@ -77,6 +77,17 @@ export type UpdaterConflict = {
   conflictingRun?: string
 }
 
+// PendingPackage is one entry surfaced by a check playbook's
+// SW_PENDING_PACKAGE markers. Either version may be empty —
+// flatpak and snap can only cheaply surface the new version, and
+// legacy custom updaters that emit only a name arrive with both
+// versions blank.
+export type PendingPackage = {
+  name: string
+  oldVersion: string
+  newVersion: string
+}
+
 // SystemUpdater is one row from GET /api/systems/{id}/updaters —
 // the union of every registered updater with this system's
 // detection + enablement state. Drives the per-system Capabilities
@@ -91,7 +102,7 @@ export type SystemUpdater = {
   // pendingPackages is the list the most recent check run surfaced
   // via SW_PENDING_PACKAGE markers. Empty for updaters whose check
   // playbook does not emit them or that have never been checked.
-  pendingPackages: string[]
+  pendingPackages: PendingPackage[]
 }
 
 async function parseError(resp: Response): Promise<string> {
