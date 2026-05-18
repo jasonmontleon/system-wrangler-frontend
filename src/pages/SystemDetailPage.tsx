@@ -174,6 +174,18 @@ export default function SystemDetailPage() {
     for (const u of targets) {
       try {
         await runOne(u.updaterId)
+        // Mirror fanOutOnSystem: re-Check after a successful Apply so
+        // the pending list reflects the post-update state. Apply runs
+        // don't refresh pending_packages on the backend; only Check
+        // does. Failures here are swallowed — the apply itself
+        // succeeded and a missed refresh is cosmetic.
+        if (label === 'apply') {
+          try {
+            await checkUpdater(systemId, u.updaterId)
+          } catch {
+            // intentionally ignored
+          }
+        }
       } catch (err) {
         errors.push(`${u.updaterId}: ${extractActionError(err)}`)
       }

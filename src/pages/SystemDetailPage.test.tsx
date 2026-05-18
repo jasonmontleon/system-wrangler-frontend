@@ -210,6 +210,50 @@ describe('SystemDetailPage', () => {
     })
   })
 
+  it('fires an auto-Check after a successful Apply per updater', async () => {
+    seedHappy()
+    renderRoute()
+    await screen.findByRole('heading', { name: 'web-1' })
+    // Apply (success) → auto-Check → refresh round (system + updaters + runs).
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse({
+        runId: 'r-apply',
+        updaterId: 'builtin.dnf',
+        kind: 'apply',
+        status: 'success',
+        exitCode: 0,
+        affectedCount: 1,
+        durationMs: 1,
+      }),
+    )
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse({
+        runId: 'r-check',
+        updaterId: 'builtin.dnf',
+        kind: 'check',
+        status: 'success',
+        exitCode: 0,
+        affectedCount: 0,
+        durationMs: 1,
+      }),
+    )
+    fetchMock.mockResolvedValueOnce(jsonResponse(sampleSystem))
+    fetchMock.mockResolvedValueOnce(jsonResponse({ updaters: [dnfDetectedEnabled] }))
+    fetchMock.mockResolvedValueOnce(jsonResponse({ runs: [] }))
+    fireEvent.click(screen.getByRole('button', { name: /^Update$/i }))
+    await waitFor(() => {
+      const calls = fetchMock.mock.calls as Array<[string, RequestInit | undefined]>
+      const applyCall = calls.find(
+        (c) => c[0].toString().endsWith('/apply') && (c[1]?.method ?? 'GET') === 'POST',
+      )
+      const checkCall = calls.find(
+        (c) => c[0].toString().endsWith('/check') && (c[1]?.method ?? 'GET') === 'POST',
+      )
+      expect(applyCall).toBeDefined()
+      expect(checkCall).toBeDefined()
+    })
+  })
+
   it('Check warns when nothing is enabled', async () => {
     seedHappy({
       updaters: [{ ...dnfDetectedEnabled, enabled: false }],
