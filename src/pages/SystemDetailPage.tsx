@@ -53,6 +53,7 @@ import {
   roleOnGroup,
   useScope,
 } from '../hooks/useScope'
+import SystemCredentialsSection from '../components/SystemCredentialsSection'
 
 type LoadState =
   | { kind: 'loading' }
@@ -64,23 +65,20 @@ type LoadState =
     }
   | { kind: 'error'; message: string }
 
-// SystemDetailPage is the per-system surface. Replaces the old
-// "Capabilities & updates" panel that briefly lived inside the
-// Credentials modal. The page lives at /systems/:systemId.
+// SystemDetailPage is the per-system surface, lives at /systems/:systemId.
 //
 // Sections (top to bottom):
 //   - Breadcrumb + title + status
+//   - System information card
+//   - Credentials section (Effective + HostKeys + TestConnection + slot
+//     editor) — gated to roles that can manage credentials for this
+//     system, so an Operator/Auditor still sees the action bar but not
+//     the editor.
 //   - Action bar: Inspect now, Check (fan out over enabled), Update
 //     (fan out apply over enabled)
 //   - Enabled updaters card: every registered updater, with detection
 //     and enablement state; checkboxes toggle PUT .../enabled.
-//   - Recent runs card: most recent inspect/check/apply rows with
-//     expandable log tails.
-//
-// Credentials configuration stays in the Systems-page row action
-// modal for now; the user's roadmap note "might be sensible to move
-// credential configuration to this page as well as a next step"
-// lives in a follow-up.
+//   - Available updates card + Recent runs card.
 export default function SystemDetailPage() {
   const { systemId = '' } = useParams<{ systemId: string }>()
   const { state: scopeState } = useScope()
@@ -118,6 +116,15 @@ export default function SystemDetailPage() {
     if (!sys.groupId) return false
     const r = roleOnGroup(scopeState, sys.groupId)
     return r === 'admin' || r === 'operator'
+  }
+
+  // canManageCreds mirrors SystemsPage's gate: Global Admin can manage
+  // any system's credentials; Group Admin only systems in their group.
+  // Ungrouped systems are reachable only to Global Admin.
+  const canManageCreds = (sys: System): boolean => {
+    if (isGlobalAdmin(scopeState)) return true
+    if (!sys.groupId) return false
+    return canAdminGroup(scopeState, sys.groupId)
   }
 
   // canRead is currently true whenever the page renders — the API
@@ -239,6 +246,11 @@ export default function SystemDetailPage() {
             <StackItem>
               <SystemInfoCard system={state.system} />
             </StackItem>
+            {canManageCreds(state.system) && (
+              <StackItem>
+                <SystemCredentialsSection system={state.system} />
+              </StackItem>
+            )}
             {actionError && (
               <StackItem>
                 <Alert variant="danger" title="Action failed" isInline>
@@ -293,13 +305,6 @@ export default function SystemDetailPage() {
             <StackItem>
               <RunsCard runs={state.runs} />
             </StackItem>
-            {/* Surface unused scope helpers so the import stays
-                honest while the credential-relocation work is
-                pending. */}
-            <span style={{ display: 'none' }}>
-              {isGlobalAdmin(scopeState) ? 'a' : 'b'}
-              {canAdminGroup(scopeState, state.system.groupId ?? '') ? 'a' : 'b'}
-            </span>
           </>
         )}
       </Stack>

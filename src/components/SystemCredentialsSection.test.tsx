@@ -2,7 +2,7 @@
 
 import { render, screen } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import SystemCredentialsModal from './SystemCredentialsModal'
+import SystemCredentialsSection from './SystemCredentialsSection'
 import type { System } from '../api/systems'
 
 function jsonResponse(body: unknown, init: ResponseInit = {}): Response {
@@ -22,7 +22,7 @@ const sys: System = {
   groupId: null,
 }
 
-describe('SystemCredentialsModal', () => {
+describe('SystemCredentialsSection', () => {
   let fetchMock: ReturnType<typeof vi.fn>
 
   beforeEach(() => {
@@ -58,9 +58,6 @@ describe('SystemCredentialsModal', () => {
           ),
         )
       }
-      // The modal now also embeds the HostKeysPanel; default
-      // it to an empty list so the test-connection card stays
-      // hidden unless the test explicitly seeds accepted keys.
       if (url.endsWith('/host-keys')) {
         return Promise.resolve(jsonResponse(opts.hostKeys ?? { hostKeys: [] }))
       }
@@ -92,7 +89,7 @@ describe('SystemCredentialsModal', () => {
         ],
       },
     })
-    render(<SystemCredentialsModal system={sys} isOpen={true} onClose={vi.fn()} />)
+    render(<SystemCredentialsSection system={sys} />)
     expect(
       await screen.findByRole('button', { name: /Run `ansible -m ping`/i }),
     ).toBeInTheDocument()
@@ -107,7 +104,6 @@ describe('SystemCredentialsModal', () => {
         keySource: 'global',
         keyOrigin: 'sw_generated',
       },
-      // only a pending key — host keys panel reports not ready
       hostKeys: {
         hostKeys: [
           {
@@ -122,7 +118,7 @@ describe('SystemCredentialsModal', () => {
         ],
       },
     })
-    render(<SystemCredentialsModal system={sys} isOpen={true} onClose={vi.fn()} />)
+    render(<SystemCredentialsSection system={sys} />)
     await screen.findByText(/Effective credential/i)
     expect(
       screen.queryByRole('button', { name: /Run `ansible -m ping`/i }),
@@ -141,7 +137,7 @@ describe('SystemCredentialsModal', () => {
       slot: null,
       slotStatus: 404,
     })
-    render(<SystemCredentialsModal system={sys} isOpen={true} onClose={vi.fn()} />)
+    render(<SystemCredentialsSection system={sys} />)
     expect(await screen.findByText(/Effective credential/i)).toBeInTheDocument()
     expect(screen.getByText('ansible')).toBeInTheDocument()
     expect(screen.getByText(/from group/i)).toBeInTheDocument()
@@ -151,7 +147,7 @@ describe('SystemCredentialsModal', () => {
 
   it('shows the no-credentials warning when the resolver returns 404', async () => {
     respond({ effectiveStatus: 404, slotStatus: 404 })
-    render(<SystemCredentialsModal system={sys} isOpen={true} onClose={vi.fn()} />)
+    render(<SystemCredentialsSection system={sys} />)
     expect(
       await screen.findByText(/No credentials resolve for this system/i),
     ).toBeInTheDocument()
@@ -163,7 +159,7 @@ describe('SystemCredentialsModal', () => {
       effectiveStatus: 409,
       slotStatus: 404,
     })
-    render(<SystemCredentialsModal system={sys} isOpen={true} onClose={vi.fn()} />)
+    render(<SystemCredentialsSection system={sys} />)
     expect((await screen.findAllByText(/Credential is incomplete/i)).length).toBeGreaterThan(0)
     expect(screen.getByText(/configure both/i)).toBeInTheDocument()
   })
@@ -174,7 +170,7 @@ describe('SystemCredentialsModal', () => {
       effectiveStatus: 500,
       slotStatus: 404,
     })
-    render(<SystemCredentialsModal system={sys} isOpen={true} onClose={vi.fn()} />)
+    render(<SystemCredentialsSection system={sys} />)
     expect(
       await screen.findByText(/Could not resolve credential/i),
     ).toBeInTheDocument()

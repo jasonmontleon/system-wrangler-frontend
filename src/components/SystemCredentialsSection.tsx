@@ -4,12 +4,12 @@ import { useCallback, useEffect, useState } from 'react'
 import {
   Alert,
   Bullseye,
+  Card,
+  CardBody,
+  CardTitle,
   ClipboardCopy,
   Content,
   Label,
-  Modal,
-  ModalBody,
-  ModalHeader,
   Spinner,
   Stack,
   StackItem,
@@ -24,6 +24,7 @@ import {
   putSystemSlot,
   type CredentialScopeKind,
   type CredentialOrigin,
+  type CredentialUpsert,
   type EffectiveCredential,
 } from '../api/credentials'
 import { ApiError } from '../api/systems'
@@ -31,31 +32,33 @@ import type { System } from '../api/systems'
 
 type Props = {
   system: System
-  isOpen: boolean
-  onClose: () => void
 }
 
-// SystemCredentialsModal is the per-system Credentials surface
-// launched from SystemsPage row actions. It bundles two things
-// into one dialog so the operator never has to ask "would this
-// system actually inherit X?":
+// SystemCredentialsSection is the per-system credentials surface
+// rendered inline on SystemDetailPage. Bundles four panels so the
+// operator can see what would resolve, fix it if it's wrong, and
+// confirm the host actually answers, without leaving the page:
 //
-//   - The slot editor for the system scope (CredentialSlotEditor
-//     wired against the system endpoints).
-//   - The Effective panel — a read-only summary showing what the
-//     resolver would actually return for this system, with badges
-//     calling out which scope supplied each field.
-//
-// The two halves refresh together: every save through the editor
-// invalidates the effective view, so the operator sees the new
-// resolution immediately.
-export default function SystemCredentialsModal({ system, isOpen, onClose }: Props) {
+//   - Effective panel — what the resolver returns for this system.
+//   - Host keys — TOFU surface for SSH host-key trust.
+//   - Test connection — gated on creds + host-keys ready.
+//   - Slot editor — the per-system override.
+export default function SystemCredentialsSection({ system }: Props) {
   const [credsReady, setCredsReady] = useState(false)
   const [hostKeysReady, setHostKeysReady] = useState(false)
+  // Stable references for the slot editor's IO props: the editor's
+  // useEffect depends on `load`, so a fresh arrow per render would
+  // refire the slot fetch every time the parent re-rendered.
+  const loadSlot = useCallback(() => getSystemSlot(system.id), [system.id])
+  const saveSlot = useCallback(
+    (input: CredentialUpsert) => putSystemSlot(system.id, input),
+    [system.id],
+  )
+  const removeSlot = useCallback(() => deleteSystemSlot(system.id), [system.id])
   return (
-    <Modal isOpen={isOpen} onClose={onClose} variant="medium">
-      <ModalHeader title={`Credentials — ${system.name}`} />
-      <ModalBody>
+    <Card>
+      <CardTitle>Credentials</CardTitle>
+      <CardBody>
         <Stack hasGutter>
           <StackItem>
             <EffectivePanel
@@ -76,15 +79,15 @@ export default function SystemCredentialsModal({ system, isOpen, onClose }: Prop
           )}
           <StackItem>
             <CredentialSlotEditor
-              load={() => getSystemSlot(system.id)}
-              save={(input) => putSystemSlot(system.id, input)}
-              remove={() => deleteSystemSlot(system.id)}
+              load={loadSlot}
+              save={saveSlot}
+              remove={removeSlot}
               scopeLabel={`System "${system.name}"`}
             />
           </StackItem>
         </Stack>
-      </ModalBody>
-    </Modal>
+      </CardBody>
+    </Card>
   )
 }
 
@@ -96,20 +99,10 @@ type EffectiveState =
   | { kind: 'error'; message: string }
 
 // EffectivePanel renders the resolver's verdict for the system.
-// The four wire shapes the backend can hand back:
-//
-//   200 → ready
-//   404 → none ("no credentials configured anywhere")
-//   409 → incomplete ("you set a user but no key, or vice versa")
-//   5xx / network → error
-//
-// Each branch surfaces a different message so the operator knows
-// whether to scroll down and edit, or fix something elsewhere.
-//
-// onReadyChange (optional) fires whenever the panel transitions
-// into or out of the `ready` state so the parent can show/hide
-// downstream affordances (e.g. the Test connection card) gated on
-// "we have a resolved credential."
+// Wire shapes:
+//   200 → ready, 404 → none, 409 → incomplete, 5xx/network → error.
+// onReadyChange fires on transitions into/out of ready so the parent
+// can gate downstream affordances (e.g. the Test connection card).
 function EffectivePanel({
   systemId,
   onReadyChange,

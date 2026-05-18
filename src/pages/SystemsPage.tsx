@@ -55,13 +55,10 @@ import {
 import { listGroups, type Group } from '../api/groups'
 import { useEventStream } from '../hooks/useEventStream'
 import {
-  canAdminGroup,
-  isGlobalAdmin,
   isGlobalOperator,
   roleOnGroup,
   useScope,
 } from '../hooks/useScope'
-import SystemCredentialsModal from '../components/SystemCredentialsModal'
 import FanOutOutcomesPanel from '../components/FanOutOutcomesPanel'
 import {
   fanOutOnSystem,
@@ -113,18 +110,11 @@ export default function SystemsPage() {
   const [sizeOpen, setSizeOpen] = useState(false)
   const [actionsOpen, setActionsOpen] = useState(false)
   const [selected, setSelected] = useState<Set<string>>(new Set())
-  const [credModalFor, setCredModalFor] = useState<System | null>(null)
 
-  // Scope is consulted only for the per-row "Credentials" action so
-  // Group Admins of the system's group can manage credentials too.
-  // Existing actions on this page (Remove) intentionally keep their
-  // pre-RBAC visibility — narrowing them is out of scope here.
+  // Scope drives the per-row gating on operate actions; credential
+  // management has moved to SystemDetailPage so it isn't relevant
+  // here any more.
   const { state: scopeState } = useScope()
-  const canManageCredentialsFor = (s: System): boolean => {
-    if (isGlobalAdmin(scopeState)) return true
-    if (!s.groupId) return false
-    return canAdminGroup(scopeState, s.groupId)
-  }
   // canOperateSystem mirrors the backend's CanOperateSystem gate:
   // Global Operator+ on any system, Group Admin/Operator on this
   // system's group. Ungrouped systems are only operable by global
@@ -782,14 +772,6 @@ export default function SystemsPage() {
                                 },
                               ]
                             : []),
-                          ...(canManageCredentialsFor(s)
-                            ? [
-                                {
-                                  title: 'Credentials',
-                                  onClick: () => setCredModalFor(s),
-                                },
-                              ]
-                            : []),
                           {
                             title: `Remove ${s.name}`,
                             onClick: () =>
@@ -845,13 +827,6 @@ export default function SystemsPage() {
         }}
       />
 
-      {credModalFor && (
-        <SystemCredentialsModal
-          system={credModalFor}
-          isOpen={true}
-          onClose={() => setCredModalFor(null)}
-        />
-      )}
 
       <ConfirmRemoveModal
         confirm={confirm}

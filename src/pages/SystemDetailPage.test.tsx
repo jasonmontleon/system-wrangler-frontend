@@ -87,6 +87,15 @@ describe('SystemDetailPage', () => {
       if (url.match(/\/updater-runs/)) {
         return Promise.resolve(jsonResponse({ runs: opts.runs ?? [] }))
       }
+      if (url.endsWith('/effective-credential')) {
+        return Promise.resolve(jsonResponse({ error: 'none' }, { status: 404 }))
+      }
+      if (url.endsWith('/ansible-credential')) {
+        return Promise.resolve(jsonResponse({ error: 'none' }, { status: 404 }))
+      }
+      if (url.endsWith('/host-keys')) {
+        return Promise.resolve(jsonResponse({ hostKeys: [] }))
+      }
       if (url.match(/\/api\/systems\/[^/]+$/)) {
         return Promise.resolve(jsonResponse(opts.system ?? sampleSystem))
       }
@@ -447,5 +456,44 @@ describe('SystemDetailPage', () => {
     // Checkbox should also be disabled for the auditor.
     const checkbox = screen.getByLabelText(/Enable dnf/i) as HTMLInputElement
     expect(checkbox).toBeDisabled()
+  })
+
+  it('renders the credentials section for a Global Admin caller', async () => {
+    seedHappy()
+    renderRoute()
+    expect(
+      await screen.findByText(/No credentials resolve for this system/i),
+    ).toBeInTheDocument()
+  })
+
+  it('hides the credentials section from a caller without admin scope', async () => {
+    fetchMock.mockImplementation((input: RequestInfo) => {
+      const url = typeof input === 'string' ? input : input.toString()
+      if (url.endsWith('/api/me/scope')) {
+        return Promise.resolve(jsonResponse({ userId: 'u-1', global: 'auditor', groups: {} }))
+      }
+      if (url.match(/\/api\/systems\/[^/]+\/updaters$/)) {
+        return Promise.resolve(jsonResponse({ updaters: [dnfDetectedEnabled] }))
+      }
+      if (url.match(/\/updater-runs/)) {
+        return Promise.resolve(jsonResponse({ runs: [] }))
+      }
+      if (url.match(/\/api\/systems\/[^/]+$/)) {
+        return Promise.resolve(jsonResponse(sampleSystem))
+      }
+      return Promise.resolve(jsonResponse({}, { status: 500 }))
+    })
+    renderRoute()
+    // The page itself has loaded — wait for a non-credentials marker.
+    await screen.findByRole('heading', { name: 'web-1' })
+    // Credentials section should not have rendered, so its resolver
+    // alert should be absent and the host-keys panel shouldn't have
+    // fetched.
+    expect(screen.queryByText(/No credentials resolve for this system/i)).toBeNull()
+    expect(
+      fetchMock.mock.calls.find((c) =>
+        (typeof c[0] === 'string' ? c[0] : c[0].toString()).endsWith('/effective-credential'),
+      ),
+    ).toBeUndefined()
   })
 })
