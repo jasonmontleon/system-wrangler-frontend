@@ -111,7 +111,8 @@ describe('SystemDetailPage', () => {
     // information card). One match is fine — assert there's at
     // least one.
     expect(screen.getAllByText('web-1.example', { exact: false }).length).toBeGreaterThan(0)
-    expect(screen.getByText('builtin.dnf')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('tab', { name: /Updaters/i }))
+    expect(await screen.findByText('builtin.dnf')).toBeInTheDocument()
   })
 
   it('renders the System information card with last seen and added', async () => {
@@ -134,6 +135,8 @@ describe('SystemDetailPage', () => {
   it('fires PUT enabled when the checkbox is toggled', async () => {
     seedHappy()
     renderRoute()
+    await screen.findByRole('heading', { name: 'web-1' })
+    fireEvent.click(screen.getByRole('tab', { name: /Updaters/i }))
     const checkbox = (await screen.findByLabelText(/Enable dnf/i)) as HTMLInputElement
     expect(checkbox.checked).toBe(true)
     // Toggle: PUT happens, then page refreshes (3 GETs).
@@ -180,7 +183,7 @@ describe('SystemDetailPage', () => {
       ],
     })
     renderRoute()
-    await screen.findByText('builtin.dnf')
+    await screen.findByRole('heading', { name: 'web-1' })
     // Queue the single check + refresh round.
     fetchMock.mockResolvedValueOnce(
       jsonResponse({
@@ -212,7 +215,7 @@ describe('SystemDetailPage', () => {
       updaters: [{ ...dnfDetectedEnabled, enabled: false }],
     })
     renderRoute()
-    await screen.findByText('builtin.dnf')
+    await screen.findByRole('heading', { name: 'web-1' })
     fireEvent.click(screen.getByRole('button', { name: /^Check$/i }))
     expect(
       await screen.findByText(/No enabled updaters on this system/i),
@@ -456,11 +459,14 @@ describe('SystemDetailPage', () => {
       return Promise.resolve(jsonResponse({}, { status: 500 }))
     })
     renderRoute()
-    const inspect = await screen.findByRole('button', { name: /Inspect now/i })
-    expect(inspect).toBeDisabled()
+    await screen.findByRole('heading', { name: 'web-1' })
+    // Overview tab is active by default — Check + Update sit here.
     expect(screen.getByRole('button', { name: /^Check$/i })).toBeDisabled()
     expect(screen.getByRole('button', { name: /^Update$/i })).toBeDisabled()
-    // Checkbox should also be disabled for the auditor.
+    // Updaters tab hosts Inspect now + the per-updater checkbox.
+    fireEvent.click(screen.getByRole('tab', { name: /Updaters/i }))
+    const inspect = await screen.findByRole('button', { name: /Inspect now/i })
+    expect(inspect).toBeDisabled()
     const checkbox = screen.getByLabelText(/Enable dnf/i) as HTMLInputElement
     expect(checkbox).toBeDisabled()
   })
@@ -468,6 +474,8 @@ describe('SystemDetailPage', () => {
   it('renders the credentials section for a Global Admin caller', async () => {
     seedHappy()
     renderRoute()
+    await screen.findByRole('heading', { name: 'web-1' })
+    fireEvent.click(screen.getByRole('tab', { name: /Connection/i }))
     expect(
       await screen.findByText(/No credentials resolve for this system/i),
     ).toBeInTheDocument()

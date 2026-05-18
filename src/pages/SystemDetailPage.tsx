@@ -23,6 +23,9 @@ import {
   Spinner,
   Stack,
   StackItem,
+  Tab,
+  TabTitleText,
+  Tabs,
   Title,
   Toolbar,
   ToolbarContent,
@@ -67,25 +70,30 @@ type LoadState =
   | { kind: 'error'; message: string }
 
 // SystemDetailPage is the per-system surface, lives at /systems/:systemId.
+// Mirrors GroupDetailPage's Members/Roles/Credentials tab pattern.
 //
-// Sections (top to bottom):
-//   - Breadcrumb + title + status
-//   - System information card
-//   - Credentials section (Effective + HostKeys + TestConnection + slot
-//     editor) — gated to roles that can manage credentials for this
-//     system, so an Operator/Auditor still sees the action bar but not
-//     the editor.
-//   - Action bar: Inspect now, Check (fan out over enabled), Update
-//     (fan out apply over enabled)
-//   - Enabled updaters card: every registered updater, with detection
-//     and enablement state; checkboxes toggle PUT .../enabled.
-//   - Available updates card + Recent runs card.
+// Layout:
+//   - Breadcrumb + title + status (always visible)
+//   - Action error alert (always visible — the originating click might
+//     have been on a different tab than the operator's current view)
+//   - Tabs:
+//       Overview   — top-right Check + Update toolbar, SystemInfoCard,
+//                    AvailableUpdatesCard, RunsCard.
+//       Connection — PlatformCard, then SystemCredentialsSection
+//                    (Effective + HostKeys + slot editor + Test
+//                    connection), gated to roles that can manage
+//                    credentials.
+//       Updaters   — top-right Inspect toolbar, UpdatersCard
+//                    (enable/disable per registered updater).
+type TabKey = 'overview' | 'connection' | 'updaters'
+
 export default function SystemDetailPage() {
   const { systemId = '' } = useParams<{ systemId: string }>()
   const { state: scopeState } = useScope()
   const [state, setState] = useState<LoadState>({ kind: 'loading' })
   const [actionError, setActionError] = useState<string | null>(null)
   const [busy, setBusy] = useState<string | null>(null)
+  const [activeTab, setActiveTab] = useState<TabKey>('overview')
 
   const refresh = useCallback(async () => {
     if (!systemId) {
@@ -245,20 +253,16 @@ export default function SystemDetailPage() {
               </small>
             </StackItem>
             <StackItem>
-              <SystemInfoCard system={state.system} />
+              <Tabs
+                activeKey={activeTab}
+                onSelect={(_, key) => setActiveTab(key as TabKey)}
+                aria-label={`${state.system.name} tabs`}
+              >
+                <Tab eventKey="overview" title={<TabTitleText>Overview</TabTitleText>} />
+                <Tab eventKey="connection" title={<TabTitleText>Connection</TabTitleText>} />
+                <Tab eventKey="updaters" title={<TabTitleText>Updaters</TabTitleText>} />
+              </Tabs>
             </StackItem>
-            <StackItem>
-              <PlatformCard
-                system={state.system}
-                canEdit={operateAllowed}
-                onChange={refresh}
-              />
-            </StackItem>
-            {canManageCreds(state.system) && (
-              <StackItem>
-                <SystemCredentialsSection system={state.system} />
-              </StackItem>
-            )}
             {actionError && (
               <StackItem>
                 <Alert variant="danger" title="Action failed" isInline>
@@ -266,53 +270,86 @@ export default function SystemDetailPage() {
                 </Alert>
               </StackItem>
             )}
-            <StackItem>
-              <Toolbar>
-                <ToolbarContent>
-                  <ToolbarItem>
-                    <Button
-                      variant="secondary"
-                      isDisabled={!operateAllowed || busy !== null}
-                      onClick={() => void onInspect()}
-                    >
-                      {busy === 'inspect' ? 'Inspecting…' : 'Inspect now'}
-                    </Button>
-                  </ToolbarItem>
-                  <ToolbarItem>
-                    <Button
-                      variant="secondary"
-                      isDisabled={!operateAllowed || busy !== null}
-                      onClick={() => void onCheck()}
-                    >
-                      {busy === 'check' ? 'Checking…' : 'Check'}
-                    </Button>
-                  </ToolbarItem>
-                  <ToolbarItem>
-                    <Button
-                      variant="primary"
-                      isDisabled={!operateAllowed || busy !== null}
-                      onClick={() => void onApply()}
-                    >
-                      {busy === 'apply' ? 'Updating…' : 'Update'}
-                    </Button>
-                  </ToolbarItem>
-                </ToolbarContent>
-              </Toolbar>
-            </StackItem>
-            <StackItem>
-              <UpdatersCard
-                updaters={state.updaters}
-                canOperate={operateAllowed}
-                busy={busy}
-                onToggle={onToggle}
-              />
-            </StackItem>
-            <StackItem>
-              <AvailableUpdatesCard updaters={state.updaters} />
-            </StackItem>
-            <StackItem>
-              <RunsCard runs={state.runs} />
-            </StackItem>
+            {activeTab === 'overview' && (
+              <>
+                <StackItem>
+                  <Toolbar>
+                    <ToolbarContent>
+                      <ToolbarItem align={{ default: 'alignEnd' }}>
+                        <Button
+                          variant="secondary"
+                          isDisabled={!operateAllowed || busy !== null}
+                          onClick={() => void onCheck()}
+                        >
+                          {busy === 'check' ? 'Checking…' : 'Check'}
+                        </Button>
+                      </ToolbarItem>
+                      <ToolbarItem>
+                        <Button
+                          variant="primary"
+                          isDisabled={!operateAllowed || busy !== null}
+                          onClick={() => void onApply()}
+                        >
+                          {busy === 'apply' ? 'Updating…' : 'Update'}
+                        </Button>
+                      </ToolbarItem>
+                    </ToolbarContent>
+                  </Toolbar>
+                </StackItem>
+                <StackItem>
+                  <SystemInfoCard system={state.system} />
+                </StackItem>
+                <StackItem>
+                  <AvailableUpdatesCard updaters={state.updaters} />
+                </StackItem>
+                <StackItem>
+                  <RunsCard runs={state.runs} />
+                </StackItem>
+              </>
+            )}
+            {activeTab === 'connection' && (
+              <>
+                <StackItem>
+                  <PlatformCard
+                    system={state.system}
+                    canEdit={operateAllowed}
+                    onChange={refresh}
+                  />
+                </StackItem>
+                {canManageCreds(state.system) && (
+                  <StackItem>
+                    <SystemCredentialsSection system={state.system} />
+                  </StackItem>
+                )}
+              </>
+            )}
+            {activeTab === 'updaters' && (
+              <>
+                <StackItem>
+                  <Toolbar>
+                    <ToolbarContent>
+                      <ToolbarItem align={{ default: 'alignEnd' }}>
+                        <Button
+                          variant="secondary"
+                          isDisabled={!operateAllowed || busy !== null}
+                          onClick={() => void onInspect()}
+                        >
+                          {busy === 'inspect' ? 'Inspecting…' : 'Inspect now'}
+                        </Button>
+                      </ToolbarItem>
+                    </ToolbarContent>
+                  </Toolbar>
+                </StackItem>
+                <StackItem>
+                  <UpdatersCard
+                    updaters={state.updaters}
+                    canOperate={operateAllowed}
+                    busy={busy}
+                    onToggle={onToggle}
+                  />
+                </StackItem>
+              </>
+            )}
           </>
         )}
       </Stack>
