@@ -60,11 +60,18 @@ export async function fanOutOnSystem(
     outcome.skipReason = extractError(err)
     return outcome
   }
-  const targets = updaters.filter((u) => u.installed && u.enabled)
-  if (targets.length === 0) {
+  const enabled = updaters.filter((u) => u.installed && u.enabled)
+  if (enabled.length === 0) {
     outcome.skipped = true
     outcome.skipReason =
       'No enabled updaters on this system. Inspect the system or enable an updater on its detail page first.'
+    return outcome
+  }
+  const targets = action === 'apply' ? enabled.filter((u) => !u.checkOnly) : enabled
+  if (targets.length === 0) {
+    outcome.skipped = true
+    outcome.skipReason =
+      'Only check-only updaters are enabled on this system; they surface pending changes but cannot be applied.'
     return outcome
   }
   outcome.attempted = targets.length

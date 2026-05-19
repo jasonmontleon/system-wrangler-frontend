@@ -5,6 +5,7 @@ import {
   Alert,
   Bullseye,
   Button,
+  Checkbox,
   Form,
   FormGroup,
   Modal,
@@ -160,6 +161,7 @@ function DefinitionsTable({
           <Th>ID</Th>
           <Th>Source</Th>
           <Th>Detect binary</Th>
+          <Th>Mode</Th>
           <Th>Actions</Th>
         </Tr>
       </Thead>
@@ -174,6 +176,7 @@ function DefinitionsTable({
             <Td>
               <code>{d.detectBinary}</code>
             </Td>
+            <Td>{d.checkOnly ? 'Check-only' : 'Check + Apply'}</Td>
             <Td>
               {d.source === 'custom' ? (
                 <>
@@ -222,6 +225,7 @@ function EditorModal({
     detectBinary: original?.detectBinary ?? '',
     checkPlaybook: original?.checkPlaybook ?? '',
     applyPlaybook: original?.applyPlaybook ?? '',
+    checkOnly: original?.checkOnly ?? false,
   })
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -236,10 +240,14 @@ function EditorModal({
           description: form.description,
           detectBinary: form.detectBinary,
           checkPlaybook: form.checkPlaybook,
-          applyPlaybook: form.applyPlaybook,
+          applyPlaybook: form.checkOnly ? '' : form.applyPlaybook,
+          checkOnly: form.checkOnly,
         })
       } else {
-        await createUpdaterDefinition(form)
+        await createUpdaterDefinition({
+          ...form,
+          applyPlaybook: form.checkOnly ? '' : form.applyPlaybook,
+        })
       }
       onSaved()
     } catch (err) {
@@ -321,16 +329,30 @@ function EditorModal({
               readOnlyVariant={readOnly ? 'default' : undefined}
             />
           </FormGroup>
-          <FormGroup label="Apply playbook (YAML)" isRequired={!readOnly} fieldId="updater-apply">
-            <TextArea
-              id="updater-apply"
-              rows={8}
-              value={form.applyPlaybook}
-              onChange={(_e, value) => setForm({ ...form, applyPlaybook: value })}
-              spellCheck={false}
-              readOnlyVariant={readOnly ? 'default' : undefined}
+          <FormGroup fieldId="updater-check-only">
+            <Checkbox
+              id="updater-check-only"
+              label="Check-only"
+              description="Surface pending changes but never auto-apply. Apply requests against this updater return 409."
+              isChecked={form.checkOnly}
+              isDisabled={readOnly}
+              onChange={(_e, value) =>
+                setForm({ ...form, checkOnly: value, applyPlaybook: value ? '' : form.applyPlaybook })
+              }
             />
           </FormGroup>
+          {!form.checkOnly && (
+            <FormGroup label="Apply playbook (YAML)" isRequired={!readOnly} fieldId="updater-apply">
+              <TextArea
+                id="updater-apply"
+                rows={8}
+                value={form.applyPlaybook}
+                onChange={(_e, value) => setForm({ ...form, applyPlaybook: value })}
+                spellCheck={false}
+                readOnlyVariant={readOnly ? 'default' : undefined}
+              />
+            </FormGroup>
+          )}
         </Form>
       </ModalBody>
       <ModalFooter>

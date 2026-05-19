@@ -22,6 +22,7 @@ export type UpdaterDefinition = {
   detectBinary: string
   checkPlaybook: string
   applyPlaybook: string
+  checkOnly: boolean
   createdBy?: string
   createdAt?: string
   updatedAt?: string
@@ -34,6 +35,7 @@ export type UpdaterDefinitionInput = {
   detectBinary: string
   checkPlaybook: string
   applyPlaybook: string
+  checkOnly: boolean
 }
 
 export type UpdaterDefinitionPatch = Omit<UpdaterDefinitionInput, 'id'>
@@ -98,6 +100,10 @@ export type SystemUpdater = {
   displayName: string
   installed: boolean
   enabled: boolean
+  // checkOnly is true when the updater is registered as check-only;
+  // the SPA hides per-row Update / excludes from bulk Update fan-outs
+  // and the backend rejects Apply with 409.
+  checkOnly: boolean
   lastSeenAt?: string
   // pendingPackages is the list the most recent check run surfaced
   // via SW_PENDING_PACKAGE markers. Empty for updaters whose check

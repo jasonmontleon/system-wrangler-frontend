@@ -90,6 +90,60 @@ describe('fanOutOnSystem', () => {
     expect(fetchMock.mock.calls.filter((c) => (c[1]?.method ?? 'GET') === 'POST')).toHaveLength(0)
   })
 
+  it('skips Apply when only check-only updaters are enabled', async () => {
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse({
+        updaters: [
+          {
+            updaterId: 'builtin.fwupdmgr',
+            source: 'builtin',
+            displayName: 'fwupdmgr',
+            installed: true,
+            enabled: true,
+            checkOnly: true,
+          },
+        ],
+      }),
+    )
+    const out = await fanOutOnSystem('host-1', 'web-1', 'apply')
+    expect(out.skipped).toBe(true)
+    expect(out.skipReason).toMatch(/check-only/i)
+    // The skip is scoped to Apply: only the GET fired, no POST.
+    expect(fetchMock.mock.calls.filter((c) => (c[1]?.method ?? 'GET') === 'POST')).toHaveLength(0)
+  })
+
+  it('still fires Check against a check-only updater', async () => {
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse({
+        updaters: [
+          {
+            updaterId: 'builtin.fwupdmgr',
+            source: 'builtin',
+            displayName: 'fwupdmgr',
+            installed: true,
+            enabled: true,
+            checkOnly: true,
+          },
+        ],
+      }),
+    )
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse({
+        runId: 'r-fw',
+        updaterId: 'builtin.fwupdmgr',
+        kind: 'check',
+        status: 'success',
+        exitCode: 0,
+        affectedCount: 1,
+        durationMs: 1,
+      }),
+    )
+    const out = await fanOutOnSystem('host-1', 'web-1', 'check')
+    expect(out.skipped).toBe(false)
+    expect(out.attempted).toBe(1)
+    expect(out.results[0].ok).toBe(true)
+  })
+
   it('captures per-updater errors without aborting the loop', async () => {
     fetchMock.mockResolvedValueOnce(
       jsonResponse({

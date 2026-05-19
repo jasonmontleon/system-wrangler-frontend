@@ -544,7 +544,17 @@ function UpdatersCard({
                 <Tr key={u.updaterId}>
                   <Td>
                     <Stack>
-                      <StackItem>{u.displayName}</StackItem>
+                      <StackItem>
+                        {u.displayName}
+                        {u.checkOnly && (
+                          <>
+                            {' '}
+                            <Label color="orange" isCompact>
+                              Check-only
+                            </Label>
+                          </>
+                        )}
+                      </StackItem>
                       <StackItem>
                         <small>{u.updaterId}</small>
                       </StackItem>
@@ -618,7 +628,17 @@ function AvailableUpdatesCard({ updaters }: { updaters: SystemUpdater[] }) {
                   <Tr key={u.updaterId}>
                     <Td>
                       <Stack>
-                        <StackItem>{u.displayName}</StackItem>
+                        <StackItem>
+                          {u.displayName}
+                          {u.checkOnly && (
+                            <>
+                              {' '}
+                              <Label color="orange" isCompact>
+                                Check-only
+                              </Label>
+                            </>
+                          )}
+                        </StackItem>
                         <StackItem>
                           <small>{u.updaterId}</small>
                         </StackItem>

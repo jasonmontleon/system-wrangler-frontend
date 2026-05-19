@@ -30,6 +30,7 @@ const dnfDetectedEnabled: SystemUpdater = {
   displayName: 'dnf',
   installed: true,
   enabled: true,
+  checkOnly: false,
   lastSeenAt: '2026-05-16T00:00:00Z',
   pendingPackages: [],
 }
@@ -169,6 +170,7 @@ describe('SystemDetailPage', () => {
           displayName: 'apt-mirror',
           installed: true,
           enabled: false, // disabled — should NOT fire
+          checkOnly: false,
           lastSeenAt: '2026-05-16T00:00:00Z',
           pendingPackages: [],
         },
@@ -178,6 +180,7 @@ describe('SystemDetailPage', () => {
           displayName: 'never',
           installed: false,
           enabled: false,
+          checkOnly: false,
           pendingPackages: [],
         },
       ],

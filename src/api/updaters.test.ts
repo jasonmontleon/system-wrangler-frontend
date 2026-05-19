@@ -74,6 +74,7 @@ describe('updaters api', () => {
       detectBinary: 'alpha',
       checkPlaybook: '- hosts: all\n',
       applyPlaybook: '- hosts: all\n',
+      checkOnly: false,
     })
     expect(got.id).toBe('custom.alpha')
     const [url, init] = fetchMock.mock.calls[0]
@@ -96,6 +97,7 @@ describe('updaters api', () => {
         detectBinary: '',
         checkPlaybook: '',
         applyPlaybook: '',
+        checkOnly: false,
       }),
     ).rejects.toMatchObject({
       status: 400,
@@ -121,6 +123,7 @@ describe('updaters api', () => {
       detectBinary: 'tt',
       checkPlaybook: '- hosts: all\n',
       applyPlaybook: '- hosts: all\n',
+      checkOnly: false,
     })
     const [url, init] = fetchMock.mock.calls[0]
     expect(url).toBe('/api/admin/updater-definitions/custom.tt')
