@@ -166,7 +166,14 @@ export default function GroupDetailPage() {
       return next
     })
   }
-  const busyCount = rowBusy.size
+  // busyCount counts every member system known to have work in flight,
+  // whether kicked off in this tab (rowBusy) or surfaced by the
+  // backend's running flag from another tab / session.
+  const busyCount =
+    (systems ?? []).reduce(
+      (n, s) => n + (rowBusy.has(s.id) || s.running ? 1 : 0),
+      0,
+    )
 
   const refresh = useCallback(async () => {
     try {
@@ -200,18 +207,35 @@ export default function GroupDetailPage() {
   ) => {
     if (targets.length === 0) return
     setUpdaterOutcomes(null)
-    const operable = targets.filter(canOperateSystem)
-    const notOperable: FanOutOutcome[] = targets
-      .filter((s) => !canOperateSystem(s))
-      .map((s) => ({
-        systemId: s.id,
-        systemName: s.name,
-        action,
-        attempted: 0,
-        skipped: true,
-        skipReason: 'No operator permission on this system.',
-        results: [],
-      }))
+    const skipped: FanOutOutcome[] = []
+    const operable: System[] = []
+    for (const s of targets) {
+      if (!canOperateSystem(s)) {
+        skipped.push({
+          systemId: s.id,
+          systemName: s.name,
+          action,
+          attempted: 0,
+          skipped: true,
+          skipReason: 'No operator permission on this system.',
+          results: [],
+        })
+        continue
+      }
+      if (s.status === 'unreachable') {
+        skipped.push({
+          systemId: s.id,
+          systemName: s.name,
+          action,
+          attempted: 0,
+          skipped: true,
+          skipReason: 'System is marked unreachable.',
+          results: [],
+        })
+        continue
+      }
+      operable.push(s)
+    }
     operable.forEach((s) => markBusy(s.id, action))
     const outcomes = await Promise.all(
       operable.map(async (s) => {
@@ -222,7 +246,7 @@ export default function GroupDetailPage() {
         }
       }),
     )
-    setUpdaterOutcomes([...outcomes, ...notOperable])
+    setUpdaterOutcomes([...outcomes, ...skipped])
     await refresh()
   }
 
@@ -772,13 +796,15 @@ export default function GroupDetailPage() {
                           gap: '0.5rem',
                         }}
                       >
-                        {rowBusy.has(s.id) ? (
+                        {rowBusy.has(s.id) || s.running ? (
                           <Spinner
                             size="sm"
                             aria-label={
                               rowBusy.get(s.id) === 'check'
                                 ? 'Check in progress'
-                                : 'Update in progress'
+                                : rowBusy.get(s.id) === 'apply'
+                                  ? 'Update in progress'
+                                  : 'Run in progress'
                             }
                           />
                         ) : (
@@ -820,7 +846,7 @@ export default function GroupDetailPage() {
                                     rowBusy.get(s.id) === 'check'
                                       ? 'Checking…'
                                       : 'Check',
-                                  isDisabled: rowBusy.has(s.id),
+                                  isDisabled: rowBusy.has(s.id) || !!s.running,
                                   onClick: () => void runOnRow(s, 'check'),
                                 },
                                 {
@@ -828,7 +854,7 @@ export default function GroupDetailPage() {
                                     rowBusy.get(s.id) === 'apply'
                                       ? 'Updating…'
                                       : 'Update',
-                                  isDisabled: rowBusy.has(s.id),
+                                  isDisabled: rowBusy.has(s.id) || !!s.running,
                                   onClick: () => void runOnRow(s, 'apply'),
                                 },
                               ]

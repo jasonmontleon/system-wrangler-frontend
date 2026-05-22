@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import {
   Alert,
   Breadcrumb,
@@ -58,6 +58,7 @@ import {
 } from '../hooks/useScope'
 import PlatformCard from '../components/PlatformCard'
 import SystemCredentialsSection from '../components/SystemCredentialsSection'
+import { useEventStream } from '../hooks/useEventStream'
 
 type LoadState =
   | { kind: 'loading' }
@@ -100,7 +101,10 @@ export default function SystemDetailPage() {
       setState({ kind: 'error', message: 'No system id in URL' })
       return
     }
-    setState({ kind: 'loading' })
+    // Only flip to the loading-spinner screen when we don't already
+    // have data. Subsequent refreshes (event-driven or post-click)
+    // update in place to avoid blanking the page mid-interaction.
+    setState((prev) => (prev.kind === 'ready' ? prev : { kind: 'loading' }))
     try {
       const [system, updaters, runs] = await Promise.all([
         getSystem(systemId),
@@ -119,6 +123,25 @@ export default function SystemDetailPage() {
   useEffect(() => {
     void refresh()
   }, [refresh])
+
+  // Subscribe to `systems.changed` so a run that ends in another tab
+  // (or against another system) flips this page's running flag and
+  // re-enables the action buttons without a manual reload. The 200ms
+  // debounce matches SystemsPage so a burst of events from a fan-out
+  // collapses to a single refetch.
+  const refreshDebounce = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
+  useEventStream(
+    useCallback(
+      (event) => {
+        if (event.type !== 'systems.changed') return
+        if (refreshDebounce.current) clearTimeout(refreshDebounce.current)
+        refreshDebounce.current = setTimeout(() => {
+          void refresh()
+        }, 200)
+      },
+      [refresh],
+    ),
+  )
 
   const canOperate = (sys: System): boolean => {
     if (isGlobalOperator(scopeState)) return true
@@ -199,6 +222,22 @@ export default function SystemDetailPage() {
 
   const onCheck = () => fanOut('check', (id) => checkUpdater(systemId, id))
   const onApply = () => fanOut('apply', (id) => applyUpdater(systemId, id))
+
+  // activeKind is the action whose button should show its
+  // in-progress label ("Checking…" / "Updating…" / "Inspecting…").
+  // Locally driven runs use `busy` directly. Remote runs (started in
+  // another tab and surfaced by system.running) read the kind off
+  // the most recent in-flight row in state.runs so the same button
+  // animates the same way regardless of origin. Toggle-only busy
+  // states (`toggle:<id>`) deliberately don't propagate — they don't
+  // start a run.
+  let activeKind: 'check' | 'apply' | 'inspect' | null = null
+  if (busy === 'check' || busy === 'apply' || busy === 'inspect') {
+    activeKind = busy
+  } else if (state.kind === 'ready' && state.system.running) {
+    const inFlight = state.runs.find((r) => !r.finishedAt)
+    if (inFlight) activeKind = inFlight.kind
+  }
 
   const onToggle = async (u: SystemUpdater, next: boolean) => {
     setActionError(null)
@@ -290,19 +329,19 @@ export default function SystemDetailPage() {
                       <ToolbarItem align={{ default: 'alignEnd' }}>
                         <Button
                           variant="secondary"
-                          isDisabled={!operateAllowed || busy !== null}
+                          isDisabled={!operateAllowed || busy !== null || !!state.system.running}
                           onClick={() => void onCheck()}
                         >
-                          {busy === 'check' ? 'Checking…' : 'Check'}
+                          {activeKind === 'check' ? 'Checking…' : 'Check'}
                         </Button>
                       </ToolbarItem>
                       <ToolbarItem>
                         <Button
                           variant="primary"
-                          isDisabled={!operateAllowed || busy !== null}
+                          isDisabled={!operateAllowed || busy !== null || !!state.system.running}
                           onClick={() => void onApply()}
                         >
-                          {busy === 'apply' ? 'Updating…' : 'Update'}
+                          {activeKind === 'apply' ? 'Updating…' : 'Update'}
                         </Button>
                       </ToolbarItem>
                     </ToolbarContent>
@@ -343,10 +382,10 @@ export default function SystemDetailPage() {
                       <ToolbarItem align={{ default: 'alignEnd' }}>
                         <Button
                           variant="secondary"
-                          isDisabled={!operateAllowed || busy !== null}
+                          isDisabled={!operateAllowed || busy !== null || !!state.system.running}
                           onClick={() => void onInspect()}
                         >
-                          {busy === 'inspect' ? 'Inspecting…' : 'Inspect now'}
+                          {activeKind === 'inspect' ? 'Inspecting…' : 'Inspect now'}
                         </Button>
                       </ToolbarItem>
                     </ToolbarContent>

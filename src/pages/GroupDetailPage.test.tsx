@@ -20,6 +20,8 @@ function system(overrides: Partial<{
   name: string
   hostname: string
   groupId: string | null
+  status: 'unprobed' | 'reachable' | 'unreachable'
+  running: boolean
 }> = {}) {
   return {
     id: 's-1',
@@ -220,6 +222,81 @@ describe('GroupDetailPage', () => {
     expect(await screen.findByText(/Update 1 system\?/i)).toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: /^Update$/i }))
     await waitFor(() => expect(applies).toHaveLength(1))
+  })
+
+  it('shows a row spinner when a member system has running=true from the backend', async () => {
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse([
+        system({ id: 's-1', name: 'busy', groupId: 'g-1', running: true }),
+        system({ id: 's-2', name: 'idle', groupId: 'g-1' }),
+      ]),
+    )
+    renderRoute()
+    const busyRow = (await screen.findByText('busy')).closest('tr')!
+    expect(within(busyRow).getByLabelText(/Run in progress/i)).toBeInTheDocument()
+    const idleRow = screen.getByText('idle').closest('tr')!
+    expect(within(idleRow).queryByLabelText(/Run in progress/i)).toBeNull()
+  })
+
+  it('skips unreachable members in a bulk Check selected', async () => {
+    const checks: string[] = []
+    vi.unstubAllGlobals()
+    vi.stubGlobal('fetch', (input: FetchInput, init?: FetchInit) => {
+      const url = String(input)
+      const method = init?.method ?? 'GET'
+      if (url.startsWith('/api/me/scope'))
+        return Promise.resolve(jsonResponse({ global: 'admin', groups: {} }))
+      if (url === '/api/groups/g-1') return Promise.resolve(jsonResponse(sampleGroup))
+      if (url === '/api/systems' && method === 'GET')
+        return Promise.resolve(
+          jsonResponse([
+            system({ id: 's-alive', name: 'alive', groupId: 'g-1', status: 'reachable' }),
+            system({ id: 's-dead', name: 'dead', groupId: 'g-1', status: 'unreachable' }),
+          ]),
+        )
+      if (url.match(/\/api\/systems\/[^/]+\/updaters$/))
+        return Promise.resolve(
+          jsonResponse({
+            updaters: [
+              {
+                updaterId: 'builtin.dnf',
+                source: 'builtin',
+                displayName: 'dnf',
+                installed: true,
+                enabled: true,
+              },
+            ],
+          }),
+        )
+      if (url.endsWith('/check') && method === 'POST') {
+        checks.push(url)
+        return Promise.resolve(
+          jsonResponse({
+            runId: 'r',
+            updaterId: 'builtin.dnf',
+            kind: 'check',
+            status: 'success',
+            exitCode: 0,
+            affectedCount: 0,
+            durationMs: 1,
+          }),
+        )
+      }
+      return Promise.resolve(jsonResponse({}, 500))
+    })
+    vi.stubGlobal('EventSource', FakeEventSource)
+    renderRoute()
+    await screen.findByText('alive')
+    const checkboxes = screen.getAllByRole('checkbox', { name: /select row/i })
+    fireEvent.click(checkboxes[0])
+    fireEvent.click(checkboxes[1])
+    fireEvent.click(screen.getByRole('button', { name: /^Actions$/i }))
+    fireEvent.click(screen.getByRole('menuitem', { name: /Check selected/i }))
+    await waitFor(() => expect(checks).toHaveLength(1))
+    expect(checks[0]).toContain('/systems/s-alive/')
+    expect(
+      await screen.findByText(/System is marked unreachable/i),
+    ).toBeInTheDocument()
   })
 
   it('shows only systems whose groupId matches', async () => {

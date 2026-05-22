@@ -54,12 +54,34 @@ function scopeAdmin() {
   return jsonResponse({ userId: 'u-1', global: 'admin', groups: {} })
 }
 
+class FakeEventSource {
+  static instances: FakeEventSource[] = []
+  private listeners: Record<string, ((e: MessageEvent) => void)[]> = {}
+  constructor(public url: string) {
+    FakeEventSource.instances.push(this)
+  }
+  addEventListener(type: string, fn: (e: MessageEvent) => void) {
+    if (!this.listeners[type]) this.listeners[type] = []
+    this.listeners[type].push(fn)
+  }
+  removeEventListener(type: string, fn: (e: MessageEvent) => void) {
+    this.listeners[type] = (this.listeners[type] ?? []).filter((x) => x !== fn)
+  }
+  close() {}
+  emit(type: string, data: unknown) {
+    const e = new MessageEvent(type, { data: JSON.stringify(data) })
+    ;(this.listeners[type] ?? []).forEach((fn) => fn(e))
+  }
+}
+
 describe('SystemDetailPage', () => {
   let fetchMock: ReturnType<typeof vi.fn>
 
   beforeEach(() => {
     fetchMock = vi.fn()
     vi.stubGlobal('fetch', fetchMock)
+    FakeEventSource.instances = []
+    vi.stubGlobal('EventSource', FakeEventSource)
   })
   afterEach(() => {
     vi.unstubAllGlobals()
@@ -485,6 +507,151 @@ describe('SystemDetailPage', () => {
     expect(screen.queryByLabelText(/Up to date/i)).toBeNull()
     expect(screen.queryByLabelText(/Updates available/i)).toBeNull()
     expect(screen.queryByLabelText(/Unreachable/i)).toBeNull()
+  })
+
+  it('reflects a remote check on the Check button label and disables every action', async () => {
+    // Mirror of the SystemsPage / GroupDetailPage gate plus the
+    // active-action-label UX: when a remote check is in flight the
+    // Check button reads "Checking…" exactly as if the operator had
+    // clicked it locally, while Update and Inspect now stay disabled
+    // and unchanged.
+    fetchMock.mockImplementation((input: RequestInfo) => {
+      const url = typeof input === 'string' ? input : input.toString()
+      if (url.endsWith('/api/me/scope')) return Promise.resolve(scopeAdmin())
+      if (url.match(/\/api\/systems\/[^/]+\/updaters$/)) {
+        return Promise.resolve(jsonResponse({ updaters: [dnfDetectedEnabled] }))
+      }
+      if (url.match(/\/updater-runs/)) {
+        return Promise.resolve(
+          jsonResponse({
+            runs: [
+              {
+                id: 'r-remote',
+                systemId: 'host-1',
+                kind: 'check',
+                updaterId: 'builtin.dnf',
+                startedAt: '2026-05-21T12:00:00Z',
+              },
+            ],
+          }),
+        )
+      }
+      if (url.match(/\/api\/systems\/[^/]+$/)) {
+        return Promise.resolve(jsonResponse({ ...sampleSystem, running: true }))
+      }
+      return Promise.resolve(jsonResponse({}, { status: 500 }))
+    })
+    renderRoute()
+    await screen.findByRole('heading', { name: 'web-1' })
+    // Active label appears on the Check button only; Update stays
+    // labelled as "Update" but disabled because only one run can
+    // hold the per-system lock at a time.
+    const checking = await screen.findByRole('button', { name: /^Checking…$/i })
+    expect(checking).toBeDisabled()
+    expect(screen.getByRole('button', { name: /^Update$/i })).toBeDisabled()
+    fireEvent.click(screen.getByRole('tab', { name: /Updaters/i }))
+    expect(
+      await screen.findByRole('button', { name: /Inspect now/i }),
+    ).toBeDisabled()
+  })
+
+  it('reflects a remote apply on the Update button and a remote inspect on the Inspect now button', async () => {
+    const cases: Array<{
+      kind: 'apply' | 'inspect'
+      tab: RegExp
+      activeName: RegExp
+      idleName: RegExp
+    }> = [
+      {
+        kind: 'apply',
+        tab: /Overview/i,
+        activeName: /^Updating…$/i,
+        idleName: /^Check$/i,
+      },
+      {
+        kind: 'inspect',
+        tab: /Updaters/i,
+        activeName: /^Inspecting…$/i,
+        idleName: /^Check$/i,
+      },
+    ]
+    for (const c of cases) {
+      fetchMock.mockReset()
+      fetchMock.mockImplementation((input: RequestInfo) => {
+        const url = typeof input === 'string' ? input : input.toString()
+        if (url.endsWith('/api/me/scope')) return Promise.resolve(scopeAdmin())
+        if (url.match(/\/api\/systems\/[^/]+\/updaters$/)) {
+          return Promise.resolve(jsonResponse({ updaters: [dnfDetectedEnabled] }))
+        }
+        if (url.match(/\/updater-runs/)) {
+          return Promise.resolve(
+            jsonResponse({
+              runs: [
+                {
+                  id: 'r-remote',
+                  systemId: 'host-1',
+                  kind: c.kind,
+                  startedAt: '2026-05-21T12:00:00Z',
+                },
+              ],
+            }),
+          )
+        }
+        if (url.match(/\/api\/systems\/[^/]+$/)) {
+          return Promise.resolve(
+            jsonResponse({ ...sampleSystem, running: true }),
+          )
+        }
+        return Promise.resolve(jsonResponse({}, { status: 500 }))
+      })
+      const view = renderRoute()
+      await screen.findByRole('heading', { name: 'web-1' })
+      fireEvent.click(screen.getByRole('tab', { name: c.tab }))
+      expect(
+        await screen.findByRole('button', { name: c.activeName }),
+      ).toBeDisabled()
+      view.unmount()
+    }
+  })
+
+  it('re-enables the action buttons when a systems.changed event reveals running=false', async () => {
+    // Bug fix: SystemDetailPage now subscribes to /api/events so a
+    // run that ends elsewhere flips the local running flag and
+    // re-enables the action buttons without a manual reload. The
+    // FakeEventSource emit() invokes registered listeners
+    // synchronously; combined with the page's 200ms debounce on
+    // refresh, the refetch returns running=false and the Check /
+    // Update buttons re-enable.
+    let systemRunning = true
+    fetchMock.mockImplementation((input: RequestInfo) => {
+      const url = typeof input === 'string' ? input : input.toString()
+      if (url.endsWith('/api/me/scope')) return Promise.resolve(scopeAdmin())
+      if (url.match(/\/api\/systems\/[^/]+\/updaters$/)) {
+        return Promise.resolve(jsonResponse({ updaters: [dnfDetectedEnabled] }))
+      }
+      if (url.match(/\/updater-runs/)) {
+        return Promise.resolve(jsonResponse({ runs: [] }))
+      }
+      if (url.match(/\/api\/systems\/[^/]+$/)) {
+        return Promise.resolve(
+          jsonResponse({ ...sampleSystem, running: systemRunning }),
+        )
+      }
+      return Promise.resolve(jsonResponse({}, { status: 500 }))
+    })
+    renderRoute()
+    await screen.findByRole('heading', { name: 'web-1' })
+    expect(screen.getByRole('button', { name: /^Check$/i })).toBeDisabled()
+    // Simulate the run completing elsewhere.
+    systemRunning = false
+    FakeEventSource.instances.forEach((es) =>
+      es.emit('message', { type: 'systems.changed' }),
+    )
+    await waitFor(
+      () =>
+        expect(screen.getByRole('button', { name: /^Check$/i })).toBeEnabled(),
+      { timeout: 2000 },
+    )
   })
 
   it('disables the action buttons when the caller cannot operate', async () => {

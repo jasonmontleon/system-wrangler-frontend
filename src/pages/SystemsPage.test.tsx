@@ -39,6 +39,7 @@ function system(
     }>
     lastRunFailed: boolean
     lastRunReason: string
+    running: boolean
   }> = {},
 ) {
   return {
@@ -549,6 +550,93 @@ describe('SystemsPage', () => {
       expect(within(row).queryByLabelText(/Check in progress/i)).toBeNull(),
     )
     expect(screen.queryByLabelText(/In-flight tasks/i)).toBeNull()
+  })
+
+  it('shows a row spinner and counts toolbar pill when the backend reports running=true for work started elsewhere', async () => {
+    // Phase 2 of SSE: the listSystems response carries `running:true`
+    // for systems whose advisory lock is held — even if this tab
+    // didn't kick off the work. The row must show a spinner and the
+    // toolbar pill must include it in the busy count so the spinner
+    // persists across navigation.
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse([
+        system({ id: '1', name: 'busy-elsewhere', running: true }),
+        system({ id: '2', name: 'idle' }),
+      ]),
+    )
+    render(<SystemsPage />)
+    const busyRow = (await screen.findByText('busy-elsewhere')).closest('tr')!
+    expect(
+      within(busyRow).getByLabelText(/Run in progress/i),
+    ).toBeInTheDocument()
+    const idleRow = screen.getByText('idle').closest('tr')!
+    expect(within(idleRow).queryByLabelText(/Run in progress/i)).toBeNull()
+    expect(
+      screen.getByLabelText(/In-flight tasks/i).textContent,
+    ).toMatch(/1 task running/i)
+  })
+
+  it('skips unreachable systems in a bulk fan-out instead of POSTing against them', async () => {
+    vi.unstubAllGlobals()
+    const checkCalls: string[] = []
+    const wrapped = (input: FetchInput, init?: FetchInit) => {
+      const url = typeof input === 'string' ? input : input.toString()
+      const method = init?.method ?? 'GET'
+      if (url === '/api/me/scope')
+        return Promise.resolve(jsonResponse({ global: 'admin', groups: {} }))
+      if (url.startsWith('/api/groups')) return Promise.resolve(jsonResponse([]))
+      if (url === '/api/systems' && method === 'GET')
+        return Promise.resolve(
+          jsonResponse([
+            system({ id: 'alive-1', name: 'alive', status: 'reachable' }),
+            system({ id: 'dead-1', name: 'dead', status: 'unreachable' }),
+          ]),
+        )
+      if (url.match(/\/api\/systems\/[^/]+\/updaters$/))
+        return Promise.resolve(
+          jsonResponse({
+            updaters: [
+              {
+                updaterId: 'builtin.dnf',
+                source: 'builtin',
+                displayName: 'dnf',
+                installed: true,
+                enabled: true,
+              },
+            ],
+          }),
+        )
+      if (url.endsWith('/check') && method === 'POST') {
+        checkCalls.push(url)
+        return Promise.resolve(
+          jsonResponse({
+            runId: 'r',
+            updaterId: 'builtin.dnf',
+            kind: 'check',
+            status: 'success',
+            exitCode: 0,
+            affectedCount: 0,
+            durationMs: 1,
+          }),
+        )
+      }
+      return Promise.resolve(jsonResponse({}, 500))
+    }
+    vi.stubGlobal('fetch', wrapped)
+    vi.stubGlobal('EventSource', FakeEventSource)
+    render(<SystemsPage />)
+    await screen.findByText('alive')
+    const checkboxes = screen.getAllByRole('checkbox', { name: /select row/i })
+    fireEvent.click(checkboxes[0])
+    fireEvent.click(checkboxes[1])
+    fireEvent.click(screen.getByRole('button', { name: /^Actions$/i }))
+    fireEvent.click(screen.getByRole('menuitem', { name: /Check selected/i }))
+    await waitFor(() => expect(checkCalls).toHaveLength(1))
+    expect(checkCalls[0]).toContain('/systems/alive-1/')
+    const card = await screen.findByLabelText(/Updater action results/i)
+    expect(
+      within(card).getByText(/System is marked unreachable/i),
+    ).toBeInTheDocument()
   })
 
   it('renders the fan-out results as a fixed-position overlay that does not shift layout', async () => {

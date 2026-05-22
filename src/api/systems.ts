@@ -34,6 +34,11 @@ export type System = {
   // (ansible_shell_type=powershell in inventory, win_ping / win_command
   // modules); false / absent treats the host as Unix-like.
   isWindows?: boolean
+  // running is true when an updater (inspect / check / apply) is
+  // currently in flight against this system. Derived server-side from
+  // updater_run_locks so a spinner survives page navigation and
+  // appears even when work was initiated from another tab.
+  running?: boolean
 }
 
 export type SystemInput = {
