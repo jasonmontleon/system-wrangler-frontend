@@ -121,13 +121,11 @@ describe('App', () => {
       expect(inventory).toBeInTheDocument()
       expect(administration).toBeInTheDocument()
       expect(monitoring).toBeInTheDocument()
-      // Systems lives under Inventory, Audit under Administration. Monitoring
-      // is intentionally empty for now — assert no nav items in its section
-      // by checking the rendered DOM order: Monitoring is last and has no
-      // following NavItem inside its group container.
+      // Systems lives under Inventory, Audit under Administration,
+      // System graphs under Monitoring.
       const monitoringSection = monitoring.closest('section')
       expect(monitoringSection).not.toBeNull()
-      expect(monitoringSection!.querySelectorAll('li')).toHaveLength(0)
+      expect(monitoringSection!.querySelector('a[href="/monitoring/system-graphs"]')).not.toBeNull()
     })
 
     it('does not expose the theme toggle from the masthead', async () => {

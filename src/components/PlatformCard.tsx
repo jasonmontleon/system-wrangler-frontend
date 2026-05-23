@@ -81,6 +81,30 @@ Restart-Service sshd`}
               </pre>
             </Content>
           </StackItem>
+          <StackItem>
+            <Content component="small">
+              <strong>Windows Update apply prerequisite:</strong> the WUA COM
+              API rejects Download / Install from filtered (non-elevated)
+              tokens, which is what OpenSSH hands a local Administrator by
+              default. Check still works; Apply silently no-ops unless the
+              host is configured to grant full admin tokens to network logons.
+              To enable, run once as Administrator:
+              <pre
+                style={{
+                  whiteSpace: 'pre-wrap',
+                  wordBreak: 'break-word',
+                  margin: '0.25rem 0 0',
+                  fontSize: '0.85rem',
+                }}
+              >
+                {`Set-ItemProperty \`
+  -Path "HKLM:\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Policies\\System" \`
+  -Name LocalAccountTokenFilterPolicy -Value 1`}
+              </pre>
+              Same caveat applies to any chocolatey or system-scoped scoop
+              install that touches protected directories.
+            </Content>
+          </StackItem>
           {error && (
             <StackItem>
               <Alert variant="danger" isInline title="Could not update platform">

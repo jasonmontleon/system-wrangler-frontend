@@ -100,6 +100,16 @@ describe('SystemDetailPage', () => {
       exitCode?: number
       logTail?: string
     }>
+    exporterRuns?: Array<{
+      id: string
+      systemId: string
+      exporterId: string
+      kind: 'install' | 'status' | 'remove'
+      startedAt: string
+      finishedAt?: string
+      exitCode?: number
+      logTail?: string
+    }>
   } = {}) {
     fetchMock.mockImplementation((input: RequestInfo) => {
       const url = typeof input === 'string' ? input : input.toString()
@@ -109,6 +119,9 @@ describe('SystemDetailPage', () => {
       }
       if (url.match(/\/updater-runs/)) {
         return Promise.resolve(jsonResponse({ runs: opts.runs ?? [] }))
+      }
+      if (url.match(/\/exporter-runs/)) {
+        return Promise.resolve(jsonResponse({ runs: opts.exporterRuns ?? [] }))
       }
       if (url.endsWith('/effective-credential')) {
         return Promise.resolve(jsonResponse({ error: 'none' }, { status: 404 }))
@@ -169,6 +182,7 @@ describe('SystemDetailPage', () => {
       jsonResponse({ updaters: [{ ...dnfDetectedEnabled, enabled: false }] }),
     )
     fetchMock.mockResolvedValueOnce(jsonResponse({ runs: [] }))
+    fetchMock.mockResolvedValueOnce(jsonResponse({ runs: [] }))
     fireEvent.click(checkbox)
     await waitFor(() => {
       const after = screen.getByLabelText(/Enable dnf/i) as HTMLInputElement
@@ -224,6 +238,7 @@ describe('SystemDetailPage', () => {
     fetchMock.mockResolvedValueOnce(jsonResponse(sampleSystem))
     fetchMock.mockResolvedValueOnce(jsonResponse({ updaters: [dnfDetectedEnabled] }))
     fetchMock.mockResolvedValueOnce(jsonResponse({ runs: [] }))
+    fetchMock.mockResolvedValueOnce(jsonResponse({ runs: [] }))
     fireEvent.click(screen.getByRole('button', { name: /^Check$/i }))
     await waitFor(() => {
       const checkCalls = fetchMock.mock.calls.filter((c) => {
@@ -264,6 +279,7 @@ describe('SystemDetailPage', () => {
     )
     fetchMock.mockResolvedValueOnce(jsonResponse(sampleSystem))
     fetchMock.mockResolvedValueOnce(jsonResponse({ updaters: [dnfDetectedEnabled] }))
+    fetchMock.mockResolvedValueOnce(jsonResponse({ runs: [] }))
     fetchMock.mockResolvedValueOnce(jsonResponse({ runs: [] }))
     fireEvent.click(screen.getByRole('button', { name: /^Update$/i }))
     await waitFor(() => {
@@ -417,6 +433,44 @@ describe('SystemDetailPage', () => {
     })
   })
 
+  it('Recent runs unifies updater and exporter rows', async () => {
+    seedHappy({
+      runs: [
+        {
+          id: 'u1',
+          systemId: 'host-1',
+          updaterId: 'builtin.dnf',
+          kind: 'apply',
+          startedAt: '2026-05-22T10:00:00Z',
+          finishedAt: '2026-05-22T10:00:05Z',
+          exitCode: 0,
+          logTail: 'updater apply log',
+        },
+      ],
+      exporterRuns: [
+        {
+          id: 'e1',
+          systemId: 'host-1',
+          exporterId: 'builtin.dnf.exporter',
+          kind: 'install',
+          startedAt: '2026-05-22T10:01:00Z',
+          finishedAt: '2026-05-22T10:01:15Z',
+          exitCode: 2,
+          logTail: 'TASK [Install node_exporter] failed: package not found',
+        },
+      ],
+    })
+    renderRoute()
+    expect(await screen.findByText('builtin.dnf.exporter')).toBeInTheDocument()
+    expect(screen.getByText('builtin.dnf')).toBeInTheDocument()
+    // The exporter row's substrate column reads "exporter".
+    expect(screen.getByText('install')).toBeInTheDocument()
+    expect(screen.getByText('apply')).toBeInTheDocument()
+    // Substrate column shows both labels.
+    expect(screen.getAllByText('exporter').length).toBeGreaterThan(0)
+    expect(screen.getAllByText('updater').length).toBeGreaterThan(0)
+  })
+
   it('flips the header icon to red when the last run failed', async () => {
     seedHappy({
       system: {
@@ -536,6 +590,9 @@ describe('SystemDetailPage', () => {
           }),
         )
       }
+      if (url.match(/\/exporter-runs/)) {
+        return Promise.resolve(jsonResponse({ runs: [] }))
+      }
       if (url.match(/\/api\/systems\/[^/]+$/)) {
         return Promise.resolve(jsonResponse({ ...sampleSystem, running: true }))
       }
@@ -597,6 +654,9 @@ describe('SystemDetailPage', () => {
             }),
           )
         }
+        if (url.match(/\/exporter-runs/)) {
+          return Promise.resolve(jsonResponse({ runs: [] }))
+        }
         if (url.match(/\/api\/systems\/[^/]+$/)) {
           return Promise.resolve(
             jsonResponse({ ...sampleSystem, running: true }),
@@ -632,6 +692,9 @@ describe('SystemDetailPage', () => {
       if (url.match(/\/updater-runs/)) {
         return Promise.resolve(jsonResponse({ runs: [] }))
       }
+      if (url.match(/\/exporter-runs/)) {
+        return Promise.resolve(jsonResponse({ runs: [] }))
+      }
       if (url.match(/\/api\/systems\/[^/]+$/)) {
         return Promise.resolve(
           jsonResponse({ ...sampleSystem, running: systemRunning }),
@@ -665,6 +728,9 @@ describe('SystemDetailPage', () => {
         return Promise.resolve(jsonResponse({ updaters: [dnfDetectedEnabled] }))
       }
       if (url.match(/\/updater-runs/)) {
+        return Promise.resolve(jsonResponse({ runs: [] }))
+      }
+      if (url.match(/\/exporter-runs/)) {
         return Promise.resolve(jsonResponse({ runs: [] }))
       }
       if (url.match(/\/api\/systems\/[^/]+$/)) {
@@ -705,6 +771,9 @@ describe('SystemDetailPage', () => {
         return Promise.resolve(jsonResponse({ updaters: [dnfDetectedEnabled] }))
       }
       if (url.match(/\/updater-runs/)) {
+        return Promise.resolve(jsonResponse({ runs: [] }))
+      }
+      if (url.match(/\/exporter-runs/)) {
         return Promise.resolve(jsonResponse({ runs: [] }))
       }
       if (url.match(/\/api\/systems\/[^/]+$/)) {

@@ -50,15 +50,30 @@ import {
   type UpdaterRun,
 } from '../api/updaters'
 import {
+  listExporterRuns,
+  type ExporterRun,
+} from '../api/exporters'
+import {
   canAdminGroup,
   isGlobalAdmin,
   isGlobalOperator,
   roleOnGroup,
   useScope,
 } from '../hooks/useScope'
+import MonitoringTabContent from '../components/MonitoringTabContent'
 import PlatformCard from '../components/PlatformCard'
 import SystemCredentialsSection from '../components/SystemCredentialsSection'
+import SystemSparklinesRow from '../components/SystemSparklinesRow'
 import { useEventStream } from '../hooks/useEventStream'
+
+// UnifiedRun is the tagged union the Recent runs card consumes. The
+// discriminant keeps the original Run types intact at the API
+// boundary; merging happens client-side in refresh() so a 500 from
+// either substrate could be tolerated if the operator wants to add
+// that later.
+export type UnifiedRun =
+  | ({ substrate: 'updater' } & UpdaterRun)
+  | ({ substrate: 'exporter' } & ExporterRun)
 
 type LoadState =
   | { kind: 'loading' }
@@ -66,7 +81,7 @@ type LoadState =
       kind: 'ready'
       system: System
       updaters: SystemUpdater[]
-      runs: UpdaterRun[]
+      runs: UnifiedRun[]
     }
   | { kind: 'error'; message: string }
 
@@ -86,7 +101,7 @@ type LoadState =
 //                    credentials.
 //       Updaters   — top-right Inspect toolbar, UpdatersCard
 //                    (enable/disable per registered updater).
-type TabKey = 'overview' | 'connection' | 'updaters'
+type TabKey = 'overview' | 'connection' | 'updaters' | 'monitoring'
 
 export default function SystemDetailPage() {
   const { systemId = '' } = useParams<{ systemId: string }>()
@@ -106,11 +121,19 @@ export default function SystemDetailPage() {
     // update in place to avoid blanking the page mid-interaction.
     setState((prev) => (prev.kind === 'ready' ? prev : { kind: 'loading' }))
     try {
-      const [system, updaters, runs] = await Promise.all([
+      const [system, updaters, updaterRuns, exporterRuns] = await Promise.all([
         getSystem(systemId),
         listSystemUpdaters(systemId),
         listUpdaterRuns(systemId, 25),
+        listExporterRuns(systemId, 25),
       ])
+      const runs: UnifiedRun[] = [
+        ...updaterRuns.map((r) => ({ substrate: 'updater' as const, ...r })),
+        ...exporterRuns.map((r) => ({ substrate: 'exporter' as const, ...r })),
+      ].sort(
+        (a, b) =>
+          new Date(b.startedAt).getTime() - new Date(a.startedAt).getTime(),
+      )
       setState({ kind: 'ready', system, updaters, runs })
     } catch (err) {
       setState({
@@ -235,8 +258,16 @@ export default function SystemDetailPage() {
   if (busy === 'check' || busy === 'apply' || busy === 'inspect') {
     activeKind = busy
   } else if (state.kind === 'ready' && state.system.running) {
-    const inFlight = state.runs.find((r) => !r.finishedAt)
-    if (inFlight) activeKind = inFlight.kind
+    // Only an in-flight *updater* run animates the Check/Update/Inspect
+    // buttons. Exporter runs surface their busy state on the Monitoring
+    // tab; widening this branch to the union would flicker the wrong
+    // labels when an install is mid-flight.
+    const inFlight = state.runs.find(
+      (r) => r.substrate === 'updater' && !r.finishedAt,
+    )
+    if (inFlight && inFlight.substrate === 'updater') {
+      activeKind = inFlight.kind
+    }
   }
 
   const onToggle = async (u: SystemUpdater, next: boolean) => {
@@ -304,6 +335,12 @@ export default function SystemDetailPage() {
               </small>
             </StackItem>
             <StackItem>
+              <SystemSparklinesRow
+                systemId={state.system.id}
+                onClick={() => setActiveTab('monitoring')}
+              />
+            </StackItem>
+            <StackItem>
               <Tabs
                 activeKey={activeTab}
                 onSelect={(_, key) => setActiveTab(key as TabKey)}
@@ -312,6 +349,7 @@ export default function SystemDetailPage() {
                 <Tab eventKey="overview" title={<TabTitleText>Overview</TabTitleText>} />
                 <Tab eventKey="connection" title={<TabTitleText>Connection</TabTitleText>} />
                 <Tab eventKey="updaters" title={<TabTitleText>Updaters</TabTitleText>} />
+                <Tab eventKey="monitoring" title={<TabTitleText>Monitoring</TabTitleText>} />
               </Tabs>
             </StackItem>
             {actionError && (
@@ -400,6 +438,14 @@ export default function SystemDetailPage() {
                   />
                 </StackItem>
               </>
+            )}
+            {activeTab === 'monitoring' && (
+              <StackItem>
+                <MonitoringTabContent
+                  systemId={state.system.id}
+                  canOperate={operateAllowed}
+                />
+              </StackItem>
             )}
           </>
         )}
@@ -721,7 +767,7 @@ function AvailableUpdatesCard({ updaters }: { updaters: SystemUpdater[] }) {
   )
 }
 
-function RunsCard({ runs }: { runs: UpdaterRun[] }) {
+function RunsCard({ runs }: { runs: UnifiedRun[] }) {
   const [isExpanded, setExpanded] = useState(true)
   return (
     <Card id="recent-runs-card" isExpanded={isExpanded}>
@@ -737,32 +783,45 @@ function RunsCard({ runs }: { runs: UpdaterRun[] }) {
       <CardExpandableContent>
         <CardBody>
           {runs.length === 0 ? (
-            <p>No runs yet. Try Inspect now to detect installed updaters, then Check or Update.</p>
+            <p>
+              No runs yet. Try Inspect on the Updaters tab, or install an
+              exporter from the Monitoring tab.
+            </p>
           ) : (
-            <Table aria-label="Recent updater runs" variant="compact">
+            <Table aria-label="Recent runs" variant="compact">
               <Thead>
                 <Tr>
+                  <Th>Substrate</Th>
                   <Th>Kind</Th>
-                  <Th>Updater</Th>
+                  <Th>Target</Th>
                   <Th>Started</Th>
                   <Th>Exit</Th>
                   <Th>Log tail</Th>
                 </Tr>
               </Thead>
               <Tbody>
-                {runs.map((r) => (
-                  <Tr key={r.id}>
-                    <Td>{r.kind}</Td>
-                    <Td>{r.updaterId ?? '—'}</Td>
-                    <Td>{new Date(r.startedAt).toLocaleString()}</Td>
-                    <Td>{r.exitCode ?? '…'}</Td>
-                    <Td>
-                      <ExpandableSection toggleText="Show">
-                        <pre style={{ whiteSpace: 'pre-wrap' }}>{r.logTail ?? ''}</pre>
-                      </ExpandableSection>
-                    </Td>
-                  </Tr>
-                ))}
+                {runs.map((r) => {
+                  const target =
+                    r.substrate === 'updater'
+                      ? (r.updaterId ?? '—')
+                      : r.exporterId
+                  return (
+                    <Tr key={`${r.substrate}-${r.id}`}>
+                      <Td>{r.substrate}</Td>
+                      <Td>{r.kind}</Td>
+                      <Td>{target}</Td>
+                      <Td>{new Date(r.startedAt).toLocaleString()}</Td>
+                      <Td>{r.exitCode ?? '…'}</Td>
+                      <Td>
+                        <ExpandableSection toggleText="Show">
+                          <pre style={{ whiteSpace: 'pre-wrap' }}>
+                            {r.logTail ?? ''}
+                          </pre>
+                        </ExpandableSection>
+                      </Td>
+                    </Tr>
+                  )
+                })}
               </Tbody>
             </Table>
           )}

@@ -40,6 +40,8 @@ import ProfilePage from './pages/ProfilePage'
 import SystemDetailPage from './pages/SystemDetailPage'
 import SystemsPage from './pages/SystemsPage'
 import UpdatersPage from './pages/UpdatersPage'
+import ExportersPage from './pages/ExportersPage'
+import SystemGraphsPage from './pages/SystemGraphsPage'
 import UsersPage from './pages/UsersPage'
 import ForcePasswordChange from './components/ForcePasswordChange'
 import LoginForm from './components/LoginForm'
@@ -206,15 +208,18 @@ export default function App() {
               <RouterNavItem to="/updaters">Updaters</RouterNavItem>
             )}
             {isGlobalAdmin(scope.state) && (
+              <RouterNavItem to="/exporters">Exporters</RouterNavItem>
+            )}
+            {isGlobalAdmin(scope.state) && (
               <RouterNavItem to="/backup">Backup</RouterNavItem>
             )}
             {isGlobalAdmin(scope.state) && (
               <RouterNavItem to="/settings">Settings</RouterNavItem>
             )}
           </NavGroup>
-          {/* Reserved for alerts, custom dashboards, and reports once those
-              land; rendered now so the structure of the sidebar is visible. */}
-          <NavGroup title="Monitoring" />
+          <NavGroup title="Monitoring">
+            <RouterNavItem to="/monitoring/system-graphs">System graphs</RouterNavItem>
+          </NavGroup>
         </Nav>
       </PageSidebarBody>
     </PageSidebar>
@@ -270,6 +275,13 @@ export default function App() {
             isGlobalAdmin(scope.state) ? <UpdatersPage /> : <Navigate to="/" replace />
           }
         />
+        <Route
+          path="/exporters"
+          element={
+            isGlobalAdmin(scope.state) ? <ExportersPage /> : <Navigate to="/" replace />
+          }
+        />
+        <Route path="/monitoring/system-graphs" element={<SystemGraphsPage />} />
         <Route
           path="/settings"
           element={
