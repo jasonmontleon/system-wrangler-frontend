@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
-import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { MemoryRouter } from 'react-router'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import SystemsOverviewPage from './SystemsOverviewPage'
@@ -105,16 +105,18 @@ describe('SystemsOverviewPage', () => {
         <SystemsOverviewPage />
       </MemoryRouter>,
     )
+    const table = await screen.findByLabelText('Systems overview')
+    const inTable = within(table)
     expect(
-      await screen.findByRole('link', { name: 'web-1' }),
+      await inTable.findByRole('link', { name: 'web-1' }),
     ).toHaveAttribute('href', '/systems/sys-1')
-    expect(screen.getByRole('link', { name: 'db-1' })).toHaveAttribute(
+    expect(inTable.getByRole('link', { name: 'db-1' })).toHaveAttribute(
       'href',
       '/systems/sys-2',
     )
     await waitFor(() => {
-      expect(screen.getByText('92%')).toBeInTheDocument()
-      expect(screen.getByText('12%')).toBeInTheDocument()
+      expect(inTable.getByText('92%')).toBeInTheDocument()
+      expect(inTable.getByText('12%')).toBeInTheDocument()
     })
   })
 
@@ -124,10 +126,12 @@ describe('SystemsOverviewPage', () => {
         <SystemsOverviewPage />
       </MemoryRouter>,
     )
-    await screen.findByRole('link', { name: 'web-1' })
-    expect(screen.getAllByText('Web tier').length).toBeGreaterThan(0)
-    expect(screen.getByText('Database tier')).toBeInTheDocument()
-    expect(screen.getByLabelText('Updates available')).toBeInTheDocument()
+    const table = await screen.findByLabelText('Systems overview')
+    const inTable = within(table)
+    await inTable.findByRole('link', { name: 'web-1' })
+    expect(inTable.getAllByText('Web tier').length).toBeGreaterThan(0)
+    expect(inTable.getByText('Database tier')).toBeInTheDocument()
+    expect(inTable.getByLabelText('Updates available')).toBeInTheDocument()
   })
 
   it('dims unreachable rows and shows "—" for their metric cells', async () => {
@@ -153,12 +157,13 @@ describe('SystemsOverviewPage', () => {
         <SystemsOverviewPage />
       </MemoryRouter>,
     )
-    await screen.findByRole('link', { name: 'web-1' })
+    const table = await screen.findByLabelText('Systems overview')
+    const inTable = within(table)
+    await inTable.findByRole('link', { name: 'web-1' })
     await waitFor(() => {
-      const ninety = screen.getByText('92%')
-      expect(ninety).toBeInTheDocument()
+      expect(inTable.getByText('92%')).toBeInTheDocument()
     })
-    const danger = screen.getByText('92%').closest('td')
+    const danger = inTable.getByText('92%').closest('td')
     expect(danger).not.toBeNull()
     expect(danger!.getAttribute('style')).toMatch(/background-color/i)
   })
@@ -169,7 +174,8 @@ describe('SystemsOverviewPage', () => {
         <SystemsOverviewPage />
       </MemoryRouter>,
     )
-    await screen.findByRole('link', { name: 'web-1' })
+    const table = await screen.findByLabelText('Systems overview')
+    await within(table).findByRole('link', { name: 'web-1' })
     // The MenuToggle exposes its label via aria-label; the sortable
     // Group column header has no aria-label, so getByLabelText
     // disambiguates between the two.
@@ -180,7 +186,7 @@ describe('SystemsOverviewPage', () => {
     await waitFor(() => {
       expect(screen.queryByRole('link', { name: 'web-1' })).toBeNull()
     })
-    expect(screen.getByRole('link', { name: 'db-1' })).toBeInTheDocument()
+    expect(within(table).getByRole('link', { name: 'db-1' })).toBeInTheDocument()
   })
 
   it('shows an empty-state card when no systems are registered', async () => {
@@ -210,7 +216,8 @@ describe('SystemsOverviewPage', () => {
         <SystemsOverviewPage />
       </MemoryRouter>,
     )
-    await screen.findByRole('link', { name: 'web-1' })
+    const table = await screen.findByLabelText('Systems overview')
+    await within(table).findByRole('link', { name: 'web-1' })
     fetchMock.mockImplementationOnce((url: RequestInfo | URL) => {
       const s = String(url)
       if (s.includes('/api/groups')) {
@@ -245,11 +252,12 @@ describe('SystemsOverviewPage', () => {
         <SystemsOverviewPage />
       </MemoryRouter>,
     )
-    await screen.findByRole('link', { name: 'web-1' })
-    const links = screen
-      .getAllByRole('link')
-      .map((a) => a.textContent ?? '')
-      .filter((t) => t === 'web-1' || t === 'db-1' || t === 'offline-1')
+    const table = await screen.findByLabelText('Systems overview')
+    const inTable = within(table)
+    await inTable.findByRole('link', { name: 'web-1' })
+    const links = Array.from(table.querySelectorAll('tbody tr a')).map(
+      (a) => a.textContent ?? '',
+    )
     expect(links).toEqual(['db-1', 'offline-1', 'web-1'])
   })
 
@@ -259,11 +267,13 @@ describe('SystemsOverviewPage', () => {
         <SystemsOverviewPage />
       </MemoryRouter>,
     )
-    await screen.findByRole('link', { name: 'web-1' })
+    const table = await screen.findByLabelText('Systems overview')
+    const inTable = within(table)
+    await inTable.findByRole('link', { name: 'web-1' })
     await waitFor(() => {
-      expect(screen.getByText('92%')).toBeInTheDocument()
+      expect(inTable.getByText('92%')).toBeInTheDocument()
     })
-    const cpuHeader = screen.getByRole('columnheader', { name: /^CPU/i })
+    const cpuHeader = inTable.getByRole('columnheader', { name: /^CPU/i })
     const sortButton = cpuHeader.querySelector('button')
     expect(sortButton).not.toBeNull()
     fireEvent.click(sortButton!)
@@ -288,14 +298,160 @@ describe('SystemsOverviewPage', () => {
         <SystemsOverviewPage />
       </MemoryRouter>,
     )
-    await screen.findByRole('link', { name: 'web-1' })
-    const statusHeader = screen.getByRole('columnheader', { name: /^Status/i })
+    const table = await screen.findByLabelText('Systems overview')
+    const inTable = within(table)
+    await inTable.findByRole('link', { name: 'web-1' })
+    const statusHeader = inTable.getByRole('columnheader', {
+      name: /^Status/i,
+    })
     fireEvent.click(statusHeader.querySelector('button')!)
     await waitFor(() => {
-      const rows = Array.from(document.querySelectorAll('tbody tr'))
+      const rows = Array.from(table.querySelectorAll('tbody tr'))
       const firstLink = rows[0].querySelector('a')
       expect(firstLink?.textContent).toBe('offline-1')
     })
+  })
+
+  it('renders a Busiest CPU leaderboard ordered by descending CPU', async () => {
+    render(
+      <MemoryRouter>
+        <SystemsOverviewPage />
+      </MemoryRouter>,
+    )
+    const card = await screen.findByText('Busiest CPU')
+    const cardBody = card.closest('.pf-v6-c-card')
+    expect(cardBody).not.toBeNull()
+    const inCard = within(cardBody as HTMLElement)
+    // Each row is a system name + a value badge. Highest CPU first.
+    await waitFor(() => {
+      const links = Array.from(cardBody!.querySelectorAll('a'))
+      expect(links[0]?.textContent).toBe('web-1')
+    })
+    expect(inCard.getByText('92%')).toBeInTheDocument()
+    expect(inCard.getByText('12%')).toBeInTheDocument()
+  })
+
+  it('renders a Lowest free disk leaderboard ordered by highest used %', async () => {
+    render(
+      <MemoryRouter>
+        <SystemsOverviewPage />
+      </MemoryRouter>,
+    )
+    const card = await screen.findByText('Lowest free disk')
+    const cardBody = card.closest('.pf-v6-c-card')
+    expect(cardBody).not.toBeNull()
+    await waitFor(() => {
+      const links = Array.from(cardBody!.querySelectorAll('a'))
+      // sys-2 has filesystem 95% used; sys-1 has 50% used.
+      expect(links[0]?.textContent).toBe('db-1')
+    })
+  })
+
+  it('renders a Most pending updates leaderboard skipping zero-pending systems', async () => {
+    render(
+      <MemoryRouter>
+        <SystemsOverviewPage />
+      </MemoryRouter>,
+    )
+    const card = await screen.findByText('Most pending updates')
+    const cardBody = card.closest('.pf-v6-c-card')
+    expect(cardBody).not.toBeNull()
+    const links = Array.from(cardBody!.querySelectorAll('a')).map(
+      (a) => a.textContent,
+    )
+    expect(links).toEqual(['web-1'])
+    expect(cardBody!.textContent).toContain('3')
+  })
+
+  it('shows an empty leaderboard message when no pending updates exist', async () => {
+    fetchMock.mockImplementation((url: RequestInfo | URL) => {
+      const s = String(url)
+      if (s.includes('/api/groups') && !s.includes('/api/metrics')) {
+        return Promise.resolve(jsonResponse(groupsBody))
+      }
+      if (s.includes('/api/systems') && !s.includes('/api/metrics')) {
+        const cleared = systemsBody.map((s) => ({ ...s, pendingUpdates: 0 }))
+        return Promise.resolve(jsonResponse(cleared))
+      }
+      if (s.includes('/api/metrics/query?')) {
+        return Promise.resolve(metricResponseFor(s))
+      }
+      return Promise.resolve(jsonResponse({}, 404))
+    })
+    render(
+      <MemoryRouter>
+        <SystemsOverviewPage />
+      </MemoryRouter>,
+    )
+    expect(
+      await screen.findByText(/No systems have pending updates\./i),
+    ).toBeInTheDocument()
+  })
+
+  it('excludes unreachable systems from the leaderboards', async () => {
+    render(
+      <MemoryRouter>
+        <SystemsOverviewPage />
+      </MemoryRouter>,
+    )
+    await screen.findByText('Busiest CPU')
+    await waitFor(() => {
+      // The leaderboard cards live outside the heatmap table; offline-1
+      // should never appear in any of them.
+      const tables = screen.queryAllByLabelText('Systems overview')
+      const cards = Array.from(document.querySelectorAll('.pf-v6-c-card'))
+      const offlineInCards = cards.some((c) =>
+        Array.from(c.querySelectorAll('a')).some(
+          (a) => a.textContent === 'offline-1',
+        ),
+      )
+      expect(tables.length).toBeGreaterThan(0)
+      expect(offlineInCards).toBe(false)
+    })
+  })
+
+  it('respects the group filter for leaderboards', async () => {
+    render(
+      <MemoryRouter>
+        <SystemsOverviewPage />
+      </MemoryRouter>,
+    )
+    await screen.findByText('Busiest CPU')
+    fireEvent.click(screen.getByLabelText('Group'))
+    fireEvent.click(
+      await screen.findByRole('option', { name: 'Database tier' }),
+    )
+    await waitFor(() => {
+      const cards = Array.from(document.querySelectorAll('.pf-v6-c-card'))
+      const cardLinks = cards.flatMap((c) =>
+        Array.from(c.querySelectorAll('a')).map((a) => a.textContent),
+      )
+      // After narrowing to the Database tier, only db-1 should be on the
+      // leaderboards — web-1 lives on the Web tier.
+      expect(cardLinks).not.toContain('web-1')
+      expect(cardLinks).toContain('db-1')
+    })
+  })
+
+  it('marks the heatmap table with a sticky header', async () => {
+    render(
+      <MemoryRouter>
+        <SystemsOverviewPage />
+      </MemoryRouter>,
+    )
+    const table = await screen.findByLabelText('Systems overview')
+    expect(table.className).toMatch(/sticky/)
+  })
+
+  it('shows a "Last refreshed" timestamp after metrics resolve', async () => {
+    render(
+      <MemoryRouter>
+        <SystemsOverviewPage />
+      </MemoryRouter>,
+    )
+    expect(
+      await screen.findByText(/Last refreshed at /i),
+    ).toBeInTheDocument()
   })
 
   it('shows a "—" cell when Prometheus has no sample for a system', async () => {
