@@ -41,6 +41,7 @@ import SystemDetailPage from './pages/SystemDetailPage'
 import SystemsPage from './pages/SystemsPage'
 import UpdatersPage from './pages/UpdatersPage'
 import ExportersPage from './pages/ExportersPage'
+import SystemsOverviewPage from './pages/SystemsOverviewPage'
 import SystemGraphsPage from './pages/SystemGraphsPage'
 import UsersPage from './pages/UsersPage'
 import ForcePasswordChange from './components/ForcePasswordChange'
@@ -218,6 +219,7 @@ export default function App() {
             )}
           </NavGroup>
           <NavGroup title="Monitoring">
+            <RouterNavItem to="/monitoring/systems-overview">Systems overview</RouterNavItem>
             <RouterNavItem to="/monitoring/system-graphs">System graphs</RouterNavItem>
           </NavGroup>
         </Nav>
@@ -281,6 +283,7 @@ export default function App() {
             isGlobalAdmin(scope.state) ? <ExportersPage /> : <Navigate to="/" replace />
           }
         />
+        <Route path="/monitoring/systems-overview" element={<SystemsOverviewPage />} />
         <Route path="/monitoring/system-graphs" element={<SystemGraphsPage />} />
         <Route
           path="/settings"

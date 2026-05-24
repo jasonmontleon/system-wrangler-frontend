@@ -122,9 +122,10 @@ describe('App', () => {
       expect(administration).toBeInTheDocument()
       expect(monitoring).toBeInTheDocument()
       // Systems lives under Inventory, Audit under Administration,
-      // System graphs under Monitoring.
+      // Systems overview + System graphs under Monitoring.
       const monitoringSection = monitoring.closest('section')
       expect(monitoringSection).not.toBeNull()
+      expect(monitoringSection!.querySelector('a[href="/monitoring/systems-overview"]')).not.toBeNull()
       expect(monitoringSection!.querySelector('a[href="/monitoring/system-graphs"]')).not.toBeNull()
     })
 
