@@ -1,6 +1,13 @@
 // SPDX-License-Identifier: Apache-2.0
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ReactNode,
+} from 'react'
 import {
   Alert,
   Bullseye,
@@ -20,9 +27,57 @@ import {
 import { ChartDonut } from '@patternfly/react-charts/victory'
 import { apiFetch } from '../api/client'
 import { listSystems, type System } from '../api/systems'
+import { query } from '../api/metrics'
 import { useEventStream } from '../hooks/useEventStream'
+import LeaderboardCard, {
+  type LeaderboardEntry,
+} from '../components/LeaderboardCard'
+import {
+  formatBytesPerSec,
+  formatPct,
+  tintForPending,
+  tintForPercent,
+} from '../components/metricFormatters'
 
 type Health = { status: string }
+
+const LEADERBOARD_TOP_N = 5
+const METRIC_REFRESH_INTERVAL_MS = 30_000
+
+const FS_FILTER =
+  'fstype!~"tmpfs|devtmpfs|squashfs|overlay|ramfs|nsfs|cgroup.*|tracefs|debugfs|fusectl|sysfs|proc|pstore|bpf|configfs|securityfs|hugetlbfs|mqueue|autofs|binfmt_misc"'
+const NET_FILTER = 'device!~"lo|docker.*|veth.*|cni.*|br-.*|virbr.*"'
+
+const PROMQL = {
+  cpu: `100 - (avg by (system_id) (rate(node_cpu_seconds_total{mode="idle"}[5m])) * 100)`,
+  mem: `(1 - node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes) * 100`,
+  disk: `max by (system_id) ((1 - node_filesystem_avail_bytes{${FS_FILTER}} / node_filesystem_size_bytes{${FS_FILTER}}) * 100)`,
+  netIo: `sum by (system_id) (rate(node_network_receive_bytes_total{${NET_FILTER}}[5m])) + sum by (system_id) (rate(node_network_transmit_bytes_total{${NET_FILTER}}[5m]))`,
+  diskIo: `sum by (system_id) (rate(node_disk_read_bytes_total[5m])) + sum by (system_id) (rate(node_disk_written_bytes_total[5m]))`,
+}
+
+type MetricBySystem = Map<string, number>
+
+type DashboardMetrics = {
+  cpu: MetricBySystem
+  mem: MetricBySystem
+  disk: MetricBySystem
+  netIo: MetricBySystem
+  diskIo: MetricBySystem
+}
+
+function indexBySystemId(
+  vector: { metric: Record<string, string>; value: [number, string] }[],
+): MetricBySystem {
+  const map: MetricBySystem = new Map()
+  for (const entry of vector) {
+    const id = entry.metric.system_id
+    if (!id) continue
+    const n = Number(entry.value[1])
+    if (Number.isFinite(n)) map.set(id, n)
+  }
+  return map
+}
 
 // HealthBucket is one of five mutually exclusive states each system
 // rolls up to. The precedence matches SystemStatusIcon so the donut
@@ -80,6 +135,13 @@ export default function DashboardPage() {
   const [healthError, setHealthError] = useState<string | null>(null)
   const [systems, setSystems] = useState<System[] | null>(null)
   const [systemsError, setSystemsError] = useState<string | null>(null)
+  const [metrics, setMetrics] = useState<DashboardMetrics>({
+    cpu: new Map(),
+    mem: new Map(),
+    disk: new Map(),
+    netIo: new Map(),
+    diskIo: new Map(),
+  })
 
   useEffect(() => {
     apiFetch('/api/health')
@@ -124,20 +186,89 @@ export default function DashboardPage() {
     }
   }, [])
 
+  // Five Prometheus instant queries refreshed every 30 s drive the
+  // leaderboards. A failed scrape leaves the previous values in place
+  // so a transient blip doesn't blank the cards.
+  useEffect(() => {
+    let cancelled = false
+    async function tick() {
+      try {
+        const [cpu, mem, disk, netIo, diskIo] = await Promise.all([
+          query(PROMQL.cpu),
+          query(PROMQL.mem),
+          query(PROMQL.disk),
+          query(PROMQL.netIo),
+          query(PROMQL.diskIo),
+        ])
+        if (cancelled) return
+        setMetrics({
+          cpu: indexBySystemId(cpu),
+          mem: indexBySystemId(mem),
+          disk: indexBySystemId(disk),
+          netIo: indexBySystemId(netIo),
+          diskIo: indexBySystemId(diskIo),
+        })
+      } catch {
+        // Soft-fail: keep last good values.
+      }
+    }
+    void tick()
+    const handle = window.setInterval(() => {
+      void tick()
+    }, METRIC_REFRESH_INTERVAL_MS)
+    return () => {
+      cancelled = true
+      window.clearInterval(handle)
+    }
+  }, [])
+
+  const leaderboards = useMemo(() => {
+    const reachable = (systems ?? []).filter(
+      (s) => s.status !== 'unreachable',
+    )
+    const topBy = (
+      getValue: (s: System) => number | undefined,
+      requirePositive = false,
+    ): LeaderboardEntry[] =>
+      reachable
+        .map((s) => ({ system: s, value: getValue(s) }))
+        .filter(
+          (e): e is LeaderboardEntry =>
+            e.value !== undefined &&
+            Number.isFinite(e.value) &&
+            (!requirePositive || e.value > 0),
+        )
+        .sort((a, b) => b.value - a.value)
+        .slice(0, LEADERBOARD_TOP_N)
+    return {
+      busiestCpu: topBy((s) => metrics.cpu.get(s.id)),
+      lowestFreeMem: topBy((s) => metrics.mem.get(s.id)),
+      lowestFreeDisk: topBy((s) => metrics.disk.get(s.id)),
+      highestNetworkIo: topBy((s) => metrics.netIo.get(s.id)),
+      highestDiskIo: topBy((s) => metrics.diskIo.get(s.id)),
+      mostPending: topBy((s) => s.pendingUpdates, true),
+    }
+  }, [systems, metrics])
+
   return (
     <>
       <PageSection>
         <Title headingLevel="h1">Dashboard</Title>
       </PageSection>
-      <PageSection>
-        <Grid hasGutter>
-          <GridItem md={6} lg={4}>
+      <PageSection aria-label="Fleet summary and leaderboards">
+        <div
+          style={{
+            columnWidth: '24rem',
+            columnGap: '1rem',
+          }}
+        >
+          <MasonryItem>
             <SystemHealthCard
               systems={systems}
               loadError={systemsError}
             />
-          </GridItem>
-          <GridItem md={6} lg={4}>
+          </MasonryItem>
+          <MasonryItem>
             <Card>
               <CardTitle>Backend health</CardTitle>
               <CardBody>
@@ -150,10 +281,73 @@ export default function DashboardPage() {
                 {health && <span>status: {health.status}</span>}
               </CardBody>
             </Card>
-          </GridItem>
-        </Grid>
+          </MasonryItem>
+          <MasonryItem>
+            <LeaderboardCard
+              title="Busiest CPU"
+              entries={leaderboards.busiestCpu}
+              format={formatPct}
+              tint={tintForPercent}
+              emptyText="No CPU samples in the current window."
+            />
+          </MasonryItem>
+          <MasonryItem>
+            <LeaderboardCard
+              title="Lowest free memory"
+              entries={leaderboards.lowestFreeMem}
+              format={formatPct}
+              tint={tintForPercent}
+              emptyText="No memory samples in the current window."
+            />
+          </MasonryItem>
+          <MasonryItem>
+            <LeaderboardCard
+              title="Lowest free disk"
+              entries={leaderboards.lowestFreeDisk}
+              format={formatPct}
+              tint={tintForPercent}
+              emptyText="No filesystem samples in the current window."
+            />
+          </MasonryItem>
+          <MasonryItem>
+            <LeaderboardCard
+              title="Highest network IO"
+              entries={leaderboards.highestNetworkIo}
+              format={formatBytesPerSec}
+              emptyText="No network samples in the current window."
+            />
+          </MasonryItem>
+          <MasonryItem>
+            <LeaderboardCard
+              title="Highest disk IO"
+              entries={leaderboards.highestDiskIo}
+              format={formatBytesPerSec}
+              emptyText="No disk samples in the current window."
+            />
+          </MasonryItem>
+          <MasonryItem>
+            <LeaderboardCard
+              title="Most pending updates"
+              entries={leaderboards.mostPending}
+              format={(v) => String(v)}
+              tint={tintForPending}
+              emptyText="No systems have pending updates."
+            />
+          </MasonryItem>
+        </div>
       </PageSection>
     </>
+  )
+}
+
+// MasonryItem wraps each card so CSS multi-column layout treats the
+// card as an atomic unit — short cards slot in beside or under tall
+// ones (Pinterest-style) instead of stretching to a row baseline.
+function MasonryItem({ children }: { children: ReactNode }) {
+  return (
+    <div style={{ breakInside: 'avoid', marginBottom: '1rem' }}>
+      {children}
+    </div>
   )
 }
 

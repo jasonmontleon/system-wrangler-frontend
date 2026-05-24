@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
-import { render, screen } from '@testing-library/react'
+import { render, screen, waitFor, within } from '@testing-library/react'
+import { MemoryRouter } from 'react-router'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import DashboardPage from './DashboardPage'
 import type { System } from '../api/systems'
@@ -11,6 +12,24 @@ function jsonResponse(body: unknown, status = 200): Response {
     headers: { 'Content-Type': 'application/json' },
   })
 }
+
+function metricVector(values: Record<string, number>): Response {
+  return jsonResponse({
+    status: 'success',
+    data: {
+      resultType: 'vector',
+      result: Object.entries(values).map(([systemId, v]) => ({
+        metric: { system_id: systemId },
+        value: [1_716_000_000, String(v)],
+      })),
+    },
+  })
+}
+
+const emptyVector = jsonResponse({
+  status: 'success',
+  data: { resultType: 'vector', result: [] },
+})
 
 function sys(overrides: Partial<System>): System {
   return {
@@ -44,9 +63,14 @@ describe('DashboardPage', () => {
       const url = String(input)
       if (url === '/api/health') return Promise.resolve(jsonResponse({ status: 'ok' }))
       if (url === '/api/systems') return Promise.resolve(jsonResponse([]))
+      if (url.includes('/api/metrics/query?')) return Promise.resolve(emptyVector)
       return Promise.resolve(jsonResponse({}, 500))
     })
-    render(<DashboardPage />)
+    render(
+      <MemoryRouter>
+        <DashboardPage />
+      </MemoryRouter>,
+    )
     expect(await screen.findByText(/No systems yet/i)).toBeInTheDocument()
   })
 
@@ -72,9 +96,14 @@ describe('DashboardPage', () => {
       const url = String(input)
       if (url === '/api/health') return Promise.resolve(jsonResponse({ status: 'ok' }))
       if (url === '/api/systems') return Promise.resolve(jsonResponse(systems))
+      if (url.includes('/api/metrics/query?')) return Promise.resolve(emptyVector)
       return Promise.resolve(jsonResponse({}, 500))
     })
-    render(<DashboardPage />)
+    render(
+      <MemoryRouter>
+        <DashboardPage />
+      </MemoryRouter>,
+    )
     // Wait for the donut to render — its center label carries the total.
     await screen.findByLabelText('Healthy count')
     expect(screen.getByLabelText('Healthy count').textContent).toBe('2')
@@ -90,11 +119,139 @@ describe('DashboardPage', () => {
       if (url === '/api/health') return Promise.resolve(jsonResponse({ status: 'ok' }))
       if (url === '/api/systems')
         return Promise.resolve(jsonResponse({ error: 'down' }, 500))
+      if (url.includes('/api/metrics/query?')) return Promise.resolve(emptyVector)
       return Promise.resolve(jsonResponse({}, 500))
     })
-    render(<DashboardPage />)
+    render(
+      <MemoryRouter>
+        <DashboardPage />
+      </MemoryRouter>,
+    )
     expect(
       await screen.findByText(/Could not load systems/i),
+    ).toBeInTheDocument()
+  })
+
+  it('renders the six leaderboards with top entries ordered by descending value', async () => {
+    const systems: System[] = [
+      sys({ id: 'sys-1', name: 'web-1', status: 'reachable', pendingUpdates: 5 }),
+      sys({ id: 'sys-2', name: 'db-1', status: 'reachable', pendingUpdates: 0 }),
+      sys({ id: 'sys-3', name: 'offline-1', status: 'unreachable' }),
+    ]
+    vi.stubGlobal('fetch', (input: RequestInfo | URL) => {
+      const url = String(input)
+      if (url === '/api/health') return Promise.resolve(jsonResponse({ status: 'ok' }))
+      if (url === '/api/systems') return Promise.resolve(jsonResponse(systems))
+      if (url.includes('/api/metrics/query?')) {
+        if (url.includes('node_cpu_seconds_total')) {
+          return Promise.resolve(
+            metricVector({ 'sys-1': 90, 'sys-2': 15, 'sys-3': 99 }),
+          )
+        }
+        if (
+          url.includes('MemAvailable_bytes') &&
+          !url.includes('node_network')
+        ) {
+          return Promise.resolve(metricVector({ 'sys-1': 80, 'sys-2': 20 }))
+        }
+        if (url.includes('node_filesystem_avail_bytes')) {
+          return Promise.resolve(metricVector({ 'sys-1': 40, 'sys-2': 95 }))
+        }
+        if (url.includes('node_network_receive_bytes_total')) {
+          return Promise.resolve(
+            metricVector({ 'sys-1': 5_000_000, 'sys-2': 200 }),
+          )
+        }
+        if (url.includes('node_disk_read_bytes_total')) {
+          return Promise.resolve(
+            metricVector({ 'sys-1': 10_000_000, 'sys-2': 500 }),
+          )
+        }
+        return Promise.resolve(emptyVector)
+      }
+      return Promise.resolve(jsonResponse({}, 500))
+    })
+    render(
+      <MemoryRouter>
+        <DashboardPage />
+      </MemoryRouter>,
+    )
+
+    const cpu = await screen.findByText('Busiest CPU')
+    const cpuCard = cpu.closest('.pf-v6-c-card') as HTMLElement
+    await waitFor(() => {
+      const links = Array.from(cpuCard.querySelectorAll('a')).map(
+        (a) => a.textContent,
+      )
+      // offline-1 is unreachable and must be excluded even though it has
+      // the highest sample.
+      expect(links).toEqual(['web-1', 'db-1'])
+    })
+    expect(within(cpuCard).getByText('90%')).toBeInTheDocument()
+
+    const mem = screen.getByText('Lowest free memory')
+    const memCard = mem.closest('.pf-v6-c-card') as HTMLElement
+    expect(within(memCard).getByText('80%')).toBeInTheDocument()
+    expect(within(memCard).getByText('20%')).toBeInTheDocument()
+
+    const disk = screen.getByText('Lowest free disk')
+    const diskCard = disk.closest('.pf-v6-c-card') as HTMLElement
+    const diskLinks = Array.from(diskCard.querySelectorAll('a')).map(
+      (a) => a.textContent,
+    )
+    expect(diskLinks[0]).toBe('db-1')
+
+    const net = screen.getByText('Highest network IO')
+    const netCard = net.closest('.pf-v6-c-card') as HTMLElement
+    expect(within(netCard).getByText(/MB\/s/)).toBeInTheDocument()
+
+    const diskIo = screen.getByText('Highest disk IO')
+    const diskIoCard = diskIo.closest('.pf-v6-c-card') as HTMLElement
+    expect(within(diskIoCard).getByText(/MB\/s/)).toBeInTheDocument()
+
+    const pending = screen.getByText('Most pending updates')
+    const pendingCard = pending.closest('.pf-v6-c-card') as HTMLElement
+    const pendingLinks = Array.from(pendingCard.querySelectorAll('a')).map(
+      (a) => a.textContent,
+    )
+    // db-1 has pendingUpdates=0 and should be filtered out.
+    expect(pendingLinks).toEqual(['web-1'])
+    expect(within(pendingCard).getByText('5')).toBeInTheDocument()
+  })
+
+  it('shows empty-state text on leaderboards when no metrics resolve', async () => {
+    const systems: System[] = [
+      sys({ id: 'sys-1', name: 'web-1', status: 'reachable', pendingUpdates: 0 }),
+    ]
+    vi.stubGlobal('fetch', (input: RequestInfo | URL) => {
+      const url = String(input)
+      if (url === '/api/health') return Promise.resolve(jsonResponse({ status: 'ok' }))
+      if (url === '/api/systems') return Promise.resolve(jsonResponse(systems))
+      if (url.includes('/api/metrics/query?')) return Promise.resolve(emptyVector)
+      return Promise.resolve(jsonResponse({}, 500))
+    })
+    render(
+      <MemoryRouter>
+        <DashboardPage />
+      </MemoryRouter>,
+    )
+    expect(
+      await screen.findByText(/No CPU samples in the current window\./i),
+    ).toBeInTheDocument()
+    expect(
+      screen.getByText(/No memory samples in the current window\./i),
+    ).toBeInTheDocument()
+    expect(
+      screen.getByText(/No filesystem samples in the current window\./i),
+    ).toBeInTheDocument()
+    expect(
+      screen.getByText(/No network samples in the current window\./i),
+    ).toBeInTheDocument()
+    expect(
+      screen.getByText(/No disk samples in the current window\./i),
+    ).toBeInTheDocument()
+    expect(
+      screen.getByText(/No systems have pending updates\./i),
     ).toBeInTheDocument()
   })
 })

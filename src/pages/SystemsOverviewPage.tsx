@@ -7,11 +7,8 @@ import {
   Bullseye,
   Card,
   CardBody,
-  CardTitle,
   Flex,
   FlexItem,
-  Grid,
-  GridItem,
   PageSection,
   Select,
   SelectList,
@@ -28,10 +25,14 @@ import { listSystems, type System } from '../api/systems'
 import { listGroups, type Group } from '../api/groups'
 import { query } from '../api/metrics'
 import { SystemStatusIcon, PendingUpdatesCell } from '../components/systemsTable'
+import {
+  formatPct,
+  tintForPercent,
+  tintForPending,
+} from '../components/metricFormatters'
 
 const ALL_GROUPS = '__all__'
 const REFRESH_INTERVAL_MS = 30_000
-const LEADERBOARD_TOP_N = 5
 
 const FS_FILTER =
   'fstype!~"tmpfs|devtmpfs|squashfs|overlay|ramfs|nsfs|cgroup.*|tracefs|debugfs|fusectl|sysfs|proc|pstore|bpf|configfs|securityfs|hugetlbfs|mqueue|autofs|binfmt_misc"'
@@ -77,90 +78,6 @@ function numericOrMissing(v: number | undefined, dir: SortDir): number {
     return dir === 'asc' ? Number.POSITIVE_INFINITY : Number.NEGATIVE_INFINITY
   }
   return v
-}
-
-// tintForPercent returns a translucent background that follows
-// PatternFly's status palette so the cell tracks the active theme.
-// Thresholds: <60 → success, 60–85 → warning, ≥85 → danger.
-function tintForPercent(pct: number | undefined): string | undefined {
-  if (pct === undefined || !Number.isFinite(pct)) return undefined
-  if (pct < 60)
-    return 'color-mix(in srgb, var(--pf-t--global--icon--color--status--success--default) 18%, transparent)'
-  if (pct < 85)
-    return 'color-mix(in srgb, var(--pf-t--global--icon--color--status--warning--default) 22%, transparent)'
-  return 'color-mix(in srgb, var(--pf-t--global--icon--color--status--danger--default) 22%, transparent)'
-}
-
-function tintForPending(count: number | undefined): string | undefined {
-  if (count === undefined || count === 0) return undefined
-  if (count < 10)
-    return 'color-mix(in srgb, var(--pf-t--global--icon--color--status--warning--default) 22%, transparent)'
-  return 'color-mix(in srgb, var(--pf-t--global--icon--color--status--danger--default) 22%, transparent)'
-}
-
-function formatPct(n: number | undefined): string {
-  if (n === undefined || !Number.isFinite(n)) return '—'
-  return `${n.toFixed(0)}%`
-}
-
-type LeaderboardEntry = { system: System; value: number }
-
-function LeaderboardCard({
-  title,
-  entries,
-  format,
-  tint,
-  emptyText,
-}: {
-  title: string
-  entries: LeaderboardEntry[]
-  format: (v: number) => string
-  tint: (v: number) => string | undefined
-  emptyText: string
-}) {
-  return (
-    <Card isCompact>
-      <CardTitle>{title}</CardTitle>
-      <CardBody>
-        {entries.length === 0 ? (
-          <span
-            style={{ color: 'var(--pf-t--global--text--color--subtle)' }}
-          >
-            {emptyText}
-          </span>
-        ) : (
-          <div
-            style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}
-          >
-            {entries.map(({ system, value }) => (
-              <div
-                key={system.id}
-                style={{
-                  display: 'flex',
-                  justifyContent: 'space-between',
-                  alignItems: 'center',
-                  gap: '0.5rem',
-                }}
-              >
-                <Link to={`/systems/${system.id}`}>{system.name}</Link>
-                <span
-                  style={{
-                    backgroundColor: tint(value),
-                    padding: '0.125rem 0.5rem',
-                    borderRadius: '0.25rem',
-                    fontVariantNumeric: 'tabular-nums',
-                    whiteSpace: 'nowrap',
-                  }}
-                >
-                  {format(value)}
-                </span>
-              </div>
-            ))}
-          </div>
-        )}
-      </CardBody>
-    </Card>
-  )
 }
 
 function indexBySystemId(
@@ -304,36 +221,6 @@ export default function SystemsOverviewPage() {
     return sorted
   }, [state, groupId, sortKey, sortDir, metrics, groupName])
 
-  // Leaderboards consume the same metric maps and pendingUpdates as
-  // the heatmap below, so they refresh on the same 30 s tick without
-  // a separate fetch. Unreachable systems are excluded — their last
-  // scrape is stale by definition.
-  const leaderboards = useMemo(() => {
-    const reachable = visibleSystems.filter((s) => s.status !== 'unreachable')
-    const byBusiestCpu = reachable
-      .map((s) => ({ system: s, value: metrics.cpu.get(s.id) }))
-      .filter(
-        (e): e is LeaderboardEntry =>
-          e.value !== undefined && Number.isFinite(e.value),
-      )
-      .sort((a, b) => b.value - a.value)
-      .slice(0, LEADERBOARD_TOP_N)
-    const byLowestFreeDisk = reachable
-      .map((s) => ({ system: s, value: metrics.disk.get(s.id) }))
-      .filter(
-        (e): e is LeaderboardEntry =>
-          e.value !== undefined && Number.isFinite(e.value),
-      )
-      .sort((a, b) => b.value - a.value)
-      .slice(0, LEADERBOARD_TOP_N)
-    const byMostPending = reachable
-      .map((s) => ({ system: s, value: s.pendingUpdates ?? 0 }))
-      .filter((e) => e.value > 0)
-      .sort((a, b) => b.value - a.value)
-      .slice(0, LEADERBOARD_TOP_N)
-    return { byBusiestCpu, byLowestFreeDisk, byMostPending }
-  }, [visibleSystems, metrics])
-
   const onSort = (key: SortKey) => {
     if (sortKey === key) {
       setSortDir((d) => (d === 'asc' ? 'desc' : 'asc'))
@@ -447,44 +334,12 @@ export default function SystemsOverviewPage() {
                 </Card>
               </StackItem>
             ) : (
-              <>
-                <StackItem>
-                  <Grid hasGutter>
-                    <GridItem md={4} sm={12}>
-                      <LeaderboardCard
-                        title="Busiest CPU"
-                        entries={leaderboards.byBusiestCpu}
-                        format={(v) => formatPct(v)}
-                        tint={(v) => tintForPercent(v)}
-                        emptyText="No CPU samples in the current window."
-                      />
-                    </GridItem>
-                    <GridItem md={4} sm={12}>
-                      <LeaderboardCard
-                        title="Lowest free disk"
-                        entries={leaderboards.byLowestFreeDisk}
-                        format={(v) => formatPct(v)}
-                        tint={(v) => tintForPercent(v)}
-                        emptyText="No filesystem samples in the current window."
-                      />
-                    </GridItem>
-                    <GridItem md={4} sm={12}>
-                      <LeaderboardCard
-                        title="Most pending updates"
-                        entries={leaderboards.byMostPending}
-                        format={(v) => String(v)}
-                        tint={(v) => tintForPending(v)}
-                        emptyText="No systems have pending updates."
-                      />
-                    </GridItem>
-                  </Grid>
-                </StackItem>
-                <StackItem>
-                  <Table
-                    aria-label="Systems overview"
-                    variant="compact"
-                    isStickyHeader
-                  >
+              <StackItem>
+                <Table
+                  aria-label="Systems overview"
+                  variant="compact"
+                  isStickyHeader
+                >
                   <Thead>
                     <Tr>
                       <Th width={25} sort={sortFor('name', 0)}>
@@ -583,8 +438,7 @@ export default function SystemsOverviewPage() {
                     })}
                   </Tbody>
                 </Table>
-                </StackItem>
-              </>
+              </StackItem>
             )}
           </>
         )}
