@@ -21,6 +21,7 @@ const baseExporter = {
   exporterKind: 'node_exporter' as const,
   bindPort: 9100,
   hasRemove: false,
+  scrapeEnabled: true,
 }
 
 describe('MonitoringTabContent', () => {
@@ -185,6 +186,71 @@ describe('MonitoringTabContent', () => {
     render(<MonitoringTabContent systemId="s1" canOperate={false} />)
     const btn = await screen.findByRole('button', { name: /^Install$/i })
     expect(btn).toBeDisabled()
+  })
+
+  it('flips the Scrape switch and updates the row', async () => {
+    // Default to a benign PUT response so any extra click-driven
+    // events (PatternFly Switch may fire onChange on both label and
+    // input) don't trip the test on undefined mocks.
+    fetchMock.mockImplementation((input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input)
+      const method = init?.method ?? 'GET'
+      if (method === 'PUT' && url.endsWith('/exporters/builtin.dnf.exporter/scrape')) {
+        return Promise.resolve(
+          jsonResponse({ exporterId: 'builtin.dnf.exporter', scrapeEnabled: false }),
+        )
+      }
+      return Promise.resolve(
+        jsonResponse({
+          scrapeMode: 'localhost',
+          detectedPkgManagers: ['builtin.dnf'],
+          exporters: [
+            {
+              ...baseExporter,
+              availability: 'available',
+              installed: true,
+              state: 'running',
+              scrapeEnabled: true,
+              port: 9100,
+            },
+          ],
+        }),
+      )
+    })
+    render(<MonitoringTabContent systemId="s1" canOperate />)
+    const sw = await screen.findByRole('switch', { name: /^Scrape /i })
+    fireEvent.click(sw)
+    expect(await screen.findByText(/^Paused$/)).toBeInTheDocument()
+    const putCall = fetchMock.mock.calls.find(
+      (c) =>
+        String(c[0]).endsWith('/exporters/builtin.dnf.exporter/scrape') &&
+        (c[1] as RequestInit | undefined)?.method === 'PUT',
+    )
+    expect(putCall).toBeDefined()
+    expect(JSON.parse(String((putCall![1] as RequestInit).body))).toEqual({
+      enabled: false,
+    })
+  })
+
+  it('disables the Scrape switch when canOperate is false', async () => {
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse({
+        scrapeMode: 'localhost',
+        detectedPkgManagers: ['builtin.dnf'],
+        exporters: [
+          {
+            ...baseExporter,
+            availability: 'available',
+            installed: true,
+            state: 'running',
+            scrapeEnabled: true,
+          },
+        ],
+      }),
+    )
+    render(<MonitoringTabContent systemId="s1" canOperate={false} />)
+    const sw = await screen.findByRole('switch', { name: /^Scrape /i })
+    expect(sw).toBeDisabled()
   })
 
   it('shows error state when load fails', async () => {

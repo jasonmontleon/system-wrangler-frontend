@@ -63,6 +63,7 @@ export type SystemExporter = {
   hasRemove: boolean
   availability: ExporterAvailability
   installed: boolean
+  scrapeEnabled: boolean
   state?: ExporterState
   port?: number
   serviceName?: string
@@ -207,6 +208,23 @@ export async function removeExporter(
   )
   if (!resp.ok) throw new ApiError(resp.status, await parseError(resp))
   return (await resp.json()) as ExporterRunResult
+}
+
+export async function setExporterScrape(
+  systemId: string,
+  exporterId: string,
+  enabled: boolean,
+): Promise<{ exporterId: string; scrapeEnabled: boolean }> {
+  const resp = await apiFetch(
+    `/api/systems/${encodeURIComponent(systemId)}/exporters/${encodeURIComponent(exporterId)}/scrape`,
+    {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ enabled }),
+    },
+  )
+  if (!resp.ok) throw new ApiError(resp.status, await parseError(resp))
+  return (await resp.json()) as { exporterId: string; scrapeEnabled: boolean }
 }
 
 export async function setExporterScrapeMode(

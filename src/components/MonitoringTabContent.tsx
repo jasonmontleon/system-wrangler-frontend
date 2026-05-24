@@ -18,12 +18,14 @@ import {
   Spinner,
   Stack,
   StackItem,
+  Switch,
 } from '@patternfly/react-core'
 import { Table, Tbody, Td, Th, Thead, Tr } from '@patternfly/react-table'
 import {
   installExporter,
   listSystemExporters,
   removeExporter,
+  setExporterScrape,
   statusExporter,
   type SystemExporter,
   type SystemExportersResponse,
@@ -98,6 +100,32 @@ export default function MonitoringTabContent({
     try {
       await runner(systemId, exporterId)
       await refresh()
+    } catch (err) {
+      setActionError(extractActionError(err))
+    } finally {
+      setBusy(null)
+    }
+  }
+
+  const toggleScrape = async (exporterId: string, enabled: boolean) => {
+    setActionError(null)
+    setBusy(`scrape:${exporterId}`)
+    try {
+      const updated = await setExporterScrape(systemId, exporterId, enabled)
+      setState((prev) => {
+        if (prev.kind !== 'ready') return prev
+        return {
+          kind: 'ready',
+          data: {
+            ...prev.data,
+            exporters: prev.data.exporters.map((e) =>
+              e.exporterId === exporterId
+                ? { ...e, scrapeEnabled: updated.scrapeEnabled }
+                : e,
+            ),
+          },
+        }
+      })
     } catch (err) {
       setActionError(extractActionError(err))
     } finally {
@@ -190,6 +218,7 @@ export default function MonitoringTabContent({
                 onInstall={(e) => runOne('install', e.exporterId, installExporter)}
                 onStatus={(e) => runOne('status', e.exporterId, statusExporter)}
                 onRemove={(e) => runOne('remove', e.exporterId, removeExporter)}
+                onToggleScrape={(e, enabled) => toggleScrape(e.exporterId, enabled)}
               />
             )}
           </CardBody>
@@ -350,6 +379,7 @@ function ExporterTable({
   onInstall,
   onStatus,
   onRemove,
+  onToggleScrape,
 }: {
   rows: SystemExporter[]
   canOperate: boolean
@@ -357,6 +387,7 @@ function ExporterTable({
   onInstall: (e: SystemExporter) => Promise<unknown>
   onStatus: (e: SystemExporter) => Promise<unknown>
   onRemove: (e: SystemExporter) => Promise<unknown>
+  onToggleScrape: (e: SystemExporter, enabled: boolean) => Promise<unknown>
 }) {
   return (
     <Table aria-label="Exporters" variant="compact">
@@ -366,6 +397,7 @@ function ExporterTable({
           <Th>Kind</Th>
           <Th>Availability</Th>
           <Th>State</Th>
+          <Th>Scrape</Th>
           <Th>Last status</Th>
           <Th>Actions</Th>
         </Tr>
@@ -389,9 +421,35 @@ function ExporterTable({
             </Td>
             <Td>
               {e.installed ? (
-                <StateBadge value={e.state ?? 'installed'} />
+                <Stack>
+                  <StackItem>
+                    <StateBadge value={e.state ?? 'installed'} />
+                  </StackItem>
+                  {!e.scrapeEnabled && (
+                    <StackItem>
+                      <Label color="orange" isCompact>
+                        Paused
+                      </Label>
+                    </StackItem>
+                  )}
+                </Stack>
               ) : e.state === 'removed' ? (
                 <Label color="grey">Removed</Label>
+              ) : (
+                '—'
+              )}
+            </Td>
+            <Td>
+              {e.installed ? (
+                <Switch
+                  id={`scrape-${e.exporterId}`}
+                  aria-label={`Scrape ${e.displayName}`}
+                  isChecked={e.scrapeEnabled}
+                  isDisabled={!canOperate || busy !== null}
+                  onChange={(_, checked) => {
+                    void onToggleScrape(e, checked)
+                  }}
+                />
               ) : (
                 '—'
               )}
