@@ -281,6 +281,34 @@ describe('UsersPage', () => {
     expect(deleteCall![0]).toBe('/api/admin/users/u2')
   })
 
+  it('surfaces the 409 when removing the last global admin', async () => {
+    fetchMock
+      .mockResolvedValueOnce(
+        jsonResponse({
+          users: [
+            userRow({ id: 'u1', username: 'alice' }),
+            userRow({ id: 'u2', username: 'bob' }),
+          ],
+        }),
+      )
+      .mockResolvedValueOnce(
+        jsonResponse(
+          { error: 'cannot remove the last global admin; promote another user first' },
+          409,
+        ),
+      )
+
+    render(<UsersPage currentUserId="u1" />)
+    const bobRow = (await screen.findByText('bob')).closest('tr')!
+    clickRowKebab(bobRow, /remove bob/i)
+    const dialog = await screen.findByRole('dialog')
+    fireEvent.click(within(dialog).getByRole('button', { name: /^remove$/i }))
+
+    expect(
+      await screen.findByText(/cannot remove the last global admin/i),
+    ).toBeInTheDocument()
+  })
+
   it('bulk-removes selected users via the Actions menu', async () => {
     fetchMock
       .mockResolvedValueOnce(

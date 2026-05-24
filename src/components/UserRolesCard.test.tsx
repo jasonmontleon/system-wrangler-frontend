@@ -142,6 +142,31 @@ describe('UserRolesCard', () => {
     })
   })
 
+  it('surfaces the 409 when revoking the last global admin', async () => {
+    fetchMock
+      .mockResolvedValueOnce(
+        jsonResponse({
+          assignments: [{ userId: 'u1', username: 'alice', groupId: null, role: 'admin' }],
+        }),
+      )
+      .mockResolvedValueOnce(jsonResponse([]))
+      .mockResolvedValueOnce(
+        jsonResponse(
+          { error: 'cannot remove the last global admin; promote another user first' },
+          409,
+        ),
+      )
+    render(<UserRolesCard userId="u1" username="alice" editable />)
+    await screen.findByText(/global \(install-wide\)/i)
+    fireEvent.click(screen.getByRole('button', { name: /kebab toggle/i }))
+    fireEvent.click(
+      await screen.findByRole('menuitem', { name: /revoke global admin/i }),
+    )
+    expect(
+      await screen.findByText(/cannot remove the last global admin/i),
+    ).toBeInTheDocument()
+  })
+
   it('grants a role scoped to a specific group', async () => {
     fetchMock
       .mockResolvedValueOnce(jsonResponse({ assignments: [] }))
