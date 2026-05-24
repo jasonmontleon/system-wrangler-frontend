@@ -28,7 +28,13 @@ import { ChartDonut } from '@patternfly/react-charts/victory'
 import { apiFetch } from '../api/client'
 import { listSystems, type System } from '../api/systems'
 import { query } from '../api/metrics'
-import { memUsedPct } from '../api/promql'
+import {
+  cpuBusyPct,
+  diskIoBytesPerSec,
+  fsUsedPctMax,
+  memUsedPct,
+  netIoBytesPerSec,
+} from '../api/promql'
 import { useEventStream } from '../hooks/useEventStream'
 import LeaderboardCard, {
   type LeaderboardEntry,
@@ -45,16 +51,12 @@ type Health = { status: string }
 const LEADERBOARD_TOP_N = 5
 const METRIC_REFRESH_INTERVAL_MS = 30_000
 
-const FS_FILTER =
-  'fstype!~"tmpfs|devtmpfs|squashfs|overlay|ramfs|nsfs|cgroup.*|tracefs|debugfs|fusectl|sysfs|proc|pstore|bpf|configfs|securityfs|hugetlbfs|mqueue|autofs|binfmt_misc"'
-const NET_FILTER = 'device!~"lo|docker.*|veth.*|cni.*|br-.*|virbr.*"'
-
 const PROMQL = {
-  cpu: `100 - (avg by (system_id) (rate(node_cpu_seconds_total{mode="idle"}[5m])) * 100)`,
+  cpu: cpuBusyPct(),
   mem: memUsedPct(),
-  disk: `max by (system_id) ((1 - node_filesystem_avail_bytes{${FS_FILTER}} / node_filesystem_size_bytes{${FS_FILTER}}) * 100)`,
-  netIo: `sum by (system_id) (rate(node_network_receive_bytes_total{${NET_FILTER}}[5m])) + sum by (system_id) (rate(node_network_transmit_bytes_total{${NET_FILTER}}[5m]))`,
-  diskIo: `sum by (system_id) (rate(node_disk_read_bytes_total[5m])) + sum by (system_id) (rate(node_disk_written_bytes_total[5m]))`,
+  disk: fsUsedPctMax(),
+  netIo: netIoBytesPerSec(),
+  diskIo: diskIoBytesPerSec(),
 }
 
 type MetricBySystem = Map<string, number>

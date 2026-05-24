@@ -27,11 +27,20 @@ describe('SystemSparklinesRow', () => {
     vi.unstubAllGlobals()
   })
 
-  it('renders all three sparkline cards', async () => {
+  it('renders Load / Memory used / Disk IO on non-Windows hosts', async () => {
     render(<SystemSparklinesRow systemId="sys-1" />)
     expect(await screen.findByText('Load (1m)')).toBeInTheDocument()
     expect(screen.getByText('Memory used')).toBeInTheDocument()
     expect(screen.getByText('Disk IO')).toBeInTheDocument()
+    expect(screen.queryByText('CPU busy')).not.toBeInTheDocument()
+  })
+
+  it('swaps Load for CPU busy on Windows hosts', async () => {
+    render(<SystemSparklinesRow systemId="sys-win" isWindows />)
+    expect(await screen.findByText('CPU busy')).toBeInTheDocument()
+    expect(screen.getByText('Memory used')).toBeInTheDocument()
+    expect(screen.getByText('Disk IO')).toBeInTheDocument()
+    expect(screen.queryByText('Load (1m)')).not.toBeInTheDocument()
   })
 
   it('threads system_id into each query', async () => {

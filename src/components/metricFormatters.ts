@@ -33,3 +33,18 @@ export function formatBytesPerSec(v: number): string {
   if (abs < 1e12) return `${(v / 1e9).toFixed(1)} GB/s`
   return `${(v / 1e12).toFixed(1)} TB/s`
 }
+
+// formatMountLabel returns a compact display name for filesystem
+// legend entries. macOS reports each APFS volume under
+// /System/Volumes/<name> (system volumes) or /Volumes/<name> (user
+// volumes — external drives, network mounts), which fills the chart
+// legend with redundant prefix; stripping these keeps the meaningful
+// suffix ("Data", "Backup", "External SSD") visible. Linux mountpoints,
+// BSD mountpoints, and Windows drive letters fall through unchanged.
+export function formatMountLabel(meta: Record<string, string>): string {
+  const raw = meta.mountpoint ?? meta.volume ?? ''
+  for (const prefix of ['/System/Volumes/', '/Volumes/']) {
+    if (raw.startsWith(prefix)) return raw.slice(prefix.length)
+  }
+  return raw
+}

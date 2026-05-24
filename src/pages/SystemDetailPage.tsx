@@ -337,6 +337,7 @@ export default function SystemDetailPage() {
             <StackItem>
               <SystemSparklinesRow
                 systemId={state.system.id}
+                isWindows={state.system.isWindows ?? false}
                 onClick={() => setActiveTab('monitoring')}
               />
             </StackItem>

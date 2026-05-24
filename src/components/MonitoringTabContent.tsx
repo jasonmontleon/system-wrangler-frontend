@@ -30,10 +30,21 @@ import {
 } from '../api/exporters'
 import { ApiError } from '../api/systems'
 import MetricsPanel from './MetricsPanel'
-import { memAvailBytes, memUsedPct } from '../api/promql'
+import {
+  cpuBusyPct,
+  diskIoBytesBidi,
+  diskIopsBidi,
+  fsUsedPctPerMount,
+  memAvailBytes,
+  memUsedPct,
+  netIoBidi,
+  tcpEstablished,
+  uptimeDays,
+} from '../api/promql'
 import TimeRangePicker from './TimeRangePicker'
 import { TimeRangeProvider } from './TimeRangeProvider'
 import { DEFAULT_PRESET_SECONDS } from '../hooks/useTimeRange'
+import { formatMountLabel } from './metricFormatters'
 
 type LoadState =
   | { kind: 'loading' }
@@ -201,7 +212,7 @@ export default function MonitoringTabContent({
               <GridItem md={6} sm={12}>
                 <MetricsPanel
                   title="CPU busy (%)"
-                  promql={`100 - (avg(rate(node_cpu_seconds_total{system_id="${systemId}",mode="idle"}[5m])) * 100)`}
+                  promql={cpuBusyPct(systemId)}
                   yDomain={[0, 100]}
                 />
               </GridItem>
@@ -235,42 +246,42 @@ export default function MonitoringTabContent({
               <GridItem md={6} sm={12}>
                 <MetricsPanel
                   title="Network IO (bytes/sec)"
-                  promql={`label_replace(sum without(device)(rate(node_network_receive_bytes_total{system_id="${systemId}",device!~"lo|docker.*|veth.*|cni.*|br-.*|virbr.*"}[5m])), "direction", "in", "", "") or label_replace(sum without(device)(rate(node_network_transmit_bytes_total{system_id="${systemId}",device!~"lo|docker.*|veth.*|cni.*|br-.*|virbr.*"}[5m])), "direction", "out", "", "")`}
+                  promql={netIoBidi(systemId)}
                   seriesLabel={(m) => (m.direction === 'in' ? 'In' : 'Out')}
                 />
               </GridItem>
               <GridItem md={6} sm={12}>
                 <MetricsPanel
                   title="TCP connections (established)"
-                  promql={`node_netstat_Tcp_CurrEstab{system_id="${systemId}"}`}
+                  promql={tcpEstablished(systemId)}
                 />
               </GridItem>
               <GridItem md={6} sm={12}>
                 <MetricsPanel
                   title="Disk IO (bytes/sec)"
-                  promql={`label_replace(sum without(device)(rate(node_disk_read_bytes_total{system_id="${systemId}"}[5m])), "direction", "read", "", "") or label_replace(sum without(device)(rate(node_disk_written_bytes_total{system_id="${systemId}"}[5m])), "direction", "write", "", "")`}
+                  promql={diskIoBytesBidi(systemId)}
                   seriesLabel={(m) => (m.direction === 'read' ? 'Read' : 'Write')}
                 />
               </GridItem>
               <GridItem md={6} sm={12}>
                 <MetricsPanel
                   title="Disk IOPS"
-                  promql={`label_replace(sum without(device)(rate(node_disk_reads_completed_total{system_id="${systemId}"}[5m])), "direction", "read", "", "") or label_replace(sum without(device)(rate(node_disk_writes_completed_total{system_id="${systemId}"}[5m])), "direction", "write", "", "")`}
+                  promql={diskIopsBidi(systemId)}
                   seriesLabel={(m) => (m.direction === 'read' ? 'Read' : 'Write')}
                 />
               </GridItem>
               <GridItem md={6} sm={12}>
                 <MetricsPanel
                   title="Filesystem usage (%)"
-                  promql={`(1 - node_filesystem_avail_bytes{system_id="${systemId}",fstype!~"tmpfs|devtmpfs|squashfs|overlay|ramfs|nsfs|cgroup.*|tracefs|debugfs|fusectl|sysfs|proc|pstore|bpf|configfs|securityfs|hugetlbfs|mqueue|autofs|binfmt_misc"} / node_filesystem_size_bytes{system_id="${systemId}",fstype!~"tmpfs|devtmpfs|squashfs|overlay|ramfs|nsfs|cgroup.*|tracefs|debugfs|fusectl|sysfs|proc|pstore|bpf|configfs|securityfs|hugetlbfs|mqueue|autofs|binfmt_misc"}) * 100`}
+                  promql={fsUsedPctPerMount(systemId)}
                   yDomain={[0, 100]}
-                  seriesLabel={(m) => m.mountpoint ?? ''}
+                  seriesLabel={formatMountLabel}
                 />
               </GridItem>
               <GridItem md={6} sm={12}>
                 <MetricsPanel
                   title="Uptime (days)"
-                  promql={`(time() - node_boot_time_seconds{system_id="${systemId}"}) / 86400`}
+                  promql={uptimeDays(systemId)}
                 />
               </GridItem>
               <GridItem md={6} sm={12}>

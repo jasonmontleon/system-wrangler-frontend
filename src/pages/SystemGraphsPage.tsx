@@ -26,10 +26,21 @@ import MetricsPanel from '../components/MetricsPanel'
 import TimeRangePicker from '../components/TimeRangePicker'
 import { TimeRangeProvider } from '../components/TimeRangeProvider'
 import { DEFAULT_PRESET_SECONDS } from '../hooks/useTimeRange'
+import { formatMountLabel } from '../components/metricFormatters'
 import { listSystems, type System } from '../api/systems'
 import { listGroups, type Group } from '../api/groups'
 import { query } from '../api/metrics'
-import { memAvailBytes, memUsedPct } from '../api/promql'
+import {
+  cpuBusyPct,
+  diskIoBytesBidi,
+  diskIopsBidi,
+  fsUsedPctPerMount,
+  memAvailBytes,
+  memUsedPct,
+  netIoBidi,
+  tcpEstablished,
+  uptimeDays,
+} from '../api/promql'
 
 // SystemGraphsPage renders "small multiples": one chosen metric
 // repeated once per system, on a single page. Operator picks the
@@ -51,10 +62,6 @@ type MetricChoice = {
   seriesLabel?: (m: Record<string, string>) => string
 }
 
-const FS_FILTER =
-  'fstype!~"tmpfs|devtmpfs|squashfs|overlay|ramfs|nsfs|cgroup.*|tracefs|debugfs|fusectl|sysfs|proc|pstore|bpf|configfs|securityfs|hugetlbfs|mqueue|autofs|binfmt_misc"'
-const NET_FILTER = 'device!~"lo|docker.*|veth.*|cni.*|br-.*|virbr.*"'
-
 const METRIC_CHOICES: ReadonlyArray<MetricChoice> = [
   {
     id: 'load1',
@@ -64,8 +71,7 @@ const METRIC_CHOICES: ReadonlyArray<MetricChoice> = [
   {
     id: 'cpu-busy',
     label: 'CPU busy (%)',
-    promql: (id) =>
-      `100 - (avg(rate(node_cpu_seconds_total{system_id="${id}",mode="idle"}[5m])) * 100)`,
+    promql: (id) => cpuBusyPct(id),
     yDomain: [0, 100],
   },
   {
@@ -96,36 +102,32 @@ const METRIC_CHOICES: ReadonlyArray<MetricChoice> = [
   {
     id: 'network-io',
     label: 'Network IO (bytes/sec)',
-    promql: (id) =>
-      `label_replace(sum without(device)(rate(node_network_receive_bytes_total{system_id="${id}",${NET_FILTER}}[5m])), "direction", "in", "", "") or label_replace(sum without(device)(rate(node_network_transmit_bytes_total{system_id="${id}",${NET_FILTER}}[5m])), "direction", "out", "", "")`,
+    promql: (id) => netIoBidi(id),
     seriesLabel: (m) => (m.direction === 'in' ? 'In' : 'Out'),
   },
   {
     id: 'tcp-conns',
     label: 'TCP connections (established)',
-    promql: (id) => `node_netstat_Tcp_CurrEstab{system_id="${id}"}`,
+    promql: (id) => tcpEstablished(id),
   },
   {
     id: 'disk-io',
     label: 'Disk IO (bytes/sec)',
-    promql: (id) =>
-      `label_replace(sum without(device)(rate(node_disk_read_bytes_total{system_id="${id}"}[5m])), "direction", "read", "", "") or label_replace(sum without(device)(rate(node_disk_written_bytes_total{system_id="${id}"}[5m])), "direction", "write", "", "")`,
+    promql: (id) => diskIoBytesBidi(id),
     seriesLabel: (m) => (m.direction === 'read' ? 'Read' : 'Write'),
   },
   {
     id: 'disk-iops',
     label: 'Disk IOPS',
-    promql: (id) =>
-      `label_replace(sum without(device)(rate(node_disk_reads_completed_total{system_id="${id}"}[5m])), "direction", "read", "", "") or label_replace(sum without(device)(rate(node_disk_writes_completed_total{system_id="${id}"}[5m])), "direction", "write", "", "")`,
+    promql: (id) => diskIopsBidi(id),
     seriesLabel: (m) => (m.direction === 'read' ? 'Read' : 'Write'),
   },
   {
     id: 'fs-usage',
     label: 'Filesystem usage (%)',
-    promql: (id) =>
-      `(1 - node_filesystem_avail_bytes{system_id="${id}",${FS_FILTER}} / node_filesystem_size_bytes{system_id="${id}",${FS_FILTER}}) * 100`,
+    promql: (id) => fsUsedPctPerMount(id),
     yDomain: [0, 100],
-    seriesLabel: (m) => m.mountpoint ?? '',
+    seriesLabel: formatMountLabel,
   },
   {
     id: 'fds',
@@ -142,7 +144,7 @@ const METRIC_CHOICES: ReadonlyArray<MetricChoice> = [
   {
     id: 'uptime',
     label: 'Uptime (days)',
-    promql: (id) => `(time() - node_boot_time_seconds{system_id="${id}"}) / 86400`,
+    promql: (id) => uptimeDays(id),
   },
 ]
 

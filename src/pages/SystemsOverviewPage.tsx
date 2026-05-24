@@ -24,7 +24,7 @@ import { Table, Tbody, Td, Th, Thead, Tr } from '@patternfly/react-table'
 import { listSystems, type System } from '../api/systems'
 import { listGroups, type Group } from '../api/groups'
 import { query } from '../api/metrics'
-import { memUsedPct } from '../api/promql'
+import { cpuBusyPct, fsUsedPctMax, memUsedPct } from '../api/promql'
 import { SystemStatusIcon, PendingUpdatesCell } from '../components/systemsTable'
 import {
   formatPct,
@@ -35,13 +35,10 @@ import {
 const ALL_GROUPS = '__all__'
 const REFRESH_INTERVAL_MS = 30_000
 
-const FS_FILTER =
-  'fstype!~"tmpfs|devtmpfs|squashfs|overlay|ramfs|nsfs|cgroup.*|tracefs|debugfs|fusectl|sysfs|proc|pstore|bpf|configfs|securityfs|hugetlbfs|mqueue|autofs|binfmt_misc"'
-
 const PROMQL = {
-  cpu: `100 - (avg by (system_id) (rate(node_cpu_seconds_total{mode="idle"}[5m])) * 100)`,
+  cpu: cpuBusyPct(),
   mem: memUsedPct(),
-  disk: `max by (system_id) ((1 - node_filesystem_avail_bytes{${FS_FILTER}} / node_filesystem_size_bytes{${FS_FILTER}}) * 100)`,
+  disk: fsUsedPctMax(),
 }
 
 type MetricBySystem = Map<string, number>

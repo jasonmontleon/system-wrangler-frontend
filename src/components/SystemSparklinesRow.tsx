@@ -2,34 +2,49 @@
 
 import { Grid, GridItem } from '@patternfly/react-core'
 import SparklineCard from './SparklineCard'
-import { memUsedPct } from '../api/promql'
+import { cpuBusyPct, diskIoBytesPerSec, memUsedPct } from '../api/promql'
 
-// SystemSparklinesRow renders the three glance-metric cards (load,
-// memory used %, total disk IO bytes/s) above the SystemDetailPage
-// tabs. The PromQL bakes in `system_id`, so a single Prometheus
-// target with multiple instances on the host is fine — node_exporter
-// only emits one set of `node_*` series per host so we don't need an
-// aggregation.
+// SystemSparklinesRow renders three glance-metric cards above the
+// SystemDetailPage tabs. The first card varies by platform: Linux /
+// BSD hosts see Load (1m), Windows hosts see CPU busy % (windows_exporter
+// does not emit a load-average metric, so the load card would always
+// read "—" on Windows). The other two cards are CPU-platform-neutral.
 //
-// Disk IO sums read + write across every block device, rate'd over a
-// 5-minute window — the standard "current throughput" recipe.
+// The PromQL bakes in `system_id`, so a single Prometheus target with
+// multiple instances on the host is fine — node_exporter only emits
+// one set of `node_*` series per host so we don't need an aggregation.
+// Disk IO sums read + write across every block device or logical
+// volume, rate'd over a 5-minute window — the standard "current
+// throughput" recipe.
 export default function SystemSparklinesRow({
   systemId,
+  isWindows = false,
   onClick,
 }: {
   systemId: string
+  isWindows?: boolean
   onClick?: () => void
 }) {
   const filter = `{system_id="${systemId}"}`
   return (
     <Grid hasGutter>
       <GridItem md={4} sm={12}>
-        <SparklineCard
-          title="Load (1m)"
-          promql={`node_load1${filter}`}
-          format={(v) => v.toFixed(2)}
-          onClick={onClick}
-        />
+        {isWindows ? (
+          <SparklineCard
+            title="CPU busy"
+            promql={cpuBusyPct(systemId)}
+            format={(v) => `${v.toFixed(0)}%`}
+            yDomain={[0, 100]}
+            onClick={onClick}
+          />
+        ) : (
+          <SparklineCard
+            title="Load (1m)"
+            promql={`node_load1${filter}`}
+            format={(v) => v.toFixed(2)}
+            onClick={onClick}
+          />
+        )}
       </GridItem>
       <GridItem md={4} sm={12}>
         <SparklineCard
@@ -43,7 +58,7 @@ export default function SystemSparklinesRow({
       <GridItem md={4} sm={12}>
         <SparklineCard
           title="Disk IO"
-          promql={`sum(rate(node_disk_read_bytes_total${filter}[5m])) + sum(rate(node_disk_written_bytes_total${filter}[5m]))`}
+          promql={diskIoBytesPerSec(systemId)}
           format={formatBytesPerSec}
           onClick={onClick}
         />
