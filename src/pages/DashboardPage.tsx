@@ -28,6 +28,7 @@ import { ChartDonut } from '@patternfly/react-charts/victory'
 import { apiFetch } from '../api/client'
 import { listSystems, type System } from '../api/systems'
 import { query } from '../api/metrics'
+import { memUsedPct } from '../api/promql'
 import { useEventStream } from '../hooks/useEventStream'
 import LeaderboardCard, {
   type LeaderboardEntry,
@@ -50,7 +51,7 @@ const NET_FILTER = 'device!~"lo|docker.*|veth.*|cni.*|br-.*|virbr.*"'
 
 const PROMQL = {
   cpu: `100 - (avg by (system_id) (rate(node_cpu_seconds_total{mode="idle"}[5m])) * 100)`,
-  mem: `(1 - node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes) * 100`,
+  mem: memUsedPct(),
   disk: `max by (system_id) ((1 - node_filesystem_avail_bytes{${FS_FILTER}} / node_filesystem_size_bytes{${FS_FILTER}}) * 100)`,
   netIo: `sum by (system_id) (rate(node_network_receive_bytes_total{${NET_FILTER}}[5m])) + sum by (system_id) (rate(node_network_transmit_bytes_total{${NET_FILTER}}[5m]))`,
   diskIo: `sum by (system_id) (rate(node_disk_read_bytes_total[5m])) + sum by (system_id) (rate(node_disk_written_bytes_total[5m]))`,

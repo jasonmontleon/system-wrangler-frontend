@@ -2,6 +2,7 @@
 
 import { Grid, GridItem } from '@patternfly/react-core'
 import SparklineCard from './SparklineCard'
+import { memUsedPct } from '../api/promql'
 
 // SystemSparklinesRow renders the three glance-metric cards (load,
 // memory used %, total disk IO bytes/s) above the SystemDetailPage
@@ -33,7 +34,7 @@ export default function SystemSparklinesRow({
       <GridItem md={4} sm={12}>
         <SparklineCard
           title="Memory used"
-          promql={`(1 - node_memory_MemAvailable_bytes${filter} / node_memory_MemTotal_bytes${filter}) * 100`}
+          promql={memUsedPct(filter)}
           format={(v) => `${v.toFixed(0)}%`}
           yDomain={[0, 100]}
           onClick={onClick}

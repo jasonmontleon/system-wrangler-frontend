@@ -29,6 +29,7 @@ import { DEFAULT_PRESET_SECONDS } from '../hooks/useTimeRange'
 import { listSystems, type System } from '../api/systems'
 import { listGroups, type Group } from '../api/groups'
 import { query } from '../api/metrics'
+import { memAvailBytes, memUsedPct } from '../api/promql'
 
 // SystemGraphsPage renders "small multiples": one chosen metric
 // repeated once per system, on a single page. Operator picks the
@@ -77,14 +78,13 @@ const METRIC_CHOICES: ReadonlyArray<MetricChoice> = [
   {
     id: 'mem-used',
     label: 'Memory used (%)',
-    promql: (id) =>
-      `(1 - node_memory_MemAvailable_bytes{system_id="${id}"} / node_memory_MemTotal_bytes{system_id="${id}"}) * 100`,
+    promql: (id) => memUsedPct(`{system_id="${id}"}`),
     yDomain: [0, 100],
   },
   {
     id: 'mem-avail',
     label: 'Memory available (bytes)',
-    promql: (id) => `node_memory_MemAvailable_bytes{system_id="${id}"}`,
+    promql: (id) => memAvailBytes(`{system_id="${id}"}`),
   },
   {
     id: 'swap-used',

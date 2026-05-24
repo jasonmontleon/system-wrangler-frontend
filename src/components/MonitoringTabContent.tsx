@@ -30,6 +30,7 @@ import {
 } from '../api/exporters'
 import { ApiError } from '../api/systems'
 import MetricsPanel from './MetricsPanel'
+import { memAvailBytes, memUsedPct } from '../api/promql'
 import TimeRangePicker from './TimeRangePicker'
 import { TimeRangeProvider } from './TimeRangeProvider'
 import { DEFAULT_PRESET_SECONDS } from '../hooks/useTimeRange'
@@ -112,9 +113,6 @@ export default function MonitoringTabContent({
   const hasInspected = data.detectedPkgManagers.length > 0
   const matching = data.exporters.filter(
     (e) => e.availability === 'available' || e.installed,
-  )
-  const others = data.exporters.filter(
-    (e) => !matching.includes(e),
   )
 
   return (
@@ -217,14 +215,14 @@ export default function MonitoringTabContent({
               <GridItem md={6} sm={12}>
                 <MetricsPanel
                   title="Memory used (%)"
-                  promql={`(1 - node_memory_MemAvailable_bytes{system_id="${systemId}"} / node_memory_MemTotal_bytes{system_id="${systemId}"}) * 100`}
+                  promql={memUsedPct(`{system_id="${systemId}"}`)}
                   yDomain={[0, 100]}
                 />
               </GridItem>
               <GridItem md={6} sm={12}>
                 <MetricsPanel
                   title="Memory available (bytes)"
-                  promql={`node_memory_MemAvailable_bytes{system_id="${systemId}"}`}
+                  promql={memAvailBytes(`{system_id="${systemId}"}`)}
                 />
               </GridItem>
               <GridItem md={6} sm={12}>
@@ -295,28 +293,6 @@ export default function MonitoringTabContent({
         </TimeRangeProvider>
       )}
 
-      {others.length > 0 && (
-        <StackItem>
-          <Card>
-            <CardTitle>Other installers</CardTitle>
-            <CardBody>
-              <p>
-                These installers target package managers not detected on
-                this system. They are visible so an operator can see what
-                a custom installer would compete with.
-              </p>
-              <ExporterTable
-                rows={others}
-                canOperate={false}
-                busy={null}
-                onInstall={() => Promise.resolve()}
-                onStatus={() => Promise.resolve()}
-                onRemove={() => Promise.resolve()}
-              />
-            </CardBody>
-          </Card>
-        </StackItem>
-      )}
     </Stack>
   )
 }
