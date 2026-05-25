@@ -173,6 +173,44 @@ describe('updaters api', () => {
     expect(init.method).toBe('POST')
   })
 
+  it('applyUpdater with no packages sends no body', async () => {
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse({
+        runId: 'r-1',
+        updaterId: 'builtin.dnf',
+        kind: 'apply',
+        status: 'success',
+        exitCode: 0,
+        durationMs: 1,
+      }),
+    )
+    await applyUpdater('host-1', 'builtin.dnf')
+    const [url, init] = fetchMock.mock.calls[0]
+    expect(url).toBe('/api/systems/host-1/updaters/builtin.dnf/apply')
+    expect(init.method).toBe('POST')
+    expect(init.body).toBeUndefined()
+  })
+
+  it('applyUpdater with packages serializes the JSON body', async () => {
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse({
+        runId: 'r-2',
+        updaterId: 'builtin.dnf',
+        kind: 'apply',
+        status: 'success',
+        exitCode: 0,
+        durationMs: 1,
+      }),
+    )
+    await applyUpdater('host-1', 'builtin.dnf', ['openssl', 'openssl-libs'])
+    const [, init] = fetchMock.mock.calls[0]
+    const headers = new Headers((init as RequestInit).headers)
+    expect(headers.get('Content-Type')).toBe('application/json')
+    expect(JSON.parse(init.body as string)).toEqual({
+      packages: ['openssl', 'openssl-libs'],
+    })
+  })
+
   it('applyUpdater surfaces 409 as ApiError', async () => {
     fetchMock.mockResolvedValueOnce(
       new Response(JSON.stringify({ error: 'busy', conflictingRun: 'r-9' }), {

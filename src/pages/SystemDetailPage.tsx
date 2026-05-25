@@ -19,6 +19,10 @@ import {
   DescriptionListTerm,
   ExpandableSection,
   Label,
+  Modal,
+  ModalBody,
+  ModalFooter,
+  ModalHeader,
   PageSection,
   Spinner,
   Stack,
@@ -390,7 +394,15 @@ export default function SystemDetailPage() {
                   <SystemInfoCard system={state.system} />
                 </StackItem>
                 <StackItem>
-                  <AvailableUpdatesCard updaters={state.updaters} />
+                  <AvailableUpdatesCard
+                    updaters={state.updaters}
+                    systemId={systemId}
+                    systemName={state.system.name}
+                    onTargetedApply={async (updaterId, pkg) => {
+                      await applyUpdater(systemId, updaterId, [pkg])
+                      await refresh()
+                    }}
+                  />
                 </StackItem>
                 <StackItem>
                   <RunsCard runs={state.runs} />
@@ -676,8 +688,46 @@ function UpdatersCard({
 // count so an operator can scan to "what's actionable" without
 // scrolling past zero-rows. The whole card is collapsible so a
 // busy detail page can be condensed without losing the section.
-function AvailableUpdatesCard({ updaters }: { updaters: SystemUpdater[] }) {
+type AvailableUpdatesCardProps = {
+  updaters: SystemUpdater[]
+  systemId: string
+  systemName: string
+  onTargetedApply: (updaterId: string, packageName: string) => Promise<void>
+}
+
+function AvailableUpdatesCard({
+  updaters,
+  systemId,
+  systemName,
+  onTargetedApply,
+}: AvailableUpdatesCardProps) {
   const [isExpanded, setExpanded] = useState(true)
+  const [target, setTarget] = useState<{
+    updaterId: string
+    name: string
+    oldVersion?: string
+    newVersion?: string
+  } | null>(null)
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  void systemId
+  const closeTarget = () => {
+    setTarget(null)
+    setError(null)
+  }
+  const runTarget = async () => {
+    if (!target) return
+    setBusy(true)
+    setError(null)
+    try {
+      await onTargetedApply(target.updaterId, target.name)
+      setTarget(null)
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e))
+    } finally {
+      setBusy(false)
+    }
+  }
   const rows = updaters.filter(
     (u) => u.installed && (u.pendingPackages?.length ?? 0) > 0,
   )
@@ -752,6 +802,26 @@ function AvailableUpdatesCard({ updaters }: { updaters: SystemUpdater[] }) {
                                   </small>
                                 </>
                               )}
+                              {!u.checkOnly && (
+                                <>
+                                  {' '}
+                                  <Button
+                                    variant="link"
+                                    isInline
+                                    aria-label={`Update only ${p.name} on ${systemName}`}
+                                    onClick={() =>
+                                      setTarget({
+                                        updaterId: u.updaterId,
+                                        name: p.name,
+                                        oldVersion: p.oldVersion,
+                                        newVersion: p.newVersion,
+                                      })
+                                    }
+                                  >
+                                    Update only this
+                                  </Button>
+                                </>
+                              )}
                             </li>
                           ))}
                         </ul>
@@ -764,6 +834,60 @@ function AvailableUpdatesCard({ updaters }: { updaters: SystemUpdater[] }) {
           )}
         </CardBody>
       </CardExpandableContent>
+      <Modal
+        variant="small"
+        isOpen={target !== null}
+        onClose={closeTarget}
+        aria-labelledby="target-apply-title"
+      >
+        <ModalHeader
+          title="Update just this package"
+          labelId="target-apply-title"
+        />
+        <ModalBody>
+          {target && (
+            <Stack hasGutter>
+              <StackItem>
+                Update <code>{target.name}</code> on{' '}
+                <strong>{systemName}</strong>?
+              </StackItem>
+              {(target.oldVersion || target.newVersion) && (
+                <StackItem>
+                  <small>
+                    {target.oldVersion || '—'} → {target.newVersion || '—'}
+                  </small>
+                </StackItem>
+              )}
+              <StackItem>
+                Other pending updates on this system stay pending. The
+                package manager runs in its native targeted-upgrade
+                mode (e.g. <code>dnf upgrade {target.name}</code>).
+              </StackItem>
+              {error && (
+                <StackItem>
+                  <Alert variant="danger" title="Update failed" isInline>
+                    {error}
+                  </Alert>
+                </StackItem>
+              )}
+            </Stack>
+          )}
+        </ModalBody>
+        <ModalFooter>
+          <Button
+            variant="primary"
+            isDisabled={busy}
+            onClick={() => {
+              void runTarget()
+            }}
+          >
+            {busy ? 'Updating…' : 'Update'}
+          </Button>
+          <Button variant="link" isDisabled={busy} onClick={closeTarget}>
+            Cancel
+          </Button>
+        </ModalFooter>
+      </Modal>
     </Card>
   )
 }

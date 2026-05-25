@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
-import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { MemoryRouter, Route, Routes } from 'react-router-dom'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import SystemDetailPage from './SystemDetailPage'
@@ -401,6 +401,51 @@ describe('SystemDetailPage', () => {
     expect(
       await screen.findByText(/6\.8\.0-31\s+→\s+6\.8\.0-45/),
     ).toBeInTheDocument()
+  })
+
+  it('Update only this fires a targeted apply with one package', async () => {
+    seedHappy({
+      updaters: [
+        {
+          ...dnfDetectedEnabled,
+          pendingPackages: [
+            { name: 'kernel', oldVersion: '6.8.0-31', newVersion: '6.8.0-45' },
+            { name: 'openssl', oldVersion: '3.0.1', newVersion: '3.0.2' },
+          ],
+        },
+      ],
+    })
+    renderRoute()
+    const toggle = await screen.findByRole('button', { name: /Show 2 packages/i })
+    fireEvent.click(toggle)
+    // Click the "Update only this" link beside openssl.
+    fireEvent.click(
+      await screen.findByRole('button', { name: /Update only openssl on /i }),
+    )
+    const dialog = await screen.findByRole('dialog')
+    // Queue the apply POST + the subsequent refresh fetches.
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse({
+        runId: 'r-1',
+        updaterId: 'builtin.dnf',
+        kind: 'apply',
+        status: 'success',
+        exitCode: 0,
+        durationMs: 1,
+      }),
+    )
+    fireEvent.click(within(dialog).getByRole('button', { name: /^Update$/i }))
+    await waitFor(() => {
+      const applyCall = fetchMock.mock.calls.find(
+        (c) =>
+          String(c[0]).endsWith('/updaters/builtin.dnf/apply') &&
+          (c[1] as RequestInit | undefined)?.method === 'POST',
+      )
+      expect(applyCall).toBeDefined()
+      expect(
+        JSON.parse(String((applyCall![1] as RequestInit).body)),
+      ).toEqual({ packages: ['openssl'] })
+    })
   })
 
   it('AvailableUpdatesCard hides rows whose pending list is empty', async () => {

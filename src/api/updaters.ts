@@ -200,10 +200,16 @@ export async function checkUpdater(
 export async function applyUpdater(
   systemId: string,
   updaterId: string,
+  packages?: string[],
 ): Promise<UpdaterRunResult> {
+  const init: RequestInit = { method: 'POST' }
+  if (packages && packages.length > 0) {
+    init.headers = { 'Content-Type': 'application/json' }
+    init.body = JSON.stringify({ packages })
+  }
   const resp = await apiFetch(
     `/api/systems/${encodeURIComponent(systemId)}/updaters/${encodeURIComponent(updaterId)}/apply`,
-    { method: 'POST' },
+    init,
   )
   if (!resp.ok) throw new ApiError(resp.status, await parseError(resp))
   return (await resp.json()) as UpdaterRunResult
