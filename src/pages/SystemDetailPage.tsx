@@ -400,6 +400,16 @@ export default function SystemDetailPage() {
                     systemName={state.system.name}
                     onTargetedApply={async (updaterId, pkg) => {
                       await applyUpdater(systemId, updaterId, [pkg])
+                      // Apply doesn't refresh pending_packages on the
+                      // backend — only Check does. Mirror fanOut's
+                      // auto-Check-after-Apply so the just-targeted
+                      // row drops off the list. Failures here are
+                      // cosmetic; the apply itself succeeded.
+                      try {
+                        await checkUpdater(systemId, updaterId)
+                      } catch {
+                        // intentionally ignored
+                      }
                       await refresh()
                     }}
                   />
