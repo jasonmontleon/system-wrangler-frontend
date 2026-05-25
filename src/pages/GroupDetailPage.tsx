@@ -70,7 +70,13 @@ import {
   formatLastChecked,
   formatPendingUpdates,
 } from '../components/systemsTableHelpers'
-import { fanOutOnSystem, type FanOutOutcome } from '../util/updaterFanOut'
+import TargetedPackageModal from '../components/TargetedPackageModal'
+import {
+  fanOutOnSystem,
+  fanOutTargetedSelectionsOnSystem,
+  type FanOutOutcome,
+  type TargetedSelection,
+} from '../util/updaterFanOut'
 
 type PageSize = 25 | 50 | 100 | 'all'
 const PAGE_SIZE_OPTIONS: { value: PageSize; label: string }[] = [
@@ -102,6 +108,8 @@ export default function GroupDetailPage() {
   const [actionError, setActionError] = useState<string | null>(null)
   const [isAddOpen, setAddOpen] = useState(false)
   const [confirm, setConfirm] = useState<Confirm | null>(null)
+  const [targetedOpen, setTargetedOpen] = useState(false)
+  const [targetedBusy, setTargetedBusy] = useState(false)
   const [activeTab, setActiveTab] = useState<'members' | 'roles' | 'credentials'>(
     'members',
   )
@@ -241,6 +249,58 @@ export default function GroupDetailPage() {
       operable.map(async (s) => {
         try {
           return await fanOutOnSystem(s.id, s.name, action)
+        } finally {
+          clearBusy(s.id)
+        }
+      }),
+    )
+    setUpdaterOutcomes([...outcomes, ...skipped])
+    await refresh()
+  }
+
+  // runBulkTargeted mirrors SystemsPage's flow for group members.
+  // The picker modal supplies the chosen (updater, package) list;
+  // per-system overlap filtering happens inside the helper.
+  const runBulkTargeted = async (
+    targets: System[],
+    selections: TargetedSelection[],
+  ) => {
+    if (targets.length === 0 || selections.length === 0) return
+    setUpdaterOutcomes(null)
+    const skipped: FanOutOutcome[] = []
+    const operable: System[] = []
+    for (const s of targets) {
+      if (!canOperateSystem(s)) {
+        skipped.push({
+          systemId: s.id,
+          systemName: s.name,
+          action: 'apply',
+          attempted: 0,
+          skipped: true,
+          skipReason: 'No operator permission on this system.',
+          results: [],
+        })
+        continue
+      }
+      if (s.status === 'unreachable') {
+        skipped.push({
+          systemId: s.id,
+          systemName: s.name,
+          action: 'apply',
+          attempted: 0,
+          skipped: true,
+          skipReason: 'System is marked unreachable.',
+          results: [],
+        })
+        continue
+      }
+      operable.push(s)
+    }
+    operable.forEach((s) => markBusy(s.id, 'apply'))
+    const outcomes = await Promise.all(
+      operable.map(async (s) => {
+        try {
+          return await fanOutTargetedSelectionsOnSystem(s.id, s.name, selections)
         } finally {
           clearBusy(s.id)
         }
@@ -554,6 +614,9 @@ export default function GroupDetailPage() {
                       setConfirm({ kind: 'apply-bulk', systems: targets })
                     }
                   }
+                  if (value === 'update-package') {
+                    setTargetedOpen(true)
+                  }
                 }}
                 onOpenChange={(open) => setActionsOpen(open)}
                 toggle={(ref: React.Ref<MenuToggleElement>) => (
@@ -586,6 +649,14 @@ export default function GroupDetailPage() {
                     isDisabled={selectionCount === 0 || busyCount > 0}
                   >
                     Update selected
+                    {selectionCount > 0 ? ` (${selectionCount})` : ''}
+                  </DropdownItem>
+                  <DropdownItem
+                    value="update-package"
+                    key="update-package"
+                    isDisabled={selectionCount === 0 || busyCount > 0}
+                  >
+                    Update package…
                     {selectionCount > 0 ? ` (${selectionCount})` : ''}
                   </DropdownItem>
                   <DropdownItem
@@ -950,6 +1021,24 @@ export default function GroupDetailPage() {
           const targets = confirm.systems
           setConfirm(null)
           await runBulk('apply', targets)
+        }}
+      />
+      <TargetedPackageModal
+        isOpen={targetedOpen}
+        onClose={() => {
+          if (!targetedBusy) setTargetedOpen(false)
+        }}
+        systems={members.filter((s) => selected.has(s.id))}
+        busy={targetedBusy}
+        onSubmit={async (selections) => {
+          const targets = members.filter((s) => selected.has(s.id))
+          setTargetedBusy(true)
+          try {
+            await runBulkTargeted(targets, selections)
+          } finally {
+            setTargetedBusy(false)
+            setTargetedOpen(false)
+          }
         }}
       />
     </>

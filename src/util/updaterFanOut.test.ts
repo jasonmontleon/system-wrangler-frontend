@@ -1,7 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { fanOutOnSystem } from './updaterFanOut'
+import {
+  fanOutOnSystem,
+  fanOutTargetedSelectionsOnSystem,
+} from './updaterFanOut'
 
 function jsonResponse(body: unknown, init: ResponseInit = {}): Response {
   return new Response(JSON.stringify(body), {
@@ -331,6 +334,241 @@ describe('fanOutOnSystem', () => {
     const out = await fanOutOnSystem('host-1', 'web-1', 'check')
     expect(out.results[0].ok).toBe(false)
     expect(out.results[0].error).toMatch(/task failed/)
+  })
+})
+
+describe('fanOutTargetedSelectionsOnSystem', () => {
+  let fetchMock: ReturnType<typeof vi.fn>
+
+  beforeEach(() => {
+    fetchMock = vi.fn()
+    vi.stubGlobal('fetch', fetchMock)
+  })
+  afterEach(() => {
+    vi.unstubAllGlobals()
+  })
+
+  it('forwards the matching subset to the chosen updater only', async () => {
+    // Both dnf and flatpak have `openssl` pending, but the operator
+    // explicitly picked the dnf row in the picker — flatpak must not
+    // fire even though it would also match by name.
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse({
+        updaters: [
+          {
+            updaterId: 'builtin.dnf',
+            source: 'builtin',
+            displayName: 'dnf',
+            installed: true,
+            enabled: true,
+            checkOnly: false,
+            pendingPackages: [
+              { name: 'openssl', oldVersion: '3.0', newVersion: '3.1' },
+              { name: 'curl', oldVersion: '8.0', newVersion: '8.1' },
+            ],
+          },
+          {
+            updaterId: 'builtin.flatpak',
+            source: 'builtin',
+            displayName: 'flatpak',
+            installed: true,
+            enabled: true,
+            checkOnly: false,
+            pendingPackages: [
+              { name: 'openssl', oldVersion: '', newVersion: '' },
+            ],
+          },
+        ],
+      }),
+    )
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse({
+        runId: 'r-apply',
+        updaterId: 'builtin.dnf',
+        kind: 'apply',
+        status: 'success',
+        exitCode: 0,
+        affectedCount: 1,
+        durationMs: 1,
+      }),
+    )
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse({
+        runId: 'r-check',
+        updaterId: 'builtin.dnf',
+        kind: 'check',
+        status: 'success',
+        exitCode: 0,
+        affectedCount: 0,
+        durationMs: 1,
+      }),
+    )
+    const out = await fanOutTargetedSelectionsOnSystem('host-1', 'web-1', [
+      { updaterId: 'builtin.dnf', packageName: 'openssl' },
+    ])
+    expect(out.skipped).toBe(false)
+    expect(out.attempted).toBe(1)
+    expect(out.results).toHaveLength(1)
+    expect(out.results[0].updaterId).toBe('builtin.dnf')
+    expect(out.results[0].ok).toBe(true)
+    const applyCalls = fetchMock.mock.calls.filter(
+      (c) =>
+        typeof c[0] === 'string' &&
+        c[0].endsWith('/apply') &&
+        (c[1] as RequestInit | undefined)?.method === 'POST',
+    )
+    expect(applyCalls).toHaveLength(1)
+    expect(applyCalls[0][0]).toContain('builtin.dnf')
+    const body = JSON.parse(
+      (applyCalls[0][1] as RequestInit).body as string,
+    ) as { packages: string[] }
+    expect(body.packages).toEqual(['openssl'])
+  })
+
+  it('groups multiple selections targeting the same updater into one apply call', async () => {
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse({
+        updaters: [
+          {
+            updaterId: 'builtin.dnf',
+            source: 'builtin',
+            displayName: 'dnf',
+            installed: true,
+            enabled: true,
+            checkOnly: false,
+            pendingPackages: [
+              { name: 'openssl', oldVersion: '3.0', newVersion: '3.1' },
+              { name: 'curl', oldVersion: '8.0', newVersion: '8.1' },
+            ],
+          },
+        ],
+      }),
+    )
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse({
+        runId: 'r-apply',
+        updaterId: 'builtin.dnf',
+        kind: 'apply',
+        status: 'success',
+        exitCode: 0,
+        affectedCount: 2,
+        durationMs: 1,
+      }),
+    )
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse({
+        runId: 'r-check',
+        updaterId: 'builtin.dnf',
+        kind: 'check',
+        status: 'success',
+        exitCode: 0,
+        affectedCount: 0,
+        durationMs: 1,
+      }),
+    )
+    const out = await fanOutTargetedSelectionsOnSystem('host-1', 'web-1', [
+      { updaterId: 'builtin.dnf', packageName: 'openssl' },
+      { updaterId: 'builtin.dnf', packageName: 'curl' },
+    ])
+    expect(out.attempted).toBe(1)
+    const applyCalls = fetchMock.mock.calls.filter(
+      (c) =>
+        typeof c[0] === 'string' &&
+        c[0].endsWith('/apply') &&
+        (c[1] as RequestInit | undefined)?.method === 'POST',
+    )
+    expect(applyCalls).toHaveLength(1)
+    const body = JSON.parse(
+      (applyCalls[0][1] as RequestInit).body as string,
+    ) as { packages: string[] }
+    expect(body.packages.sort()).toEqual(['curl', 'openssl'])
+  })
+
+  it('skips when no selected (updater, package) is still pending on this system', async () => {
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse({
+        updaters: [
+          {
+            updaterId: 'builtin.dnf',
+            source: 'builtin',
+            displayName: 'dnf',
+            installed: true,
+            enabled: true,
+            checkOnly: false,
+            pendingPackages: [
+              { name: 'curl', oldVersion: '8.0', newVersion: '8.1' },
+            ],
+          },
+        ],
+      }),
+    )
+    const out = await fanOutTargetedSelectionsOnSystem('host-1', 'web-1', [
+      { updaterId: 'builtin.dnf', packageName: 'openssl' },
+    ])
+    expect(out.skipped).toBe(true)
+    expect(out.skipReason).toMatch(/None of the selected packages/i)
+    expect(
+      fetchMock.mock.calls.filter(
+        (c) => (c[1] as RequestInit | undefined)?.method === 'POST',
+      ),
+    ).toHaveLength(0)
+  })
+
+  it('drops selections whose updater is not installed / not enabled / check-only', async () => {
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse({
+        updaters: [
+          {
+            updaterId: 'builtin.fwupdmgr',
+            source: 'builtin',
+            displayName: 'fwupdmgr',
+            installed: true,
+            enabled: true,
+            checkOnly: true,
+            pendingPackages: [
+              { name: 'openssl', oldVersion: '', newVersion: '' },
+            ],
+          },
+          {
+            updaterId: 'builtin.dnf',
+            source: 'builtin',
+            displayName: 'dnf',
+            installed: false,
+            enabled: true,
+            checkOnly: false,
+            pendingPackages: [
+              { name: 'openssl', oldVersion: '', newVersion: '' },
+            ],
+          },
+        ],
+      }),
+    )
+    const out = await fanOutTargetedSelectionsOnSystem('host-1', 'web-1', [
+      { updaterId: 'builtin.fwupdmgr', packageName: 'openssl' },
+      { updaterId: 'builtin.dnf', packageName: 'openssl' },
+    ])
+    expect(out.skipped).toBe(true)
+  })
+
+  it('reports skipped when the selection list is empty', async () => {
+    const out = await fanOutTargetedSelectionsOnSystem('host-1', 'web-1', [])
+    expect(out.skipped).toBe(true)
+    expect(out.skipReason).toMatch(/No packages selected/i)
+    expect(fetchMock).not.toHaveBeenCalled()
+  })
+
+  it('skips when listSystemUpdaters fails', async () => {
+    fetchMock.mockResolvedValueOnce(
+      new Response(JSON.stringify({ error: 'boom' }), {
+        status: 500,
+        headers: { 'Content-Type': 'application/json' },
+      }),
+    )
+    const out = await fanOutTargetedSelectionsOnSystem('host-1', 'web-1', [
+      { updaterId: 'builtin.dnf', packageName: 'openssl' },
+    ])
+    expect(out.skipped).toBe(true)
+    expect(out.skipReason).toMatch(/boom/i)
   })
 })
 

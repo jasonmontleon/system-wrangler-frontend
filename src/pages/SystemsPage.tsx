@@ -60,9 +60,12 @@ import {
   useScope,
 } from '../hooks/useScope'
 import FanOutOutcomesPanel from '../components/FanOutOutcomesPanel'
+import TargetedPackageModal from '../components/TargetedPackageModal'
 import {
   fanOutOnSystem,
+  fanOutTargetedSelectionsOnSystem,
   type FanOutOutcome,
+  type TargetedSelection,
 } from '../util/updaterFanOut'
 
 type PageSize = 25 | 50 | 100 | 'all'
@@ -94,6 +97,8 @@ export default function SystemsPage() {
   const [actionError, setActionError] = useState<string | null>(null)
   const [isAddOpen, setAddOpen] = useState(false)
   const [confirm, setConfirm] = useState<Confirm | null>(null)
+  const [targetedOpen, setTargetedOpen] = useState(false)
+  const [targetedBusy, setTargetedBusy] = useState(false)
 
   const [filters, setFilters] = useState<Record<string, string>>({
     name: '',
@@ -212,6 +217,60 @@ export default function SystemsPage() {
       operable.map(async (s) => {
         try {
           return await fanOutOnSystem(s.id, s.name, action)
+        } finally {
+          clearBusy(s.id)
+        }
+      }),
+    )
+    setUpdaterOutcomes([...outcomes, ...skipped])
+    await refresh()
+  }
+
+  // runBulkTargeted fans out a per-(updater, package) targeted apply
+  // across the selected systems. Each system is fetched for its
+  // current per-updater pending list inside the helper; only systems
+  // whose pendingPackages still include the chosen pair get applied,
+  // the rest land in the outcomes panel as skipped.
+  const runBulkTargeted = async (
+    targets: System[],
+    selections: TargetedSelection[],
+  ) => {
+    if (targets.length === 0 || selections.length === 0) return
+    setUpdaterOutcomes(null)
+    const skipped: FanOutOutcome[] = []
+    const operable: System[] = []
+    for (const s of targets) {
+      if (!canOperateSystem(s)) {
+        skipped.push({
+          systemId: s.id,
+          systemName: s.name,
+          action: 'apply',
+          attempted: 0,
+          skipped: true,
+          skipReason: 'No operator permission on this system.',
+          results: [],
+        })
+        continue
+      }
+      if (s.status === 'unreachable') {
+        skipped.push({
+          systemId: s.id,
+          systemName: s.name,
+          action: 'apply',
+          attempted: 0,
+          skipped: true,
+          skipReason: 'System is marked unreachable.',
+          results: [],
+        })
+        continue
+      }
+      operable.push(s)
+    }
+    operable.forEach((s) => markBusy(s.id, 'apply'))
+    const outcomes = await Promise.all(
+      operable.map(async (s) => {
+        try {
+          return await fanOutTargetedSelectionsOnSystem(s.id, s.name, selections)
         } finally {
           clearBusy(s.id)
         }
@@ -486,6 +545,9 @@ export default function SystemsPage() {
                       setConfirm({ kind: 'apply-bulk', systems: targets })
                     }
                   }
+                  if (value === 'update-package') {
+                    setTargetedOpen(true)
+                  }
                 }}
                 onOpenChange={(open) => setActionsOpen(open)}
                 toggle={(ref: React.Ref<MenuToggleElement>) => (
@@ -518,6 +580,14 @@ export default function SystemsPage() {
                     isDisabled={selectionCount === 0 || busyCount > 0}
                   >
                     Update selected
+                    {selectionCount > 0 ? ` (${selectionCount})` : ''}
+                  </DropdownItem>
+                  <DropdownItem
+                    value="update-package"
+                    key="update-package"
+                    isDisabled={selectionCount === 0 || busyCount > 0}
+                  >
+                    Update package…
                     {selectionCount > 0 ? ` (${selectionCount})` : ''}
                   </DropdownItem>
                   <DropdownItem
@@ -879,6 +949,27 @@ export default function SystemsPage() {
           const targets = confirm.systems
           setConfirm(null)
           await runBulk('apply', targets)
+        }}
+      />
+      <TargetedPackageModal
+        isOpen={targetedOpen}
+        onClose={() => {
+          if (!targetedBusy) setTargetedOpen(false)
+        }}
+        systems={
+          systems?.filter((s) => selected.has(s.id)) ?? []
+        }
+        busy={targetedBusy}
+        onSubmit={async (selections) => {
+          const targets =
+            systems?.filter((s) => selected.has(s.id)) ?? []
+          setTargetedBusy(true)
+          try {
+            await runBulkTargeted(targets, selections)
+          } finally {
+            setTargetedBusy(false)
+            setTargetedOpen(false)
+          }
         }}
       />
     </>

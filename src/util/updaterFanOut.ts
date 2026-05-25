@@ -4,6 +4,7 @@ import {
   applyUpdater,
   checkUpdater,
   listSystemUpdaters,
+  type SystemUpdater,
   type UpdaterRunResult,
 } from '../api/updaters'
 import { ApiError } from '../api/systems'
@@ -100,6 +101,112 @@ export async function fanOutOnSystem(
           await checkUpdater(systemId, u.updaterId)
         } catch {
           // intentionally ignored
+        }
+      }
+    } catch (err) {
+      outcome.results.push({
+        updaterId: u.updaterId,
+        displayName: u.displayName,
+        ok: false,
+        error: extractError(err),
+      })
+    }
+  }
+  return outcome
+}
+
+// TargetedSelection is one operator-picked (updater, package) pair.
+// Different updaters may both surface the same package name (e.g. a
+// Mac with brew and mas both pending `openssl`); the operator picks
+// which one fires by selecting that updater's row in the picker.
+export type TargetedSelection = {
+  updaterId: string
+  packageName: string
+}
+
+// fanOutTargetedSelectionsOnSystem fans out a cross-system "update
+// just these (updater, package) pairs" call against a single system.
+// Selections are grouped by updaterId so each updater fires once
+// with its package subset; updaters not installed / not enabled /
+// check-only are dropped and updaters whose pendingPackages no
+// longer include the chosen name are dropped (stale data check).
+// Systems with no remaining work are reported as skipped.
+export async function fanOutTargetedSelectionsOnSystem(
+  systemId: string,
+  systemName: string,
+  selections: TargetedSelection[],
+): Promise<FanOutOutcome> {
+  const outcome: FanOutOutcome = {
+    systemId,
+    systemName,
+    action: 'apply',
+    attempted: 0,
+    skipped: false,
+    results: [],
+  }
+  if (selections.length === 0) {
+    outcome.skipped = true
+    outcome.skipReason = 'No packages selected.'
+    return outcome
+  }
+  let updaters: SystemUpdater[]
+  try {
+    updaters = await listSystemUpdaters(systemId)
+  } catch (err) {
+    outcome.skipped = true
+    outcome.skipReason = extractError(err)
+    return outcome
+  }
+  const byUpdater = new Map<string, Set<string>>()
+  for (const sel of selections) {
+    let set = byUpdater.get(sel.updaterId)
+    if (!set) {
+      set = new Set()
+      byUpdater.set(sel.updaterId, set)
+    }
+    set.add(sel.packageName)
+  }
+  const matches: { updater: SystemUpdater; subset: string[] }[] = []
+  for (const u of updaters) {
+    if (!u.installed || !u.enabled || u.checkOnly) continue
+    const wanted = byUpdater.get(u.updaterId)
+    if (!wanted) continue
+    const subset: string[] = []
+    for (const p of u.pendingPackages) {
+      if (wanted.has(p.name)) subset.push(p.name)
+    }
+    if (subset.length === 0) continue
+    matches.push({ updater: u, subset })
+  }
+  if (matches.length === 0) {
+    outcome.skipped = true
+    outcome.skipReason =
+      'None of the selected packages are pending on this system.'
+    return outcome
+  }
+  outcome.attempted = matches.length
+  for (const { updater: u, subset } of matches) {
+    try {
+      const res: UpdaterRunResult = await applyUpdater(
+        systemId,
+        u.updaterId,
+        subset,
+      )
+      const ok = res.status === 'success'
+      outcome.results.push({
+        updaterId: u.updaterId,
+        displayName: u.displayName,
+        ok,
+        affectedCount: res.affectedCount,
+        error: ok
+          ? undefined
+          : res.reason || `${res.status} (exit ${res.exitCode})`,
+      })
+      if (ok) {
+        try {
+          await checkUpdater(systemId, u.updaterId)
+        } catch {
+          // intentionally ignored — refresh is best-effort
         }
       }
     } catch (err) {

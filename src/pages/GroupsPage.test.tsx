@@ -261,4 +261,144 @@ describe('GroupsPage', () => {
       await screen.findByText(/could not load system groups/i),
     ).toBeInTheDocument()
   })
+
+  it('shows an inline spinner next to a group name when one of its members is running an updater', async () => {
+    vi.unstubAllGlobals()
+    vi.stubGlobal('fetch', (input: FetchInput, init?: FetchInit) => {
+      const url = typeof input === 'string' ? input : input.toString()
+      const method = init?.method ?? 'GET'
+      if (url === '/api/me/scope')
+        return Promise.resolve(jsonResponse({ global: 'admin', groups: {} }))
+      if (url === '/api/groups' && method === 'GET')
+        return Promise.resolve(
+          jsonResponse([
+            group({ id: 'g-1', name: 'prod', systemCount: 2 }),
+            group({ id: 'g-2', name: 'staging', systemCount: 1 }),
+          ]),
+        )
+      if (url === '/api/systems' && method === 'GET')
+        return Promise.resolve(
+          jsonResponse([
+            // Two members in prod, one running.
+            {
+              id: 's-a',
+              name: 'a',
+              hostname: '10.0.0.1',
+              createdAt: '2026-01-01T00:00:00Z',
+              status: 'reachable',
+              groupId: 'g-1',
+              running: true,
+            },
+            {
+              id: 's-b',
+              name: 'b',
+              hostname: '10.0.0.2',
+              createdAt: '2026-01-01T00:00:00Z',
+              status: 'reachable',
+              groupId: 'g-1',
+            },
+            // Staging member idle.
+            {
+              id: 's-c',
+              name: 'c',
+              hostname: '10.0.0.3',
+              createdAt: '2026-01-01T00:00:00Z',
+              status: 'reachable',
+              groupId: 'g-2',
+            },
+          ]),
+        )
+      return Promise.resolve(jsonResponse({}, 500))
+    })
+    vi.stubGlobal('EventSource', FakeEventSource)
+
+    renderWithRouter()
+    const prodRow = (await screen.findByText('prod')).closest('tr')!
+    const stagingRow = screen.getByText('staging').closest('tr')!
+    // prod has a running member → spinner present with descriptive aria-label.
+    expect(
+      within(prodRow).getByLabelText(/1 system in this group running an updater/i),
+    ).toBeInTheDocument()
+    // staging has nothing in flight → no spinner.
+    expect(
+      within(stagingRow).queryByLabelText(/running an updater/i),
+    ).toBeNull()
+  })
+
+  it('row kebab Check skips unreachable members and reports them in the outcomes panel', async () => {
+    const checks: string[] = []
+    vi.unstubAllGlobals()
+    vi.stubGlobal('fetch', (input: FetchInput, init?: FetchInit) => {
+      const url = typeof input === 'string' ? input : input.toString()
+      const method = init?.method ?? 'GET'
+      if (url === '/api/me/scope')
+        return Promise.resolve(jsonResponse({ global: 'admin', groups: {} }))
+      if (url === '/api/groups' && method === 'GET')
+        return Promise.resolve(
+          jsonResponse([group({ id: 'g-1', name: 'prod', systemCount: 2 })]),
+        )
+      if (url === '/api/systems' && method === 'GET')
+        return Promise.resolve(
+          jsonResponse([
+            {
+              id: 's-a',
+              name: 'web-1',
+              hostname: '10.0.0.1',
+              createdAt: '2026-01-01T00:00:00Z',
+              status: 'reachable',
+              groupId: 'g-1',
+            },
+            {
+              id: 's-b',
+              name: 'web-2-down',
+              hostname: '10.0.0.2',
+              createdAt: '2026-01-01T00:00:00Z',
+              status: 'unreachable',
+              groupId: 'g-1',
+            },
+          ]),
+        )
+      if (url.match(/\/api\/systems\/[^/]+\/updaters$/))
+        return Promise.resolve(
+          jsonResponse({
+            updaters: [
+              {
+                updaterId: 'builtin.dnf',
+                source: 'builtin',
+                displayName: 'dnf',
+                installed: true,
+                enabled: true,
+              },
+            ],
+          }),
+        )
+      if (url.endsWith('/check') && method === 'POST') {
+        checks.push(url)
+        return Promise.resolve(
+          jsonResponse({
+            runId: 'r',
+            updaterId: 'builtin.dnf',
+            kind: 'check',
+            status: 'success',
+            exitCode: 0,
+            affectedCount: 0,
+            durationMs: 1,
+          }),
+        )
+      }
+      return Promise.resolve(jsonResponse({}, 500))
+    })
+    vi.stubGlobal('EventSource', FakeEventSource)
+
+    renderWithRouter()
+    const row = (await screen.findByText('prod')).closest('tr')!
+    fireEvent.click(within(row).getByRole('button', { name: /kebab toggle/i }))
+    fireEvent.click(screen.getByRole('menuitem', { name: /^Check$/i }))
+    // Only the reachable member fires; the unreachable one is skipped.
+    await waitFor(() => expect(checks).toHaveLength(1))
+    expect(checks[0]).toContain('/systems/s-a/')
+    expect(
+      await screen.findByText(/System is marked unreachable\./i),
+    ).toBeInTheDocument()
+  })
 })

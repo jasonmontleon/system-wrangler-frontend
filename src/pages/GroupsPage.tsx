@@ -47,7 +47,13 @@ import {
   useScope,
 } from '../hooks/useScope'
 import FanOutOutcomesPanel from '../components/FanOutOutcomesPanel'
-import { fanOutOnSystem, type FanOutOutcome } from '../util/updaterFanOut'
+import TargetedPackageModal from '../components/TargetedPackageModal'
+import {
+  fanOutOnSystem,
+  fanOutTargetedSelectionsOnSystem,
+  type FanOutOutcome,
+  type TargetedSelection,
+} from '../util/updaterFanOut'
 import { TABLE_DENSITY_STYLE, TIGHT_END, TIGHT_START } from '../components/systemsTableHelpers'
 
 type PageSize = 25 | 50 | 100 | 'all'
@@ -81,6 +87,8 @@ export default function GroupsPage() {
     FanOutOutcome[] | null
   >(null)
   const [updaterBusy, setUpdaterBusy] = useState<string | null>(null)
+  const [targetedGroups, setTargetedGroups] = useState<Group[] | null>(null)
+  const [targetedBusy, setTargetedBusy] = useState(false)
 
   const { state: scopeState } = useScope()
   // canOperateSystem mirrors the SystemsPage gate so the per-group
@@ -132,6 +140,62 @@ export default function GroupsPage() {
     [systems],
   )
 
+  // runningByGroup counts the member systems flagged `running` by
+  // the backend (driven by updater_run_locks via SSE since 2026-05-21).
+  // The map drives the inline spinner next to each group name so an
+  // operator can tell at a glance which groups currently have work
+  // in flight — including work kicked off in another tab.
+  const runningByGroup = useMemo(() => {
+    const m = new Map<string, number>()
+    for (const s of systems) {
+      if (s.groupId && s.running) {
+        m.set(s.groupId, (m.get(s.groupId) ?? 0) + 1)
+      }
+    }
+    return m
+  }, [systems])
+
+  // partitionTargets splits a candidate list into the systems the
+  // caller can act on now and a per-skip-reason outcome list that
+  // matches the FanOutOutcomesPanel shape. Mirrors the unreachable +
+  // RBAC skip pattern used on SystemsPage / GroupDetailPage so the
+  // operator sees one banner with every per-system disposition.
+  const partitionTargets = (
+    targets: System[],
+    action: 'check' | 'apply',
+  ): { operable: System[]; skipped: FanOutOutcome[] } => {
+    const operable: System[] = []
+    const skipped: FanOutOutcome[] = []
+    for (const s of targets) {
+      if (!canOperateSystem(s)) {
+        skipped.push({
+          systemId: s.id,
+          systemName: s.name,
+          action,
+          attempted: 0,
+          skipped: true,
+          skipReason: 'No operator permission on this system.',
+          results: [],
+        })
+        continue
+      }
+      if (s.status === 'unreachable') {
+        skipped.push({
+          systemId: s.id,
+          systemName: s.name,
+          action,
+          attempted: 0,
+          skipped: true,
+          skipReason: 'System is marked unreachable.',
+          results: [],
+        })
+        continue
+      }
+      operable.push(s)
+    }
+    return { operable, skipped }
+  }
+
   // runSystemBulk handles the Retry path from the results panel —
   // by then the operator is targeting specific system ids, not
   // group ids, so it's a regular system fan-out matching SystemsPage.
@@ -142,22 +206,11 @@ export default function GroupsPage() {
     if (targets.length === 0) return
     setUpdaterOutcomes(null)
     setUpdaterBusy(`system-bulk:${action}`)
-    const operable = targets.filter(canOperateSystem)
-    const notOperable: FanOutOutcome[] = targets
-      .filter((s) => !canOperateSystem(s))
-      .map((s) => ({
-        systemId: s.id,
-        systemName: s.name,
-        action,
-        attempted: 0,
-        skipped: true,
-        skipReason: 'No operator permission on this system.',
-        results: [],
-      }))
+    const { operable, skipped } = partitionTargets(targets, action)
     const outcomes = await Promise.all(
       operable.map((s) => fanOutOnSystem(s.id, s.name, action)),
     )
-    setUpdaterOutcomes([...outcomes, ...notOperable])
+    setUpdaterOutcomes([...outcomes, ...skipped])
     setUpdaterBusy(null)
     await refresh()
   }
@@ -185,22 +238,50 @@ export default function GroupsPage() {
     }
     setUpdaterOutcomes(null)
     setUpdaterBusy(`group-bulk:${action}`)
-    const operable = targets.filter(canOperateSystem)
-    const notOperable: FanOutOutcome[] = targets
-      .filter((s) => !canOperateSystem(s))
-      .map((s) => ({
-        systemId: s.id,
-        systemName: s.name,
-        action,
-        attempted: 0,
-        skipped: true,
-        skipReason: 'No operator permission on this system.',
-        results: [],
-      }))
+    const { operable, skipped } = partitionTargets(targets, action)
     const outcomes = await Promise.all(
       operable.map((s) => fanOutOnSystem(s.id, s.name, action)),
     )
-    setUpdaterOutcomes([...outcomes, ...notOperable])
+    setUpdaterOutcomes([...outcomes, ...skipped])
+    setUpdaterBusy(null)
+    await refresh()
+  }
+
+  // runGroupBulkTargeted expands the chosen groups into their
+  // members and fans out a per-(updater, package) targeted apply
+  // across the whole union. Same shape as runGroupBulk: systems the
+  // caller can't operate or that are marked unreachable land as
+  // skipped rows in the outcomes panel.
+  const runGroupBulkTargeted = async (
+    targetGroups: Group[],
+    selections: TargetedSelection[],
+  ) => {
+    const ids = targetGroups.map((g) => g.id)
+    const targets = membersOf(ids)
+    if (targets.length === 0 || selections.length === 0) {
+      setUpdaterOutcomes([
+        {
+          systemId: 'no-members',
+          systemName: targetGroups.map((g) => g.name).join(', ') || 'group',
+          action: 'apply',
+          attempted: 0,
+          skipped: true,
+          skipReason:
+            'No systems in the selected group(s). Add systems before running an updater.',
+          results: [],
+        },
+      ])
+      return
+    }
+    setUpdaterOutcomes(null)
+    setUpdaterBusy('group-bulk:targeted')
+    const { operable, skipped } = partitionTargets(targets, 'apply')
+    const outcomes = await Promise.all(
+      operable.map((s) =>
+        fanOutTargetedSelectionsOnSystem(s.id, s.name, selections),
+      ),
+    )
+    setUpdaterOutcomes([...outcomes, ...skipped])
     setUpdaterBusy(null)
     await refresh()
   }
@@ -380,6 +461,13 @@ export default function GroupsPage() {
                       setConfirm({ kind: 'apply-bulk', groups: targetGroups })
                     }
                   }
+                  if (value === 'update-package') {
+                    const ids = selected
+                    const targetGroups =
+                      groups?.filter((g) => ids.has(g.id)) ?? []
+                    if (targetGroups.length === 0) return
+                    setTargetedGroups(targetGroups)
+                  }
                 }}
                 onOpenChange={(open) => setActionsOpen(open)}
                 toggle={(ref: React.Ref<MenuToggleElement>) => (
@@ -412,6 +500,14 @@ export default function GroupsPage() {
                     isDisabled={selectionCount === 0 || updaterBusy !== null}
                   >
                     Update selected groups
+                    {selectionCount > 0 ? ` (${selectionCount})` : ''}
+                  </DropdownItem>
+                  <DropdownItem
+                    value="update-package"
+                    key="update-package"
+                    isDisabled={selectionCount === 0 || updaterBusy !== null}
+                  >
+                    Update package…
                     {selectionCount > 0 ? ` (${selectionCount})` : ''}
                   </DropdownItem>
                   <DropdownItem
@@ -579,6 +675,19 @@ export default function GroupsPage() {
                     <Link to={`/groups/${encodeURIComponent(g.id)}`}>
                       {g.name}
                     </Link>
+                    {(() => {
+                      const c = runningByGroup.get(g.id) ?? 0
+                      if (c === 0) return null
+                      const label = `${c} ${c === 1 ? 'system' : 'systems'} in this group running an updater`
+                      return (
+                        <>
+                          {' '}
+                          <span title={label}>
+                            <Spinner size="sm" aria-label={label} />
+                          </span>
+                        </>
+                      )
+                    })()}
                   </Td>
                   <Td dataLabel="Systems">{g.systemCount}</Td>
                   <Td dataLabel="Created">
@@ -608,6 +717,11 @@ export default function GroupsPage() {
                           isDisabled: updaterBusy !== null,
                           onClick: () =>
                             setConfirm({ kind: 'apply-bulk', groups: [g] }),
+                        },
+                        {
+                          title: 'Update package…',
+                          isDisabled: updaterBusy !== null,
+                          onClick: () => setTargetedGroups([g]),
                         },
                         {
                           title: `Rename ${g.name}`,
@@ -701,6 +815,28 @@ export default function GroupsPage() {
           const targets = confirm.groups
           setConfirm(null)
           await runGroupBulk('apply', targets)
+        }}
+      />
+      <TargetedPackageModal
+        isOpen={targetedGroups !== null}
+        onClose={() => {
+          if (!targetedBusy) setTargetedGroups(null)
+        }}
+        systems={
+          targetedGroups
+            ? membersOf(targetedGroups.map((g) => g.id))
+            : []
+        }
+        busy={targetedBusy}
+        onSubmit={async (selections) => {
+          if (!targetedGroups) return
+          setTargetedBusy(true)
+          try {
+            await runGroupBulkTargeted(targetedGroups, selections)
+          } finally {
+            setTargetedBusy(false)
+            setTargetedGroups(null)
+          }
         }}
       />
     </>
