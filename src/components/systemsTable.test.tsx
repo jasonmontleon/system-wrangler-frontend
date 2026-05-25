@@ -35,18 +35,24 @@ describe('PlatformIcon', () => {
     expect(screen.getAllByLabelText('Linux').length).toBeGreaterThan(0)
   })
 
-  it('renders nothing when osFamily is empty', () => {
+  it('renders an aria-hidden alignment placeholder when osFamily is empty', () => {
     const { container } = render(
       <PlatformIcon osFamily="" osDistribution="" />,
     )
-    expect(container.firstChild).toBeNull()
+    const slot = container.firstChild as HTMLElement | null
+    expect(slot).not.toBeNull()
+    expect(slot?.getAttribute('aria-hidden')).toBe('true')
+    expect(slot?.style.width).toBe('1em')
   })
 
-  it('renders nothing for an unrecognized OS family', () => {
+  it('renders an aria-hidden alignment placeholder for an unrecognized OS family', () => {
     const { container } = render(
       <PlatformIcon osFamily="Plan9" osDistribution="Plan 9 v4" />,
     )
-    expect(container.firstChild).toBeNull()
+    const slot = container.firstChild as HTMLElement | null
+    expect(slot).not.toBeNull()
+    expect(slot?.getAttribute('aria-hidden')).toBe('true')
+    expect(slot?.style.width).toBe('1em')
   })
 
   it('falls back to the Windows icon when osFamily is empty but isWindows is true', () => {

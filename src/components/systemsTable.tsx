@@ -94,9 +94,18 @@ export function PlatformIcon({
   isWindows?: boolean
 }) {
   const family = osFamily || (isWindows ? 'Windows' : '')
-  if (!family) return null
-  const Icon = osIconMap[family.toLowerCase()]
-  if (!Icon) return null
+  const Icon = family ? osIconMap[family.toLowerCase()] : undefined
+  // Pre-inspect rows and unrecognized families still occupy an icon
+  // slot so the system-name column lines up across rows. The
+  // placeholder matches PatternFly's default 1em icon footprint.
+  if (!Icon) {
+    return (
+      <span
+        aria-hidden="true"
+        style={{ display: 'inline-block', width: '1em' }}
+      />
+    )
+  }
   const label = osDistribution || family
   return (
     <Tooltip content={label}>
