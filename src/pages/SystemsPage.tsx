@@ -42,6 +42,7 @@ import {
 } from '../api/systems'
 import {
   PendingUpdatesCell,
+  PlatformIcon,
   SystemStatusIcon,
 } from '../components/systemsTable'
 import {
@@ -804,6 +805,11 @@ export default function SystemsPage() {
                           gap: '0.5rem',
                         }}
                       >
+                        <PlatformIcon
+                          osFamily={s.osFamily}
+                          osDistribution={s.osDistribution}
+                          isWindows={s.isWindows}
+                        />
                         {rowBusy.has(s.id) || s.running ? (
                           <Spinner
                             size="sm"

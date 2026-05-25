@@ -39,6 +39,15 @@ export type System = {
   // updater_run_locks so a spinner survives page navigation and
   // appears even when work was initiated from another tab.
   running?: boolean
+  // osFamily / osDistribution / virtualization are detected platform
+  // facts populated by the inspect playbook's SW_OS_* and
+  // SW_VIRTUALIZATION markers. Empty pre-inspect; the SPA renders an
+  // OS icon next to the row name when osFamily is one of the
+  // recognized values and a Hardware row on the detail page when
+  // virtualization is set.
+  osFamily?: string
+  osDistribution?: string
+  virtualization?: string
 }
 
 export type SystemInput = {

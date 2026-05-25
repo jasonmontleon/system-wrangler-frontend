@@ -39,8 +39,11 @@ import { Table, Tbody, Td, Th, Thead, Tr } from '@patternfly/react-table'
 import {
   CheckCircleIcon,
   ExclamationTriangleIcon,
+  OutlinedHddIcon,
   TimesCircleIcon,
+  VirtualMachineIcon,
 } from '@patternfly/react-icons'
+import { PlatformIcon } from '../components/systemsTable'
 import { Link, useParams } from 'react-router-dom'
 import { ApiError, getSystem, type System } from '../api/systems'
 import {
@@ -1001,6 +1004,53 @@ function SystemInfoCard({ system }: { system: System }) {
               <code>{system.hostname}</code>
             </DescriptionListDescription>
           </DescriptionListGroup>
+          {(system.osFamily || system.osDistribution) && (
+            <DescriptionListGroup>
+              <DescriptionListTerm>OS</DescriptionListTerm>
+              <DescriptionListDescription>
+                <span
+                  style={{
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: '0.5rem',
+                  }}
+                >
+                  <PlatformIcon
+                    osFamily={system.osFamily}
+                    osDistribution={system.osDistribution}
+                    isWindows={system.isWindows}
+                  />
+                  {system.osDistribution || system.osFamily || '—'}
+                </span>
+              </DescriptionListDescription>
+            </DescriptionListGroup>
+          )}
+          {(system.osFamily || system.virtualization) && (
+            <DescriptionListGroup>
+              <DescriptionListTerm>Hardware</DescriptionListTerm>
+              <DescriptionListDescription>
+                <span
+                  style={{
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: '0.5rem',
+                  }}
+                >
+                  {system.virtualization ? (
+                    <>
+                      <VirtualMachineIcon aria-label="Virtual machine" />
+                      Virtual ({system.virtualization})
+                    </>
+                  ) : (
+                    <>
+                      <OutlinedHddIcon aria-label="Bare metal" />
+                      Bare metal
+                    </>
+                  )}
+                </span>
+              </DescriptionListDescription>
+            </DescriptionListGroup>
+          )}
           <DescriptionListGroup>
             <DescriptionListTerm>Status</DescriptionListTerm>
             <DescriptionListDescription>
