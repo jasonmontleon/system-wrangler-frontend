@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { listAudit } from './audit'
+import { clearAudit, listAudit } from './audit'
 import { ApiError } from './systems'
 
 function jsonResponse(body: unknown, status = 200): Response {
@@ -111,5 +111,36 @@ describe('listAudit', () => {
       new Response(null, { status: 500, statusText: 'Internal Server Error' }),
     )
     await expect(listAudit()).rejects.toMatchObject({ status: 500, message: 'Internal Server Error' })
+  })
+})
+
+describe('clearAudit', () => {
+  let fetchMock: ReturnType<typeof vi.fn>
+
+  beforeEach(() => {
+    fetchMock = vi.fn()
+    vi.stubGlobal('fetch', fetchMock)
+  })
+  afterEach(() => {
+    vi.unstubAllGlobals()
+  })
+
+  it('issues a bare DELETE when no parameter is set', async () => {
+    fetchMock.mockResolvedValueOnce(jsonResponse({ rowsDeleted: 42 }))
+    const out = await clearAudit()
+    expect(fetchMock.mock.calls[0][0]).toBe('/api/admin/audit')
+    expect((fetchMock.mock.calls[0][1] as RequestInit | undefined)?.method).toBe('DELETE')
+    expect(out.rowsDeleted).toBe(42)
+  })
+
+  it('serializes older_than_days', async () => {
+    fetchMock.mockResolvedValueOnce(jsonResponse({ rowsDeleted: 3 }))
+    await clearAudit(90)
+    expect(fetchMock.mock.calls[0][0]).toBe('/api/admin/audit?older_than_days=90')
+  })
+
+  it('throws ApiError on non-2xx', async () => {
+    fetchMock.mockResolvedValueOnce(jsonResponse({ error: 'forbidden' }, 403))
+    await expect(clearAudit()).rejects.toBeInstanceOf(ApiError)
   })
 })

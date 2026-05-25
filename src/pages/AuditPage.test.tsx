@@ -4,6 +4,24 @@ import { fireEvent, render, screen, waitFor, within } from '@testing-library/rea
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import AuditPage from './AuditPage'
 
+// useScope fires a /api/me/scope fetch on mount. Default the existing
+// tests to a non-admin scope so the Clear button stays hidden and the
+// fetchMock queue is reserved for /api/admin/audit calls. The two
+// tests that exercise the Clear button re-mock useScope locally.
+type ScopeReturn = ReturnType<
+  typeof import('../hooks/useScope').useScope
+>
+const useScopeMock = vi.fn<() => ScopeReturn>()
+vi.mock('../hooks/useScope', async () => {
+  const actual = await vi.importActual<typeof import('../hooks/useScope')>(
+    '../hooks/useScope',
+  )
+  return {
+    ...actual,
+    useScope: () => useScopeMock(),
+  }
+})
+
 type FetchInit = RequestInit | undefined
 
 function jsonResponse(body: unknown, status = 200): Response {
@@ -49,6 +67,11 @@ describe('AuditPage', () => {
   beforeEach(() => {
     fetchMock = vi.fn()
     vi.stubGlobal('fetch', fetchMock)
+    useScopeMock.mockReset()
+    useScopeMock.mockReturnValue({
+      state: { kind: 'ready', scope: { global: '', groups: {} } },
+      refresh: vi.fn(async () => undefined),
+    })
   })
 
   afterEach(() => {
@@ -335,5 +358,51 @@ describe('AuditPage', () => {
     await screen.findByText('system.delete')
     expect(lastFetchURL(fetchMock)).toBe('/api/admin/audit?limit=50')
     expect(screen.getByText(/page 1/i)).toBeInTheDocument()
+  })
+
+  it('shows the Clear audit log button for global admins and walks through the modal', async () => {
+    useScopeMock.mockReturnValue({
+      state: { kind: 'ready', scope: { global: 'admin', groups: {} } },
+      refresh: vi.fn(async () => undefined),
+    })
+    fetchMock
+      .mockResolvedValueOnce(jsonResponse({ records: [] }))
+      .mockResolvedValueOnce(jsonResponse({ rowsDeleted: 7 }))
+      .mockResolvedValueOnce(jsonResponse({ records: [] }))
+
+    render(<AuditPage />)
+    const clearBtn = await screen.findByRole('button', { name: /^Clear audit log$/i })
+    fireEvent.click(clearBtn)
+
+    const dialog = await screen.findByRole('dialog')
+    fireEvent.click(within(dialog).getByRole('radio', { name: /Clear rows older than/i }))
+    const daysInput = within(dialog).getByLabelText(/^Days$/i) as HTMLInputElement
+    fireEvent.change(daysInput, { target: { value: '30' } })
+    fireEvent.click(within(dialog).getByRole('button', { name: /^Clear$/i }))
+
+    expect(await within(dialog).findByText(/7 rows deleted/i)).toBeInTheDocument()
+
+    const deleteCall = (fetchMock.mock.calls as Array<[string, FetchInit]>).find(
+      (c) =>
+        String(c[0]).startsWith('/api/admin/audit') &&
+        (c[1] as RequestInit | undefined)?.method === 'DELETE',
+    )
+    expect(deleteCall).toBeDefined()
+    expect(String(deleteCall![0])).toBe('/api/admin/audit?older_than_days=30')
+  })
+
+  it('hides the Clear audit log button when the caller is not a global admin', async () => {
+    useScopeMock.mockReturnValue({
+      state: { kind: 'ready', scope: { global: 'operator', groups: {} } },
+      refresh: vi.fn(async () => undefined),
+    })
+    fetchMock.mockResolvedValueOnce(jsonResponse({ records: [] }))
+    render(<AuditPage />)
+    await waitFor(() => {
+      expect(screen.getAllByRole('button').length).toBeGreaterThan(0)
+    })
+    expect(
+      screen.queryByRole('button', { name: /^Clear audit log$/i }),
+    ).not.toBeInTheDocument()
   })
 })

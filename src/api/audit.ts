@@ -65,6 +65,23 @@ async function parseError(resp: Response): Promise<string> {
   return resp.statusText || `HTTP ${resp.status}`
 }
 
+export type AuditClearResponse = {
+  rowsDeleted: number
+}
+
+export async function clearAudit(
+  olderThanDays?: number,
+): Promise<AuditClearResponse> {
+  const qs = new URLSearchParams()
+  if (olderThanDays !== undefined) {
+    qs.set('older_than_days', String(olderThanDays))
+  }
+  const suffix = qs.toString() ? `?${qs.toString()}` : ''
+  const resp = await apiFetch(`/api/admin/audit${suffix}`, { method: 'DELETE' })
+  if (!resp.ok) throw new ApiError(resp.status, await parseError(resp))
+  return (await resp.json()) as AuditClearResponse
+}
+
 export async function listAudit(
   params: AuditListParams = {},
 ): Promise<AuditListResponse> {

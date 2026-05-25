@@ -7,13 +7,21 @@ import {
   Button,
   EmptyState,
   EmptyStateBody,
+  Form,
+  FormGroup,
   Label,
+  Modal,
+  ModalBody,
+  ModalFooter,
+  ModalHeader,
   PageSection,
+  Radio,
   SearchInput,
   Select,
   SelectList,
   SelectOption,
   Spinner,
+  TextInput,
   Title,
   Toolbar,
   ToolbarContent,
@@ -35,8 +43,10 @@ import {
   type AuditListParams,
   type AuditOutcome,
   type AuditRecord,
+  clearAudit,
   listAudit,
 } from '../api/audit'
+import { isGlobalAdmin, useScope } from '../hooks/useScope'
 
 type PageSize = 25 | 50 | 100 | 'all'
 const PAGE_SIZE_OPTIONS: { value: PageSize; label: string }[] = [
@@ -149,6 +159,14 @@ export default function AuditPage() {
   const [nextCursor, setNextCursor] = useState<AuditCursor | undefined>(undefined)
   const [loadError, setLoadError] = useState<string | null>(null)
   const [expanded, setExpanded] = useState<Set<string>>(new Set())
+  const [clearOpen, setClearOpen] = useState(false)
+  const [clearMode, setClearMode] = useState<'all' | 'older'>('older')
+  const [clearDays, setClearDays] = useState('90')
+  const [clearBusy, setClearBusy] = useState(false)
+  const [clearError, setClearError] = useState<string | null>(null)
+  const [clearResult, setClearResult] = useState<number | null>(null)
+  const { state: scopeState } = useScope()
+  const canClear = isGlobalAdmin(scopeState)
 
   const [filters, setFilters] = useState<Record<string, string>>({
     occurredAt: '',
@@ -248,6 +266,36 @@ export default function AuditPage() {
     setStack([undefined])
   }
 
+  const runClear = async () => {
+    setClearError(null)
+    let days: number | undefined
+    if (clearMode === 'older') {
+      const n = Number.parseInt(clearDays, 10)
+      if (!Number.isFinite(n) || n < 1 || n > 3650) {
+        setClearError('Days must be an integer between 1 and 3650.')
+        return
+      }
+      days = n
+    }
+    setClearBusy(true)
+    try {
+      const resp = await clearAudit(days)
+      setClearResult(resp.rowsDeleted)
+      setStack([undefined])
+      void fetchPage(pageSize, undefined, filterParams)
+    } catch (e) {
+      setClearError(e instanceof Error ? e.message : String(e))
+    } finally {
+      setClearBusy(false)
+    }
+  }
+
+  const closeClear = () => {
+    setClearOpen(false)
+    setClearError(null)
+    setClearResult(null)
+  }
+
   const onNext = () => {
     if (!nextCursor) return
     setStack((s) => [...s, nextCursor])
@@ -331,7 +379,14 @@ export default function AuditPage() {
             <ToolbarItem>
               <Title headingLevel="h1">Audit log</Title>
             </ToolbarItem>
-            <ToolbarItem align={{ default: 'alignEnd' }}>
+            {canClear && (
+              <ToolbarItem align={{ default: 'alignEnd' }}>
+                <Button variant="secondary" isDanger onClick={() => setClearOpen(true)}>
+                  Clear audit log
+                </Button>
+              </ToolbarItem>
+            )}
+            <ToolbarItem align={canClear ? undefined : { default: 'alignEnd' }}>
               <Select
                 isOpen={sizeOpen}
                 selected={pageSize}
@@ -360,6 +415,83 @@ export default function AuditPage() {
           </ToolbarContent>
         </Toolbar>
       </PageSection>
+
+      <Modal
+        variant="small"
+        isOpen={clearOpen}
+        onClose={closeClear}
+        aria-labelledby="clear-audit-title"
+      >
+        <ModalHeader title="Clear audit log" labelId="clear-audit-title" />
+        <ModalBody>
+          {clearResult !== null ? (
+            <Alert variant="success" title="Audit log cleared" isInline>
+              {clearResult} row{clearResult === 1 ? '' : 's'} deleted. A single
+              <code> audit.clear </code>row was appended so the action remains
+              attributable.
+            </Alert>
+          ) : (
+            <Form>
+              <FormGroup role="radiogroup" fieldId="clear-mode" label="What to clear">
+                <Radio
+                  id="clear-older"
+                  name="clear-mode"
+                  label="Clear rows older than"
+                  isChecked={clearMode === 'older'}
+                  onChange={() => setClearMode('older')}
+                  body={
+                    clearMode === 'older' && (
+                      <TextInput
+                        id="clear-days"
+                        aria-label="Days"
+                        type="number"
+                        value={clearDays}
+                        min={1}
+                        max={3650}
+                        onChange={(_, v) => setClearDays(v)}
+                      />
+                    )
+                  }
+                />
+                <Radio
+                  id="clear-all"
+                  name="clear-mode"
+                  label="Clear all rows"
+                  isChecked={clearMode === 'all'}
+                  onChange={() => setClearMode('all')}
+                />
+              </FormGroup>
+              {clearError && (
+                <Alert variant="danger" title="Clear failed" isInline>
+                  {clearError}
+                </Alert>
+              )}
+            </Form>
+          )}
+        </ModalBody>
+        <ModalFooter>
+          {clearResult !== null ? (
+            <Button variant="primary" onClick={closeClear}>
+              Close
+            </Button>
+          ) : (
+            <>
+              <Button
+                variant="danger"
+                isDisabled={clearBusy}
+                onClick={() => {
+                  void runClear()
+                }}
+              >
+                {clearBusy ? 'Clearing…' : 'Clear'}
+              </Button>
+              <Button variant="link" isDisabled={clearBusy} onClick={closeClear}>
+                Cancel
+              </Button>
+            </>
+          )}
+        </ModalFooter>
+      </Modal>
 
       <PageSection>
         {loadError && (
