@@ -23,6 +23,11 @@ export type UpdaterDefinition = {
   checkPlaybook: string
   applyPlaybook: string
   checkOnly: boolean
+  // supportsExclusions reports whether the updater's apply.yml reads
+  // `sw_excluded_packages`. The ExclusionsCard filters its dropdown to
+  // updaters that have the flag set so operators can't add rules that
+  // silently no-op. Custom updaters are always true (operator trust).
+  supportsExclusions: boolean
   createdBy?: string
   createdAt?: string
   updatedAt?: string

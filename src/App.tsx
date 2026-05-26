@@ -40,6 +40,7 @@ import ProfilePage from './pages/ProfilePage'
 import SystemDetailPage from './pages/SystemDetailPage'
 import SystemsPage from './pages/SystemsPage'
 import UpdatersPage from './pages/UpdatersPage'
+import ExclusionsPage from './pages/ExclusionsPage'
 import ExportersPage from './pages/ExportersPage'
 import SystemsOverviewPage from './pages/SystemsOverviewPage'
 import SystemGraphsPage from './pages/SystemGraphsPage'
@@ -212,6 +213,9 @@ export default function App() {
               <RouterNavItem to="/exporters">Exporters</RouterNavItem>
             )}
             {isGlobalAdmin(scope.state) && (
+              <RouterNavItem to="/exclusions">Exclusions</RouterNavItem>
+            )}
+            {isGlobalAdmin(scope.state) && (
               <RouterNavItem to="/backup">Backup</RouterNavItem>
             )}
             {isGlobalAdmin(scope.state) && (
@@ -281,6 +285,12 @@ export default function App() {
           path="/exporters"
           element={
             isGlobalAdmin(scope.state) ? <ExportersPage /> : <Navigate to="/" replace />
+          }
+        />
+        <Route
+          path="/exclusions"
+          element={
+            isGlobalAdmin(scope.state) ? <ExclusionsPage /> : <Navigate to="/" replace />
           }
         />
         <Route path="/monitoring/systems-overview" element={<SystemsOverviewPage />} />

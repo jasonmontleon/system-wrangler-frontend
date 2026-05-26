@@ -36,6 +36,7 @@ import {
 } from '@patternfly/react-core'
 import { Link, useParams } from 'react-router-dom'
 import GroupRolesTab from '../components/GroupRolesTab'
+import GroupExclusionsTab from '../components/GroupExclusionsTab'
 import {
   canAdminGroup,
   isGlobalAdmin,
@@ -111,9 +112,9 @@ export default function GroupDetailPage() {
   const [confirm, setConfirm] = useState<Confirm | null>(null)
   const [targetedOpen, setTargetedOpen] = useState(false)
   const [targetedBusy, setTargetedBusy] = useState(false)
-  const [activeTab, setActiveTab] = useState<'members' | 'roles' | 'credentials'>(
-    'members',
-  )
+  const [activeTab, setActiveTab] = useState<
+    'members' | 'roles' | 'credentials' | 'exclusions'
+  >('members')
 
   const { state: scopeState } = useScope()
   const callerRole = roleOnGroup(scopeState, groupId)
@@ -540,7 +541,11 @@ export default function GroupDetailPage() {
       <PageSection>
         <Tabs
           activeKey={activeTab}
-          onSelect={(_, key) => setActiveTab(key as 'members' | 'roles' | 'credentials')}
+          onSelect={(_, key) =>
+            setActiveTab(
+              key as 'members' | 'roles' | 'credentials' | 'exclusions',
+            )
+          }
           aria-label={`${group.name} tabs`}
         >
           <Tab eventKey="members" title={<TabTitleText>Members</TabTitleText>} />
@@ -553,6 +558,10 @@ export default function GroupDetailPage() {
               title={<TabTitleText>Credentials</TabTitleText>}
             />
           )}
+          <Tab
+            eventKey="exclusions"
+            title={<TabTitleText>Exclusions</TabTitleText>}
+          />
         </Tabs>
       </PageSection>
       {activeTab === 'roles' && showRolesTab && (
@@ -572,6 +581,14 @@ export default function GroupDetailPage() {
             save={(input) => putGroupSlot(group.id, input)}
             remove={() => deleteGroupSlot(group.id)}
             scopeLabel={`Group "${group.name}"`}
+          />
+        </PageSection>
+      )}
+      {activeTab === 'exclusions' && (
+        <PageSection>
+          <GroupExclusionsTab
+            groupId={group.id}
+            canManage={canAdminThisGroup}
           />
         </PageSection>
       )}
