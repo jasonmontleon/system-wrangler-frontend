@@ -55,6 +55,7 @@ import {
 } from '../components/systemsTableHelpers'
 import { listGroups, type Group } from '../api/groups'
 import { useEventStream } from '../hooks/useEventStream'
+import { useMediaQuery } from '../hooks/useMediaQuery'
 import {
   isGlobalOperator,
   roleOnGroup,
@@ -121,6 +122,25 @@ export default function SystemsPage() {
   // management has moved to SystemDetailPage so it isn't relevant
   // here any more.
   const { state: scopeState } = useScope()
+  const hostnameVisible = useMediaQuery('(min-width: 90.625rem)')
+  const colWidths = hostnameVisible
+    ? {
+        name: '20%',
+        hostname: '20%',
+        status: '12%',
+        group: '18%',
+        lastChecked: '15%',
+        updates: '15%',
+      }
+    : {
+        name: '35%',
+        hostname: '20%',
+        status: '12%',
+        group: '26%',
+        lastChecked: '15%',
+        updates: '12%',
+      }
+
   // canOperateSystem mirrors the backend's CanOperateSystem gate:
   // Global Operator+ on any system, Group Admin/Operator on this
   // system's group. Ungrouped systems are only operable by global
@@ -694,23 +714,33 @@ export default function SystemsPage() {
                   }}
                   style={TIGHT_END}
                 />
-                <Th width={20} sort={sortFor('name', 1)}>
+                <Th sort={sortFor('name', 1)} style={{ width: colWidths.name }}>
                   Name
                 </Th>
-                <Th width={20} sort={sortFor('hostname', 2)}>
+                <Th
+                  sort={sortFor('hostname', 2)}
+                  visibility={['hidden', 'visibleOn2Xl']}
+                  style={{ width: colWidths.hostname }}
+                >
                   Hostname
                 </Th>
-                <Th width={10} sort={sortFor('status', 3)}>
+                <Th sort={sortFor('status', 3)} style={{ width: colWidths.status }}>
                   Status
                 </Th>
-                <Th width={15} sort={sortFor('group', 4)}>
+                <Th sort={sortFor('group', 4)} style={{ width: colWidths.group }}>
                   Group
                 </Th>
-                <Th width={20} sort={sortFor('lastChecked', 5)}>
+                <Th
+                  sort={sortFor('lastChecked', 5)}
+                  style={{ width: colWidths.lastChecked }}
+                >
                   Last checked
                 </Th>
-                <Th width={15} sort={sortFor('pendingUpdates', 6)}>
-                  Updates available
+                <Th
+                  sort={sortFor('pendingUpdates', 6)}
+                  style={{ width: colWidths.updates }}
+                >
+                  Updates
                 </Th>
                 <Th screenReaderText="Actions" style={TIGHT_START} />
               </Tr>
@@ -725,7 +755,7 @@ export default function SystemsPage() {
                     onClear={() => setFilters((f) => ({ ...f, name: '' }))}
                   />
                 </Th>
-                <Th>
+                <Th visibility={['hidden', 'visibleOn2Xl']}>
                   <SearchInput
                     aria-label="Filter hostname"
                     placeholder="Filter hostname"
@@ -771,8 +801,8 @@ export default function SystemsPage() {
                 </Th>
                 <Th>
                   <SearchInput
-                    aria-label="Filter updates available"
-                    placeholder="Filter updates available"
+                    aria-label="Filter updates"
+                    placeholder="Filter updates"
                     value={filters.pendingUpdates}
                     onChange={(_, v) =>
                       setFilters((f) => ({ ...f, pendingUpdates: v }))
@@ -833,7 +863,11 @@ export default function SystemsPage() {
                         </Link>
                       </span>
                     </Td>
-                    <Td dataLabel="Hostname" modifier="truncate">
+                    <Td
+                      dataLabel="Hostname"
+                      modifier="truncate"
+                      visibility={['hidden', 'visibleOn2Xl']}
+                    >
                       {s.hostname}
                     </Td>
                     <Td dataLabel="Status">
@@ -845,7 +879,7 @@ export default function SystemsPage() {
                     <Td dataLabel="Last checked">
                       {formatLastChecked(s.lastCheckedAt)}
                     </Td>
-                    <Td dataLabel="Updates available">
+                    <Td dataLabel="Updates">
                       <PendingUpdatesCell
                         count={s.pendingUpdates}
                         packages={s.pendingPackages}

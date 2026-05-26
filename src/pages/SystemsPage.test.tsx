@@ -143,7 +143,7 @@ describe('SystemsPage', () => {
     const lastChecked = (row: HTMLElement) =>
       row.querySelector('td[data-label="Last checked"]') as HTMLElement
     const updates = (row: HTMLElement) =>
-      row.querySelector('td[data-label="Updates available"]') as HTMLElement
+      row.querySelector('td[data-label="Updates"]') as HTMLElement
     // Never-checked systems show "Never" + "—".
     expect(lastChecked(downRow)).toHaveTextContent('Never')
     expect(updates(downRow)).toHaveTextContent('—')
@@ -1024,7 +1024,7 @@ describe('SystemsPage', () => {
     render(<SystemsPage />)
     const row = (await screen.findByText('busy')).closest('tr')!
     const cell = row.querySelector(
-      'td[data-label="Updates available"]',
+      'td[data-label="Updates"]',
     ) as HTMLElement
     // The cell renders the count and decorates the trigger with the
     // dotted-underline affordance.
@@ -1060,7 +1060,7 @@ describe('SystemsPage', () => {
     render(<SystemsPage />)
     const row = (await screen.findByText('idle')).closest('tr')!
     const cell = row.querySelector(
-      'td[data-label="Updates available"]',
+      'td[data-label="Updates"]',
     ) as HTMLElement
     const zero = within(cell).getByText('0')
     // No help-cursor / dotted affordance on a non-tooltip cell.

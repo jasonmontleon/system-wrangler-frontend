@@ -58,6 +58,7 @@ import {
 } from '../api/credentials'
 import CredentialSlotEditor from '../components/CredentialSlotEditor'
 import { useEventStream } from '../hooks/useEventStream'
+import { useMediaQuery } from '../hooks/useMediaQuery'
 import FanOutOutcomesPanel from '../components/FanOutOutcomesPanel'
 import {
   PendingUpdatesCell,
@@ -115,6 +116,23 @@ export default function GroupDetailPage() {
   const [activeTab, setActiveTab] = useState<
     'members' | 'roles' | 'credentials' | 'exclusions'
   >('members')
+
+  const hostnameVisible = useMediaQuery('(min-width: 90.625rem)')
+  const colWidths = hostnameVisible
+    ? {
+        name: '26%',
+        hostname: '26%',
+        status: '12%',
+        lastChecked: '20%',
+        updates: '16%',
+      }
+    : {
+        name: '50%',
+        hostname: '25%',
+        status: '12%',
+        lastChecked: '26%',
+        updates: '12%',
+      }
 
   const { state: scopeState } = useScope()
   const callerRole = roleOnGroup(scopeState, groupId)
@@ -784,20 +802,30 @@ export default function GroupDetailPage() {
                   }}
                   style={TIGHT_END}
                 />
-                <Th width={25} sort={sortFor('name', 1)}>
+                <Th sort={sortFor('name', 1)} style={{ width: colWidths.name }}>
                   Name
                 </Th>
-                <Th width={25} sort={sortFor('hostname', 2)}>
+                <Th
+                  sort={sortFor('hostname', 2)}
+                  visibility={['hidden', 'visibleOn2Xl']}
+                  style={{ width: colWidths.hostname }}
+                >
                   Hostname
                 </Th>
-                <Th width={10} sort={sortFor('status', 3)}>
+                <Th sort={sortFor('status', 3)} style={{ width: colWidths.status }}>
                   Status
                 </Th>
-                <Th width={25} sort={sortFor('lastChecked', 4)}>
+                <Th
+                  sort={sortFor('lastChecked', 4)}
+                  style={{ width: colWidths.lastChecked }}
+                >
                   Last checked
                 </Th>
-                <Th width={15} sort={sortFor('pendingUpdates', 5)}>
-                  Updates available
+                <Th
+                  sort={sortFor('pendingUpdates', 5)}
+                  style={{ width: colWidths.updates }}
+                >
+                  Updates
                 </Th>
                 <Th screenReaderText="Actions" style={TIGHT_START} />
               </Tr>
@@ -812,7 +840,7 @@ export default function GroupDetailPage() {
                     onClear={() => setFilters((f) => ({ ...f, name: '' }))}
                   />
                 </Th>
-                <Th>
+                <Th visibility={['hidden', 'visibleOn2Xl']}>
                   <SearchInput
                     aria-label="Filter hostname"
                     placeholder="Filter hostname"
@@ -849,8 +877,8 @@ export default function GroupDetailPage() {
                 </Th>
                 <Th>
                   <SearchInput
-                    aria-label="Filter updates available"
-                    placeholder="Filter updates available"
+                    aria-label="Filter updates"
+                    placeholder="Filter updates"
                     value={filters.pendingUpdates}
                     onChange={(_, v) =>
                       setFilters((f) => ({ ...f, pendingUpdates: v }))
@@ -913,7 +941,11 @@ export default function GroupDetailPage() {
                         </Link>
                       </span>
                     </Td>
-                    <Td dataLabel="Hostname" modifier="truncate">
+                    <Td
+                      dataLabel="Hostname"
+                      modifier="truncate"
+                      visibility={['hidden', 'visibleOn2Xl']}
+                    >
                       {s.hostname}
                     </Td>
                     <Td dataLabel="Status">
@@ -924,7 +956,7 @@ export default function GroupDetailPage() {
                     <Td dataLabel="Last checked">
                       {formatLastChecked(s.lastCheckedAt)}
                     </Td>
-                    <Td dataLabel="Updates available">
+                    <Td dataLabel="Updates">
                       <PendingUpdatesCell
                         count={s.pendingUpdates}
                         packages={s.pendingPackages}
