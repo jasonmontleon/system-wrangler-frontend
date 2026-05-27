@@ -136,8 +136,8 @@ export default function SystemsPage() {
         name: '35%',
         hostname: '20%',
         status: '12%',
-        group: '26%',
-        lastChecked: '15%',
+        group: '22%',
+        lastChecked: '19%',
         updates: '12%',
       }
 
