@@ -34,7 +34,7 @@ import {
   ToolbarContent,
   ToolbarItem,
 } from '@patternfly/react-core'
-import { Link, useParams } from 'react-router-dom'
+import { Link, useParams, useSearchParams } from 'react-router-dom'
 import GroupRolesTab from '../components/GroupRolesTab'
 import GroupExclusionsTab from '../components/GroupExclusionsTab'
 import {
@@ -58,15 +58,17 @@ import {
 } from '../api/credentials'
 import CredentialSlotEditor from '../components/CredentialSlotEditor'
 import { useEventStream } from '../hooks/useEventStream'
+import { useLabelStyles } from '../hooks/useLabelStyles'
 import { useMediaQuery } from '../hooks/useMediaQuery'
+import { interpretLabelInput } from '../lib/labelSelectorPartition'
 import FanOutOutcomesPanel from '../components/FanOutOutcomesPanel'
+import SystemLabelsCell from '../components/SystemLabelsCell'
 import {
   PendingUpdatesCell,
   PlatformIcon,
   SystemStatusIcon,
 } from '../components/systemsTable'
 import {
-  STATUS_LABELS,
   TABLE_DENSITY_STYLE,
   TIGHT_END,
   TIGHT_START,
@@ -156,10 +158,17 @@ export default function GroupDetailPage() {
     return r === 'admin' || r === 'operator'
   }
 
+  const [searchParams, setSearchParams] = useSearchParams()
+  // labelSelector mirrors SystemsPage: the committed `?labels=` URL
+  // value drives the per-page systems fetch, while selectorInput is
+  // the live (un-debounced) text in the column-level filter input
+  // — see SystemsPage.tsx for the full commentary.
+  const labelSelector = searchParams.get('labels') ?? ''
+  const [selectorInput, setSelectorInput] = useState(labelSelector)
+  const { styles: labelStyles } = useLabelStyles()
   const [filters, setFilters] = useState<Record<string, string>>({
     name: '',
     hostname: '',
-    status: '',
     lastChecked: '',
     pendingUpdates: '',
   })
@@ -203,9 +212,13 @@ export default function GroupDetailPage() {
       0,
     )
 
+  const selectorRef = useRef(labelSelector)
+  selectorRef.current = labelSelector
+
   const refresh = useCallback(async () => {
     try {
-      const data = await listSystems()
+      const { backend } = interpretLabelInput(selectorRef.current)
+      const data = await listSystems(backend ? { labels: backend } : undefined)
       setSystems(data)
       setLoadError(null)
     } catch (e) {
@@ -353,7 +366,43 @@ export default function GroupDetailPage() {
 
   useEffect(() => {
     void refresh()
-  }, [refresh])
+  }, [labelSelector, refresh])
+
+  // Debounced commit of selectorInput → URL. The labelSelector watcher
+  // above then triggers a single listSystems call.
+  const selectorCommitRef = useRef<ReturnType<typeof setTimeout> | undefined>(
+    undefined,
+  )
+  useEffect(() => {
+    if (selectorCommitRef.current) clearTimeout(selectorCommitRef.current)
+    const next = selectorInput.trim()
+    const current = searchParams.get('labels') ?? ''
+    if (next === current) return
+    selectorCommitRef.current = setTimeout(() => {
+      const params = new URLSearchParams(searchParams)
+      if (next === '') params.delete('labels')
+      else params.set('labels', next)
+      setSearchParams(params, { replace: true })
+    }, 300)
+    return () => {
+      if (selectorCommitRef.current) clearTimeout(selectorCommitRef.current)
+    }
+  }, [selectorInput, searchParams, setSearchParams])
+
+  const onLabelClick = useCallback(
+    (l: { key: string; value: string | null }) => {
+      const token = l.value === null ? l.key : `${l.key}=${l.value}`
+      setSelectorInput((current) => {
+        const tokens = current
+          .split(',')
+          .map((t) => t.trim())
+          .filter(Boolean)
+        if (tokens.includes(token)) return current
+        return tokens.length ? `${tokens.join(',')},${token}` : token
+      })
+    },
+    [],
+  )
 
   const debounceRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
   useEventStream(
@@ -382,16 +431,13 @@ export default function GroupDetailPage() {
   const filtered = useMemo(() => {
     const n = filters.name.trim().toLowerCase()
     const h = filters.hostname.trim().toLowerCase()
-    const st = filters.status.trim().toLowerCase()
     const lc = filters.lastChecked.trim().toLowerCase()
     const pu = filters.pendingUpdates.trim().toLowerCase()
+    const { matches: labelMatches } = interpretLabelInput(labelSelector)
     return members.filter((row) => {
+      if (!labelMatches(row)) return false
       if (n && !row.name.toLowerCase().includes(n)) return false
       if (h && !row.hostname.toLowerCase().includes(h)) return false
-      if (st) {
-        const label = STATUS_LABELS[row.status]?.text.toLowerCase() ?? row.status
-        if (!label.includes(st)) return false
-      }
       if (lc) {
         if (!formatLastChecked(row.lastCheckedAt).toLowerCase().includes(lc))
           return false
@@ -402,7 +448,7 @@ export default function GroupDetailPage() {
       }
       return true
     })
-  }, [members, filters])
+  }, [members, filters, labelSelector])
 
   const sorted = useMemo(() => {
     const copy = [...filtered]
@@ -774,19 +820,24 @@ export default function GroupDetailPage() {
             busy={busyCount > 0}
           />
         )}
-        {!loadError && systems === null && (
+        {!loadError && systems === null && labelSelector === '' && (
           <Bullseye>
             <Spinner />
           </Bullseye>
         )}
-        {systems !== null && members.length === 0 && (
-          <EmptyState titleText="No systems in this group" headingLevel="h2">
-            <EmptyStateBody>
-              Add systems from the Actions menu in the toolbar above.
-            </EmptyStateBody>
-          </EmptyState>
-        )}
-        {systems !== null && members.length > 0 && (
+        {!loadError &&
+          systems !== null &&
+          members.length === 0 &&
+          labelSelector === '' && (
+            <EmptyState titleText="No systems in this group" headingLevel="h2">
+              <EmptyStateBody>
+                Add systems from the Actions menu in the toolbar above.
+              </EmptyStateBody>
+            </EmptyState>
+          )}
+        {(loadError != null ||
+          labelSelector !== '' ||
+          (systems !== null && members.length > 0)) && (
           <Table
             aria-label={`Systems in ${group.name}`}
             variant="compact"
@@ -813,7 +864,7 @@ export default function GroupDetailPage() {
                   Hostname
                 </Th>
                 <Th sort={sortFor('status', 3)} style={{ width: colWidths.status }}>
-                  Status
+                  Labels
                 </Th>
                 <Th
                   sort={sortFor('lastChecked', 4)}
@@ -853,13 +904,11 @@ export default function GroupDetailPage() {
                 </Th>
                 <Th>
                   <SearchInput
-                    aria-label="Filter status"
-                    placeholder="Filter status"
-                    value={filters.status}
-                    onChange={(_, v) =>
-                      setFilters((f) => ({ ...f, status: v }))
-                    }
-                    onClear={() => setFilters((f) => ({ ...f, status: '' }))}
+                    aria-label="Label selector"
+                    placeholder="env=prod,!owner"
+                    value={selectorInput}
+                    onChange={(_, v) => setSelectorInput(v)}
+                    onClear={() => setSelectorInput('')}
                   />
                 </Th>
                 <Th>
@@ -892,8 +941,14 @@ export default function GroupDetailPage() {
               </Tr>
             </Thead>
             <Tbody>
+              {visible.length === 0 && (
+                <Tr>
+                  <Td colSpan={hostnameVisible ? 7 : 6}>
+                    No systems match this filter.
+                  </Td>
+                </Tr>
+              )}
               {visible.map((s, rowIndex) => {
-                const label = STATUS_LABELS[s.status] ?? STATUS_LABELS.unprobed
                 return (
                   <Tr key={s.id}>
                     <Td
@@ -948,10 +1003,13 @@ export default function GroupDetailPage() {
                     >
                       {s.hostname}
                     </Td>
-                    <Td dataLabel="Status">
-                      <Label color={label.color} isCompact>
-                        {label.text}
-                      </Label>
+                    <Td dataLabel="Labels">
+                      <SystemLabelsCell
+                        status={s.status}
+                        labels={s.labels}
+                        styleOverrides={labelStyles}
+                        onLabelClick={onLabelClick}
+                      />
                     </Td>
                     <Td dataLabel="Last checked">
                       {formatLastChecked(s.lastCheckedAt)}

@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { apiFetch } from './client'
+import type { Label } from './labels'
 import type { PendingPackage } from './updaters'
 
 export type SystemStatus = 'unprobed' | 'reachable' | 'unreachable'
@@ -48,6 +49,11 @@ export type System = {
   osFamily?: string
   osDistribution?: string
   virtualization?: string
+  // labels carries the full set of (key, value) tags attached to this
+  // system. Inlined in the list response so the SPA can render chips
+  // and click-to-filter without an N+1 per-row fetch. Absent / empty
+  // when no labels are set on the system.
+  labels?: Label[]
 }
 
 export type SystemInput = {
@@ -75,8 +81,19 @@ async function parseError(resp: Response): Promise<string> {
   return resp.statusText || `HTTP ${resp.status}`
 }
 
-export async function listSystems(): Promise<System[]> {
-  const resp = await apiFetch('/api/systems')
+// listSystems fetches the systems list. When a non-empty `labels`
+// selector is supplied (k8s-subset grammar; see /api/labels OpenAPI
+// docs), the backend filters the result to systems whose labels
+// satisfy every comma-joined requirement.
+export async function listSystems(options?: {
+  labels?: string
+}): Promise<System[]> {
+  let url = '/api/systems'
+  const sel = options?.labels?.trim()
+  if (sel) {
+    url += `?labels=${encodeURIComponent(sel)}`
+  }
+  const resp = await apiFetch(url)
   if (!resp.ok) throw new ApiError(resp.status, await parseError(resp))
   return (await resp.json()) as System[]
 }

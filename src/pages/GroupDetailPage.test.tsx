@@ -83,6 +83,9 @@ describe('GroupDetailPage', () => {
       if (url === '/api/groups/g-1') {
         return Promise.resolve(jsonResponse(sampleGroup))
       }
+      if (url.startsWith('/api/label-styles')) {
+        return Promise.resolve(jsonResponse({}))
+      }
       return (fetchMock as unknown as typeof fetch)(input, init)
     })
     FakeEventSource.instances = []
@@ -103,6 +106,8 @@ describe('GroupDetailPage', () => {
         return Promise.resolve(jsonResponse({ global: 'admin', groups: {} }))
       if (url === '/api/groups/g-1')
         return Promise.resolve(jsonResponse(sampleGroup))
+      if (url.startsWith('/api/label-styles'))
+        return Promise.resolve(jsonResponse({}))
       if (url === '/api/systems' && method === 'GET')
         return Promise.resolve(
           jsonResponse([
@@ -162,6 +167,8 @@ describe('GroupDetailPage', () => {
         return Promise.resolve(jsonResponse({ global: 'admin', groups: {} }))
       if (url === '/api/groups/g-1')
         return Promise.resolve(jsonResponse(sampleGroup))
+      if (url.startsWith('/api/label-styles'))
+        return Promise.resolve(jsonResponse({}))
       if (url === '/api/systems' && method === 'GET')
         return Promise.resolve(
           jsonResponse([
@@ -247,6 +254,7 @@ describe('GroupDetailPage', () => {
       if (url.startsWith('/api/me/scope'))
         return Promise.resolve(jsonResponse({ global: 'admin', groups: {} }))
       if (url === '/api/groups/g-1') return Promise.resolve(jsonResponse(sampleGroup))
+      if (url.startsWith('/api/label-styles')) return Promise.resolve(jsonResponse({}))
       if (url === '/api/systems' && method === 'GET')
         return Promise.resolve(
           jsonResponse([
@@ -381,6 +389,9 @@ describe('GroupDetailPage', () => {
       if (url === '/api/groups/g-1') {
         return Promise.resolve(jsonResponse(sampleGroup))
       }
+      if (url.startsWith('/api/label-styles')) {
+        return Promise.resolve(jsonResponse({}))
+      }
       return (fetchMock2 as unknown as typeof fetch)(input, init)
     })
     fetchMock2.mockResolvedValueOnce(jsonResponse([]))
@@ -406,6 +417,9 @@ describe('GroupDetailPage', () => {
       }
       if (url === '/api/groups/g-1') {
         return Promise.resolve(jsonResponse({ error: 'group not found' }, 404))
+      }
+      if (url.startsWith('/api/label-styles')) {
+        return Promise.resolve(jsonResponse({}))
       }
       return Promise.resolve(jsonResponse([]))
     })

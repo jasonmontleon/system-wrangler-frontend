@@ -70,10 +70,12 @@ import {
 import MonitoringTabContent from '../components/MonitoringTabContent'
 import PlatformCard from '../components/PlatformCard'
 import SystemCredentialsSection from '../components/SystemCredentialsSection'
+import SystemLabelsCard from '../components/SystemLabelsCard'
 import EffectiveExclusionsCard from '../components/EffectiveExclusionsCard'
 import SystemExclusionsCard from '../components/SystemExclusionsCard'
 import SystemSparklinesRow from '../components/SystemSparklinesRow'
 import { useEventStream } from '../hooks/useEventStream'
+import { useLabelStyles } from '../hooks/useLabelStyles'
 
 // UnifiedRun is the tagged union the Recent runs card consumes. The
 // discriminant keeps the original Run types intact at the API
@@ -115,6 +117,7 @@ type TabKey = 'overview' | 'connection' | 'updaters' | 'monitoring'
 export default function SystemDetailPage() {
   const { systemId = '' } = useParams<{ systemId: string }>()
   const { state: scopeState } = useScope()
+  const { styles: labelStyles } = useLabelStyles()
   const [state, setState] = useState<LoadState>({ kind: 'loading' })
   const [actionError, setActionError] = useState<string | null>(null)
   const [busy, setBusy] = useState<string | null>(null)
@@ -397,6 +400,16 @@ export default function SystemDetailPage() {
                 </StackItem>
                 <StackItem>
                   <SystemInfoCard system={state.system} />
+                </StackItem>
+                <StackItem>
+                  <SystemLabelsCard
+                    systemId={state.system.id}
+                    labels={state.system.labels}
+                    canEdit={operateAllowed}
+                    canManageStyles={isGlobalAdmin(scopeState)}
+                    styleOverrides={labelStyles}
+                    onChange={refresh}
+                  />
                 </StackItem>
                 <StackItem>
                   <AvailableUpdatesCard

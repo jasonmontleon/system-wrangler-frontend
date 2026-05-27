@@ -93,6 +93,7 @@ describe('SystemsPage', () => {
     const wrapped = (input: FetchInput, init?: FetchInit) => {
       const url = typeof input === 'string' ? input : input.toString()
       if (url.startsWith('/api/groups')) return Promise.resolve(jsonResponse([]))
+      if (url.startsWith('/api/label-styles')) return Promise.resolve(jsonResponse({}))
       // useScope mounts inside SystemsPage for the operate-action
       // gating. Short-circuit it to an empty scope so the existing
       // mockResolvedValueOnce queues stay aligned. Individual tests
@@ -369,7 +370,12 @@ describe('SystemsPage', () => {
     render(<SystemsPage />)
     expect(await screen.findByText(/no systems yet/i)).toBeInTheDocument()
 
-    FakeEventSource.instances[0].emit('message', { type: 'systems.changed' })
+    // Multiple hooks subscribe to the SSE channel (the page itself
+    // plus useLabelStyles); fan the event out across every fake
+    // EventSource so any subscriber's refresh runs.
+    FakeEventSource.instances.forEach((es) =>
+      es.emit('message', { type: 'systems.changed' }),
+    )
     expect(await screen.findByText('late-arrival')).toBeInTheDocument()
     expect(fetchMock.mock.calls.filter((c) => c[0] === '/api/systems')).toHaveLength(2)
   })
@@ -381,10 +387,11 @@ describe('SystemsPage', () => {
 
     const initialCalls = fetchMock.mock.calls.filter((c) => c[0] === '/api/systems').length
 
-    const es = FakeEventSource.instances[0]
-    es.emit('message', { type: 'systems.changed' })
-    es.emit('message', { type: 'systems.changed' })
-    es.emit('message', { type: 'systems.changed' })
+    const fan = (e: { type: string }) =>
+      FakeEventSource.instances.forEach((es) => es.emit('message', e))
+    fan({ type: 'systems.changed' })
+    fan({ type: 'systems.changed' })
+    fan({ type: 'systems.changed' })
 
     await new Promise((r) => setTimeout(r, 300))
 
@@ -431,6 +438,7 @@ describe('SystemsPage', () => {
       if (url === '/api/me/scope')
         return Promise.resolve(jsonResponse({ global: 'admin', groups: {} }))
       if (url.startsWith('/api/groups')) return Promise.resolve(jsonResponse([]))
+      if (url.startsWith('/api/label-styles')) return Promise.resolve(jsonResponse({}))
       if (url === '/api/systems' && method === 'GET') {
         listSystemsCalls++
         return Promise.resolve(
@@ -496,6 +504,7 @@ describe('SystemsPage', () => {
       if (url === '/api/me/scope')
         return Promise.resolve(jsonResponse({ global: 'admin', groups: {} }))
       if (url.startsWith('/api/groups')) return Promise.resolve(jsonResponse([]))
+      if (url.startsWith('/api/label-styles')) return Promise.resolve(jsonResponse({}))
       if (url === '/api/systems' && method === 'GET')
         return Promise.resolve(
           jsonResponse([system({ id: '1', name: 'host-x' })]),
@@ -585,6 +594,7 @@ describe('SystemsPage', () => {
       if (url === '/api/me/scope')
         return Promise.resolve(jsonResponse({ global: 'admin', groups: {} }))
       if (url.startsWith('/api/groups')) return Promise.resolve(jsonResponse([]))
+      if (url.startsWith('/api/label-styles')) return Promise.resolve(jsonResponse({}))
       if (url === '/api/systems' && method === 'GET')
         return Promise.resolve(
           jsonResponse([
@@ -647,6 +657,7 @@ describe('SystemsPage', () => {
       if (url === '/api/me/scope')
         return Promise.resolve(jsonResponse({ global: 'admin', groups: {} }))
       if (url.startsWith('/api/groups')) return Promise.resolve(jsonResponse([]))
+      if (url.startsWith('/api/label-styles')) return Promise.resolve(jsonResponse({}))
       if (url === '/api/systems' && method === 'GET') {
         return Promise.resolve(
           jsonResponse([system({ id: '1', name: 'host-x', hostname: 'x.example' })]),
@@ -707,6 +718,7 @@ describe('SystemsPage', () => {
         if (url === '/api/me/scope')
           return Promise.resolve(jsonResponse({ global: 'admin', groups: {} }))
         if (url.startsWith('/api/groups')) return Promise.resolve(jsonResponse([]))
+      if (url.startsWith('/api/label-styles')) return Promise.resolve(jsonResponse({}))
         if (url === '/api/systems' && method === 'GET') {
           return Promise.resolve(
             jsonResponse([system({ id: '1', name: 'host-x', hostname: 'x.example' })]),
@@ -770,6 +782,7 @@ describe('SystemsPage', () => {
         if (url === '/api/me/scope')
           return Promise.resolve(jsonResponse({ global: 'admin', groups: {} }))
         if (url.startsWith('/api/groups')) return Promise.resolve(jsonResponse([]))
+      if (url.startsWith('/api/label-styles')) return Promise.resolve(jsonResponse({}))
         if (url === '/api/systems' && method === 'GET') {
           return Promise.resolve(
             jsonResponse([system({ id: '1', name: 'host-x', hostname: 'x.example' })]),
@@ -839,6 +852,7 @@ describe('SystemsPage', () => {
       if (url === '/api/me/scope')
         return Promise.resolve(jsonResponse({ global: 'admin', groups: {} }))
       if (url.startsWith('/api/groups')) return Promise.resolve(jsonResponse([]))
+      if (url.startsWith('/api/label-styles')) return Promise.resolve(jsonResponse({}))
       if (url === '/api/systems' && method === 'GET') {
         return Promise.resolve(
           jsonResponse([
@@ -911,6 +925,7 @@ describe('SystemsPage', () => {
       if (url === '/api/me/scope')
         return Promise.resolve(jsonResponse({ global: 'admin', groups: {} }))
       if (url.startsWith('/api/groups')) return Promise.resolve(jsonResponse([]))
+      if (url.startsWith('/api/label-styles')) return Promise.resolve(jsonResponse({}))
       if (url === '/api/systems' && method === 'GET') {
         return Promise.resolve(
           jsonResponse([
@@ -974,6 +989,7 @@ describe('SystemsPage', () => {
       if (url === '/api/me/scope')
         return Promise.resolve(jsonResponse({ global: 'admin', groups: {} }))
       if (url.startsWith('/api/groups')) return Promise.resolve(jsonResponse([]))
+      if (url.startsWith('/api/label-styles')) return Promise.resolve(jsonResponse({}))
       if (url === '/api/systems' && method === 'GET') {
         return Promise.resolve(
           jsonResponse([
@@ -1146,6 +1162,7 @@ describe('SystemsPage', () => {
       if (url === '/api/me/scope')
         return Promise.resolve(jsonResponse({ global: 'admin', groups: {} }))
       if (url.startsWith('/api/groups')) return Promise.resolve(jsonResponse([]))
+      if (url.startsWith('/api/label-styles')) return Promise.resolve(jsonResponse({}))
       if (url === '/api/systems' && method === 'GET') {
         listCalls++
         return Promise.resolve(
@@ -1202,6 +1219,7 @@ describe('SystemsPage', () => {
       if (url === '/api/me/scope')
         return Promise.resolve(jsonResponse({ global: 'admin', groups: {} }))
       if (url.startsWith('/api/groups')) return Promise.resolve(jsonResponse([]))
+      if (url.startsWith('/api/label-styles')) return Promise.resolve(jsonResponse({}))
       if (url === '/api/systems' && method === 'GET') {
         return Promise.resolve(
           jsonResponse([system({ id: '1', name: 'host-x', hostname: 'x.example' })]),
@@ -1224,5 +1242,140 @@ describe('SystemsPage', () => {
       await screen.findByText(/No enabled updaters/i),
     ).toBeInTheDocument()
     expect(screen.getByText(/1 skipped/i)).toBeInTheDocument()
+  })
+
+  // renderAt wraps SystemsPage in a MemoryRouter seeded to a specific
+  // URL so the `?labels=` round-trip can be verified end-to-end.
+  function renderAt(url: string) {
+    return rtlRender(
+      <MemoryRouter initialEntries={[url]}>
+        <SystemsPage />
+      </MemoryRouter>,
+    )
+  }
+
+  it('seeds the label selector input from the ?labels= URL param', async () => {
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse([
+        system({
+          id: '1',
+          name: 'a',
+          hostname: 'a.example',
+          status: 'reachable',
+        }),
+      ]),
+    )
+    renderAt('/?labels=env%3Dprod')
+    // The first fetch the page issues for /api/systems must already
+    // carry the URL-seeded selector — readers shouldn't see an
+    // unfiltered flash on mount.
+    await waitFor(() => {
+      const calls = fetchMock.mock.calls
+        .map((c) => String(c[0]))
+        .filter((u) => u.startsWith('/api/systems?'))
+      expect(calls).toContain('/api/systems?labels=env%3Dprod')
+    })
+    const input = screen.getByLabelText(/label selector/i) as HTMLInputElement
+    expect(input.value).toBe('env=prod')
+  })
+
+  it('refetches with the new selector after the user types one', async () => {
+    // Seed with a row so the table (and its column-level filter input)
+    // renders. The empty state hides the table — accessing the label
+    // selector via that path is covered by `seeds the label selector
+    // input from the ?labels= URL param` above.
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse([
+        system({ id: '1', name: 'a', hostname: 'a.example', status: 'reachable' }),
+      ]),
+    )
+    render(<SystemsPage />)
+    const input = await screen.findByLabelText(/label selector/i)
+    fetchMock.mockResolvedValueOnce(jsonResponse([]))
+    fireEvent.change(input, { target: { value: 'env=prod' } })
+    await waitFor(() => {
+      const urls = fetchMock.mock.calls.map((c) => String(c[0]))
+      expect(urls.some((u) => u === '/api/systems?labels=env%3Dprod')).toBe(true)
+    })
+  })
+
+  it('surfaces a backend 400 (invalid selector) as a load error', async () => {
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse({ error: 'invalid labels selector: empty requirement' }, 400),
+    )
+    renderAt('/?labels=,')
+    expect(
+      await screen.findByText(/invalid labels selector/i),
+    ).toBeInTheDocument()
+  })
+
+  it('clicking a user-label chip appends its token to the selector', async () => {
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse([
+        system({
+          id: '1',
+          name: 'a',
+          hostname: 'a.example',
+          status: 'reachable',
+        }),
+      ]),
+    )
+    // Seed the response so the row has a clickable env=prod chip.
+    // jsonResponse stringifies the body so we have to mutate the
+    // serialized form — easier to just rebuild via a custom mock.
+    fetchMock.mockReset()
+    fetchMock.mockResolvedValueOnce(
+      new Response(
+        JSON.stringify([
+          {
+            id: '1',
+            name: 'a',
+            hostname: 'a.example',
+            createdAt: 't',
+            status: 'reachable',
+            labels: [{ key: 'env', value: 'prod' }],
+          },
+        ]),
+        { status: 200, headers: { 'Content-Type': 'application/json' } },
+      ),
+    )
+    // Subsequent fetches (after the chip click triggers a refresh)
+    // return an empty list — the test asserts on the URL, not the
+    // body.
+    fetchMock.mockResolvedValue(jsonResponse([]))
+    render(<SystemsPage />)
+    const chip = await screen.findByText('env=prod')
+    fireEvent.click(chip)
+    const input = screen.getByLabelText(/label selector/i) as HTMLInputElement
+    expect(input.value).toBe('env=prod')
+    await waitFor(() => {
+      const urls = fetchMock.mock.calls.map((c) => String(c[0]))
+      expect(urls.some((u) => u === '/api/systems?labels=env%3Dprod')).toBe(true)
+    })
+  })
+
+  it('does not duplicate a chip token already in the selector', async () => {
+    fetchMock.mockResolvedValueOnce(
+      new Response(
+        JSON.stringify([
+          {
+            id: '1',
+            name: 'a',
+            hostname: 'a.example',
+            createdAt: 't',
+            status: 'reachable',
+            labels: [{ key: 'env', value: 'prod' }],
+          },
+        ]),
+        { status: 200, headers: { 'Content-Type': 'application/json' } },
+      ),
+    )
+    fetchMock.mockResolvedValue(jsonResponse([]))
+    renderAt('/?labels=env%3Dprod')
+    const chip = await screen.findByText('env=prod')
+    fireEvent.click(chip)
+    fireEvent.click(chip)
+    const input = screen.getByLabelText(/label selector/i) as HTMLInputElement
+    expect(input.value).toBe('env=prod')
   })
 })

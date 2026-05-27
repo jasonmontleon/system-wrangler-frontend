@@ -33,6 +33,41 @@ describe('systems api', () => {
     expect(systems[0].id).toBe('a')
   })
 
+  it('listSystems appends ?labels= when a selector is supplied', async () => {
+    fetchMock.mockResolvedValueOnce(jsonResponse([]))
+    await listSystems({ labels: 'env=prod,role!=cache' })
+    expect(fetchMock.mock.calls[0][0]).toBe(
+      '/api/systems?labels=env%3Dprod%2Crole!%3Dcache',
+    )
+  })
+
+  it('listSystems skips ?labels= for whitespace-only selectors', async () => {
+    fetchMock.mockResolvedValueOnce(jsonResponse([]))
+    await listSystems({ labels: '   ' })
+    expect(fetchMock.mock.calls[0][0]).toBe('/api/systems')
+  })
+
+  it('listSystems decodes inline labels on each row', async () => {
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse([
+        {
+          id: 'a',
+          name: 'h',
+          hostname: '1.1.1.1',
+          createdAt: 't',
+          status: 'reachable',
+          labels: [
+            { key: 'env', value: 'prod' },
+            { key: 'oncall', value: null },
+          ],
+        },
+      ]),
+    )
+    const systems = await listSystems()
+    expect(systems[0].labels).toHaveLength(2)
+    expect(systems[0].labels?.[1].value).toBeNull()
+  })
+
   it('createSystem posts JSON', async () => {
     const created = {
       id: 'a',
