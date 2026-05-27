@@ -122,17 +122,17 @@ export default function GroupDetailPage() {
   const hostnameVisible = useMediaQuery('(min-width: 90.625rem)')
   const colWidths = hostnameVisible
     ? {
-        name: '26%',
-        hostname: '26%',
-        status: '12%',
-        lastChecked: '20%',
-        updates: '16%',
+        name: '28%',
+        hostname: '28%',
+        status: '28%',
+        lastChecked: '11%',
+        updates: '5%',
       }
     : {
-        name: '50%',
+        name: '35%',
         hostname: '25%',
-        status: '12%',
-        lastChecked: '26%',
+        status: '35%',
+        lastChecked: '18%',
         updates: '12%',
       }
 
