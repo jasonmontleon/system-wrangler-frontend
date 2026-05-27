@@ -66,7 +66,7 @@ export default function SystemExclusionsCard({
   return (
     <ExclusionsCard
       title="System exclusions"
-      description="Patterns added here apply only to this system. Fleet-wide and group exclusions still layer on top — the union of all three controls what the next Update skips."
+      description="Patterns added here apply only to this system. Global and group exclusions still layer on top — the union of all three controls what the next Update skips."
       rows={rows}
       loadError={loadError ?? undefined}
       loading={loading}

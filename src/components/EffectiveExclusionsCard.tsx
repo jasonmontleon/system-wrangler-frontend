@@ -95,7 +95,7 @@ export default function EffectiveExclusionsCard({
           </StackItem>
           <StackItem>
             <span style={{ fontWeight: 400 }}>
-              The union of fleet, group, and system rules applied at the next
+              The union of global, group, and system rules applied at the next
               Update for the selected updater. Use the source badge to find the
               row that owns each pattern.
             </span>

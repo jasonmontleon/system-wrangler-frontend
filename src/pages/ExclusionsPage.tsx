@@ -64,8 +64,8 @@ export default function ExclusionsPage() {
         </StackItem>
         <StackItem>
           <ExclusionsCard
-            title="Fleet-wide exclusions"
-            description="Patterns added here apply to every system in the fleet. Group and system scopes layer on top — exclusions union across all three."
+            title="Global exclusions"
+            description="Patterns added here apply to every system. Group and system scopes layer on top — exclusions union across all three."
             rows={rows}
             loadError={loadError ?? undefined}
             loading={loading}

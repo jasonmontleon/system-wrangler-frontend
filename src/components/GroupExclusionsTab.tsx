@@ -64,7 +64,7 @@ export default function GroupExclusionsTab({
   return (
     <ExclusionsCard
       title="Group exclusions"
-      description="Patterns added here apply to every system in this group, layered on top of fleet-wide exclusions."
+      description="Patterns added here apply to every system in this group, layered on top of global exclusions."
       rows={rows}
       loadError={loadError ?? undefined}
       loading={loading}
