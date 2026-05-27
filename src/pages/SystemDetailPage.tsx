@@ -70,6 +70,7 @@ import {
 import MonitoringTabContent from '../components/MonitoringTabContent'
 import PlatformCard from '../components/PlatformCard'
 import SystemCredentialsSection from '../components/SystemCredentialsSection'
+import EffectiveExclusionsCard from '../components/EffectiveExclusionsCard'
 import SystemExclusionsCard from '../components/SystemExclusionsCard'
 import SystemSparklinesRow from '../components/SystemSparklinesRow'
 import { useEventStream } from '../hooks/useEventStream'
@@ -462,6 +463,12 @@ export default function SystemDetailPage() {
                     canOperate={operateAllowed}
                     busy={busy}
                     onToggle={onToggle}
+                  />
+                </StackItem>
+                <StackItem>
+                  <EffectiveExclusionsCard
+                    systemId={state.system.id}
+                    updaters={state.updaters}
                   />
                 </StackItem>
                 <StackItem>

@@ -11,6 +11,8 @@ import {
   FormGroup,
   FormSelect,
   FormSelectOption,
+  HelperText,
+  HelperTextItem,
   Modal,
   ModalBody,
   ModalFooter,
@@ -226,6 +228,22 @@ export default function ExclusionsCard({
         <ModalHeader title="Add exclusion" labelId="exclusion-form-title" />
         <ModalBody>
           <Form id="exclusion-form" onSubmit={submit}>
+            <Alert
+              variant="info"
+              isInline
+              isPlain
+              title="Hold-based managers take ownership"
+            >
+              <HelperText>
+                <HelperTextItem>
+                  apt, brew, snap, flatpak, xbps, and scoop honour exclusions by
+                  flipping a host-side hold. The first Apply runs the manager's
+                  hold command for matching patterns — including ones an
+                  operator may have already set via SSH — and removing the
+                  exclusion row will clear that hold on the next Apply.
+                </HelperTextItem>
+              </HelperText>
+            </Alert>
             <FormGroup label="Updater" fieldId="exclusion-updater" isRequired>
               <FormSelect
                 id="exclusion-updater"

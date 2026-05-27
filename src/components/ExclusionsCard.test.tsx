@@ -129,6 +129,25 @@ describe('ExclusionsCard', () => {
     })
   })
 
+  it('shows the hold-ownership notice in the add form', () => {
+    render(
+      <ExclusionsCard
+        title="Fleet"
+        description="d"
+        rows={[]}
+        loading={false}
+        canManage
+        updaters={defs()}
+        onCreate={vi.fn()}
+        onDelete={vi.fn()}
+      />,
+    )
+    fireEvent.click(screen.getByRole('button', { name: /add exclusion/i }))
+    expect(
+      screen.getByText(/Hold-based managers take ownership/i),
+    ).toBeInTheDocument()
+  })
+
   it('rejects an empty pattern with an inline error', () => {
     const onCreate = vi.fn().mockResolvedValue(undefined)
     render(
