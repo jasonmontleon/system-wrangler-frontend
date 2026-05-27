@@ -613,13 +613,22 @@ export default function GroupsPage() {
                   }}
                   style={TIGHT_END}
                 />
-                <Th width={50} sort={sortFor('name', 1)}>
+                <Th
+                  sort={sortFor('name', 1)}
+                  style={{ width: '55%' }}
+                >
                   Name
                 </Th>
-                <Th width={20} sort={sortFor('systemCount', 2)}>
+                <Th
+                  sort={sortFor('systemCount', 2)}
+                  style={{ width: '15%' }}
+                >
                   Systems
                 </Th>
-                <Th width={20} sort={sortFor('createdAt', 3)}>
+                <Th
+                  sort={sortFor('createdAt', 3)}
+                  style={{ width: '30%' }}
+                >
                   Created
                 </Th>
                 <Th screenReaderText="Actions" style={TIGHT_START} />
