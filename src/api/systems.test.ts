@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { ApiError, createSystem, deleteSystem, listSystems } from './systems'
+import { ApiError, createSystem, deleteSystem, listSystems, recordBulkEvent } from './systems'
 
 function jsonResponse(body: unknown, init: ResponseInit = {}): Response {
   return new Response(JSON.stringify(body), {
@@ -106,5 +106,30 @@ describe('systems api', () => {
       new Response('not json', { status: 500, statusText: 'Internal Server Error' }),
     )
     await expect(listSystems()).rejects.toBeInstanceOf(ApiError)
+  })
+
+  it('recordBulkEvent POSTs the body to /api/systems/bulk-event', async () => {
+    fetchMock.mockResolvedValueOnce(new Response(null, { status: 204 }))
+    await recordBulkEvent({
+      action: 'check',
+      selector: 'env=prod',
+      systemIds: ['a', 'b'],
+      skipped: [{ systemId: 'c', reason: 'unreachable' }],
+    })
+    const [url, init] = fetchMock.mock.calls[0]
+    expect(url).toBe('/api/systems/bulk-event')
+    expect(init.method).toBe('POST')
+    const body = JSON.parse(init.body)
+    expect(body.action).toBe('check')
+    expect(body.systemIds).toEqual(['a', 'b'])
+    expect(body.selector).toBe('env=prod')
+    expect(body.skipped).toEqual([{ systemId: 'c', reason: 'unreachable' }])
+  })
+
+  it('recordBulkEvent surfaces a 400 as ApiError', async () => {
+    fetchMock.mockResolvedValueOnce(jsonResponse({ error: 'bad' }, { status: 400 }))
+    await expect(
+      recordBulkEvent({ action: 'check', systemIds: [] }),
+    ).rejects.toBeInstanceOf(ApiError)
   })
 })

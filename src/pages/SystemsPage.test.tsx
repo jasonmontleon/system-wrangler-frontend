@@ -94,6 +94,7 @@ describe('SystemsPage', () => {
       const url = typeof input === 'string' ? input : input.toString()
       if (url.startsWith('/api/groups')) return Promise.resolve(jsonResponse([]))
       if (url.startsWith('/api/label-styles')) return Promise.resolve(jsonResponse({}))
+      if (url === '/api/systems/bulk-event') return Promise.resolve(new Response(null, { status: 204 }))
       // useScope mounts inside SystemsPage for the operate-action
       // gating. Short-circuit it to an empty scope so the existing
       // mockResolvedValueOnce queues stay aligned. Individual tests
@@ -439,6 +440,7 @@ describe('SystemsPage', () => {
         return Promise.resolve(jsonResponse({ global: 'admin', groups: {} }))
       if (url.startsWith('/api/groups')) return Promise.resolve(jsonResponse([]))
       if (url.startsWith('/api/label-styles')) return Promise.resolve(jsonResponse({}))
+      if (url === '/api/systems/bulk-event') return Promise.resolve(new Response(null, { status: 204 }))
       if (url === '/api/systems' && method === 'GET') {
         listSystemsCalls++
         return Promise.resolve(
@@ -505,6 +507,7 @@ describe('SystemsPage', () => {
         return Promise.resolve(jsonResponse({ global: 'admin', groups: {} }))
       if (url.startsWith('/api/groups')) return Promise.resolve(jsonResponse([]))
       if (url.startsWith('/api/label-styles')) return Promise.resolve(jsonResponse({}))
+      if (url === '/api/systems/bulk-event') return Promise.resolve(new Response(null, { status: 204 }))
       if (url === '/api/systems' && method === 'GET')
         return Promise.resolve(
           jsonResponse([system({ id: '1', name: 'host-x' })]),
@@ -595,6 +598,7 @@ describe('SystemsPage', () => {
         return Promise.resolve(jsonResponse({ global: 'admin', groups: {} }))
       if (url.startsWith('/api/groups')) return Promise.resolve(jsonResponse([]))
       if (url.startsWith('/api/label-styles')) return Promise.resolve(jsonResponse({}))
+      if (url === '/api/systems/bulk-event') return Promise.resolve(new Response(null, { status: 204 }))
       if (url === '/api/systems' && method === 'GET')
         return Promise.resolve(
           jsonResponse([
@@ -658,6 +662,7 @@ describe('SystemsPage', () => {
         return Promise.resolve(jsonResponse({ global: 'admin', groups: {} }))
       if (url.startsWith('/api/groups')) return Promise.resolve(jsonResponse([]))
       if (url.startsWith('/api/label-styles')) return Promise.resolve(jsonResponse({}))
+      if (url === '/api/systems/bulk-event') return Promise.resolve(new Response(null, { status: 204 }))
       if (url === '/api/systems' && method === 'GET') {
         return Promise.resolve(
           jsonResponse([system({ id: '1', name: 'host-x', hostname: 'x.example' })]),
@@ -719,6 +724,7 @@ describe('SystemsPage', () => {
           return Promise.resolve(jsonResponse({ global: 'admin', groups: {} }))
         if (url.startsWith('/api/groups')) return Promise.resolve(jsonResponse([]))
       if (url.startsWith('/api/label-styles')) return Promise.resolve(jsonResponse({}))
+      if (url === '/api/systems/bulk-event') return Promise.resolve(new Response(null, { status: 204 }))
         if (url === '/api/systems' && method === 'GET') {
           return Promise.resolve(
             jsonResponse([system({ id: '1', name: 'host-x', hostname: 'x.example' })]),
@@ -783,6 +789,7 @@ describe('SystemsPage', () => {
           return Promise.resolve(jsonResponse({ global: 'admin', groups: {} }))
         if (url.startsWith('/api/groups')) return Promise.resolve(jsonResponse([]))
       if (url.startsWith('/api/label-styles')) return Promise.resolve(jsonResponse({}))
+      if (url === '/api/systems/bulk-event') return Promise.resolve(new Response(null, { status: 204 }))
         if (url === '/api/systems' && method === 'GET') {
           return Promise.resolve(
             jsonResponse([system({ id: '1', name: 'host-x', hostname: 'x.example' })]),
@@ -853,6 +860,7 @@ describe('SystemsPage', () => {
         return Promise.resolve(jsonResponse({ global: 'admin', groups: {} }))
       if (url.startsWith('/api/groups')) return Promise.resolve(jsonResponse([]))
       if (url.startsWith('/api/label-styles')) return Promise.resolve(jsonResponse({}))
+      if (url === '/api/systems/bulk-event') return Promise.resolve(new Response(null, { status: 204 }))
       if (url === '/api/systems' && method === 'GET') {
         return Promise.resolve(
           jsonResponse([
@@ -926,6 +934,7 @@ describe('SystemsPage', () => {
         return Promise.resolve(jsonResponse({ global: 'admin', groups: {} }))
       if (url.startsWith('/api/groups')) return Promise.resolve(jsonResponse([]))
       if (url.startsWith('/api/label-styles')) return Promise.resolve(jsonResponse({}))
+      if (url === '/api/systems/bulk-event') return Promise.resolve(new Response(null, { status: 204 }))
       if (url === '/api/systems' && method === 'GET') {
         return Promise.resolve(
           jsonResponse([
@@ -990,6 +999,7 @@ describe('SystemsPage', () => {
         return Promise.resolve(jsonResponse({ global: 'admin', groups: {} }))
       if (url.startsWith('/api/groups')) return Promise.resolve(jsonResponse([]))
       if (url.startsWith('/api/label-styles')) return Promise.resolve(jsonResponse({}))
+      if (url === '/api/systems/bulk-event') return Promise.resolve(new Response(null, { status: 204 }))
       if (url === '/api/systems' && method === 'GET') {
         return Promise.resolve(
           jsonResponse([
@@ -1163,6 +1173,7 @@ describe('SystemsPage', () => {
         return Promise.resolve(jsonResponse({ global: 'admin', groups: {} }))
       if (url.startsWith('/api/groups')) return Promise.resolve(jsonResponse([]))
       if (url.startsWith('/api/label-styles')) return Promise.resolve(jsonResponse({}))
+      if (url === '/api/systems/bulk-event') return Promise.resolve(new Response(null, { status: 204 }))
       if (url === '/api/systems' && method === 'GET') {
         listCalls++
         return Promise.resolve(
@@ -1220,6 +1231,7 @@ describe('SystemsPage', () => {
         return Promise.resolve(jsonResponse({ global: 'admin', groups: {} }))
       if (url.startsWith('/api/groups')) return Promise.resolve(jsonResponse([]))
       if (url.startsWith('/api/label-styles')) return Promise.resolve(jsonResponse({}))
+      if (url === '/api/systems/bulk-event') return Promise.resolve(new Response(null, { status: 204 }))
       if (url === '/api/systems' && method === 'GET') {
         return Promise.resolve(
           jsonResponse([system({ id: '1', name: 'host-x', hostname: 'x.example' })]),
@@ -1377,5 +1389,57 @@ describe('SystemsPage', () => {
     fireEvent.click(chip)
     const input = screen.getByLabelText(/label selector/i) as HTMLInputElement
     expect(input.value).toBe('env=prod')
+  })
+
+  it('shows "Select all N matching" when only the visible page is selected', async () => {
+    // Seed 30 systems so the default page size of 25 leaves rows on
+    // page 2. Selecting the page-header checkbox then triggers the
+    // Gmail-style expand affordance.
+    const many = Array.from({ length: 30 }, (_, i) =>
+      system({
+        id: `s${i}`,
+        name: `host-${i}`,
+        hostname: `${i}.example`,
+        status: 'reachable',
+      }),
+    )
+    fetchMock.mockResolvedValueOnce(jsonResponse(many))
+    render(<SystemsPage />)
+    await screen.findByText('host-0')
+
+    // Header select-all is the very first checkbox in the table.
+    const headerCheckbox = screen.getAllByRole('checkbox')[0]
+    fireEvent.click(headerCheckbox)
+
+    const banner = await screen.findByText(/select all 30 matching systems/i)
+    expect(banner).toBeInTheDocument()
+    // Banner counts page rows (25) on this default-page-sized table.
+    expect(screen.getByText(/25 selected on this page/i)).toBeInTheDocument()
+  })
+
+  it('expands the selection to every matching row when the banner is clicked', async () => {
+    const many = Array.from({ length: 30 }, (_, i) =>
+      system({
+        id: `s${i}`,
+        name: `host-${i}`,
+        hostname: `${i}.example`,
+        status: 'reachable',
+      }),
+    )
+    fetchMock.mockResolvedValueOnce(jsonResponse(many))
+    render(<SystemsPage />)
+    await screen.findByText('host-0')
+
+    const headerCheckbox = screen.getAllByRole('checkbox')[0]
+    fireEvent.click(headerCheckbox)
+    fireEvent.click(
+      await screen.findByRole('button', {
+        name: /select all 30 matching systems/i,
+      }),
+    )
+    // After expansion, the banner condition is false — banner gone.
+    expect(
+      screen.queryByText(/select all 30 matching systems/i),
+    ).not.toBeInTheDocument()
   })
 })

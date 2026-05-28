@@ -86,6 +86,9 @@ describe('GroupDetailPage', () => {
       if (url.startsWith('/api/label-styles')) {
         return Promise.resolve(jsonResponse({}))
       }
+      if (url === '/api/systems/bulk-event') {
+        return Promise.resolve(new Response(null, { status: 204 }))
+      }
       return (fetchMock as unknown as typeof fetch)(input, init)
     })
     FakeEventSource.instances = []
@@ -108,6 +111,8 @@ describe('GroupDetailPage', () => {
         return Promise.resolve(jsonResponse(sampleGroup))
       if (url.startsWith('/api/label-styles'))
         return Promise.resolve(jsonResponse({}))
+      if (url === '/api/systems/bulk-event')
+        return Promise.resolve(new Response(null, { status: 204 }))
       if (url === '/api/systems' && method === 'GET')
         return Promise.resolve(
           jsonResponse([
@@ -169,6 +174,8 @@ describe('GroupDetailPage', () => {
         return Promise.resolve(jsonResponse(sampleGroup))
       if (url.startsWith('/api/label-styles'))
         return Promise.resolve(jsonResponse({}))
+      if (url === '/api/systems/bulk-event')
+        return Promise.resolve(new Response(null, { status: 204 }))
       if (url === '/api/systems' && method === 'GET')
         return Promise.resolve(
           jsonResponse([
@@ -255,6 +262,7 @@ describe('GroupDetailPage', () => {
         return Promise.resolve(jsonResponse({ global: 'admin', groups: {} }))
       if (url === '/api/groups/g-1') return Promise.resolve(jsonResponse(sampleGroup))
       if (url.startsWith('/api/label-styles')) return Promise.resolve(jsonResponse({}))
+      if (url === '/api/systems/bulk-event') return Promise.resolve(new Response(null, { status: 204 }))
       if (url === '/api/systems' && method === 'GET')
         return Promise.resolve(
           jsonResponse([
@@ -392,6 +400,9 @@ describe('GroupDetailPage', () => {
       if (url.startsWith('/api/label-styles')) {
         return Promise.resolve(jsonResponse({}))
       }
+      if (url === '/api/systems/bulk-event') {
+        return Promise.resolve(new Response(null, { status: 204 }))
+      }
       return (fetchMock2 as unknown as typeof fetch)(input, init)
     })
     fetchMock2.mockResolvedValueOnce(jsonResponse([]))
@@ -420,6 +431,9 @@ describe('GroupDetailPage', () => {
       }
       if (url.startsWith('/api/label-styles')) {
         return Promise.resolve(jsonResponse({}))
+      }
+      if (url === '/api/systems/bulk-event') {
+        return Promise.resolve(new Response(null, { status: 204 }))
       }
       return Promise.resolve(jsonResponse([]))
     })

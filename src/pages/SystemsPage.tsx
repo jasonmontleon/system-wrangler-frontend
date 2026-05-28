@@ -38,6 +38,7 @@ import {
   createSystem,
   deleteSystem,
   listSystems,
+  recordBulkEvent,
   type System,
 } from '../api/systems'
 import {
@@ -243,6 +244,24 @@ export default function SystemsPage() {
       }
       operable.push(s)
     }
+    // Record the parent audit row before the SPA fans out per-system.
+    // Best-effort: a failure here is logged client-side but doesn't
+    // block the actual run — the per-system rows are still authoritative.
+    try {
+      await recordBulkEvent({
+        action,
+        selector: labelSelector || undefined,
+        systemIds: operable.map((s) => s.id),
+        skipped: skipped.map((o) => ({
+          systemId: o.systemId,
+          reason: o.skipReason ?? 'skipped',
+        })),
+      })
+    } catch (err) {
+      // Surface in console so an operator scanning DevTools sees it
+      // landed, but don't block the bulk run on it.
+      console.warn('bulk-event audit failed', err)
+    }
     operable.forEach((s) => markBusy(s.id, action))
     const outcomes = await Promise.all(
       operable.map(async (s) => {
@@ -296,6 +315,19 @@ export default function SystemsPage() {
         continue
       }
       operable.push(s)
+    }
+    try {
+      await recordBulkEvent({
+        action: 'apply',
+        selector: labelSelector || undefined,
+        systemIds: operable.map((s) => s.id),
+        skipped: skipped.map((o) => ({
+          systemId: o.systemId,
+          reason: o.skipReason ?? 'skipped',
+        })),
+      })
+    } catch (err) {
+      console.warn('bulk-event audit failed', err)
     }
     operable.forEach((s) => markBusy(s.id, 'apply'))
     const outcomes = await Promise.all(
@@ -561,6 +593,23 @@ export default function SystemsPage() {
   const allVisibleSelected =
     visible.length > 0 && visible.every((s) => selected.has(s.id))
 
+  // showExpandSelectionBanner is true when the user has select-alled
+  // the current page but the filter matches rows on other pages.
+  // The Gmail-style "Select all N matching" affordance offers to
+  // expand the selection without forcing a switch to pageSize=all.
+  const showExpandSelectionBanner =
+    allVisibleSelected &&
+    sorted.length > visible.length &&
+    !sorted.every((s) => selected.has(s.id))
+
+  const expandSelectionToAllMatching = () => {
+    setSelected((prev) => {
+      const next = new Set(prev)
+      sorted.forEach((s) => next.add(s.id))
+      return next
+    })
+  }
+
   const toggleAllVisible = (checked: boolean) => {
     setSelected((prev) => {
       const next = new Set(prev)
@@ -764,6 +813,21 @@ export default function SystemsPage() {
               </EmptyStateBody>
             </EmptyState>
           )}
+        {showExpandSelectionBanner && (
+          <Alert
+            variant="info"
+            isInline
+            title={`${visible.length} selected on this page`}
+          >
+            <Button
+              variant="link"
+              isInline
+              onClick={expandSelectionToAllMatching}
+            >
+              Select all {sorted.length} matching systems
+            </Button>
+          </Alert>
+        )}
         {(loadError != null ||
           labelSelector !== '' ||
           (systems !== null && systems.length > 0)) && (

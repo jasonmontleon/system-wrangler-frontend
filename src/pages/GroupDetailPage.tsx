@@ -47,6 +47,7 @@ import {
 import { ActionsColumn, Table, Tbody, Td, Th, Thead, Tr } from '@patternfly/react-table'
 import {
   listSystems,
+  recordBulkEvent,
   type System,
 } from '../api/systems'
 import { ApiError } from '../api/systems'
@@ -277,6 +278,19 @@ export default function GroupDetailPage() {
       }
       operable.push(s)
     }
+    try {
+      await recordBulkEvent({
+        action,
+        selector: labelSelector || undefined,
+        systemIds: operable.map((s) => s.id),
+        skipped: skipped.map((o) => ({
+          systemId: o.systemId,
+          reason: o.skipReason ?? 'skipped',
+        })),
+      })
+    } catch (err) {
+      console.warn('bulk-event audit failed', err)
+    }
     operable.forEach((s) => markBusy(s.id, action))
     const outcomes = await Promise.all(
       operable.map(async (s) => {
@@ -328,6 +342,19 @@ export default function GroupDetailPage() {
         continue
       }
       operable.push(s)
+    }
+    try {
+      await recordBulkEvent({
+        action: 'apply',
+        selector: labelSelector || undefined,
+        systemIds: operable.map((s) => s.id),
+        skipped: skipped.map((o) => ({
+          systemId: o.systemId,
+          reason: o.skipReason ?? 'skipped',
+        })),
+      })
+    } catch (err) {
+      console.warn('bulk-event audit failed', err)
     }
     operable.forEach((s) => markBusy(s.id, 'apply'))
     const outcomes = await Promise.all(
@@ -536,6 +563,19 @@ export default function GroupDetailPage() {
 
   const allVisibleSelected =
     visible.length > 0 && visible.every((s) => selected.has(s.id))
+
+  const showExpandSelectionBanner =
+    allVisibleSelected &&
+    sorted.length > visible.length &&
+    !sorted.every((s) => selected.has(s.id))
+
+  const expandSelectionToAllMatching = () => {
+    setSelected((prev) => {
+      const next = new Set(prev)
+      sorted.forEach((s) => next.add(s.id))
+      return next
+    })
+  }
 
   const toggleAllVisible = (checked: boolean) => {
     setSelected((prev) => {
@@ -835,6 +875,21 @@ export default function GroupDetailPage() {
               </EmptyStateBody>
             </EmptyState>
           )}
+        {showExpandSelectionBanner && (
+          <Alert
+            variant="info"
+            isInline
+            title={`${visible.length} selected on this page`}
+          >
+            <Button
+              variant="link"
+              isInline
+              onClick={expandSelectionToAllMatching}
+            >
+              Select all {sorted.length} matching systems
+            </Button>
+          </Alert>
+        )}
         {(loadError != null ||
           labelSelector !== '' ||
           (systems !== null && members.length > 0)) && (

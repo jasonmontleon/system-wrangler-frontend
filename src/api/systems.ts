@@ -121,6 +121,28 @@ export async function deleteSystem(id: string): Promise<void> {
   if (!resp.ok) throw new ApiError(resp.status, await parseError(resp))
 }
 
+// recordBulkEvent writes one parent audit row for a bulk operate-on-
+// selector run. The actual updater work still flows through the per-
+// system endpoints called by util/updaterFanOut; this is a best-
+// effort record of intent so the audit reader sees a single fleet-
+// wide event instead of just N per-system rows. Errors are returned
+// to the caller so it can decide whether to skip the row or proceed.
+export type BulkSkipped = { systemId: string; reason: string }
+
+export async function recordBulkEvent(input: {
+  action: 'check' | 'apply'
+  selector?: string
+  systemIds: string[]
+  skipped?: BulkSkipped[]
+}): Promise<void> {
+  const resp = await apiFetch('/api/systems/bulk-event', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(input),
+  })
+  if (!resp.ok) throw new ApiError(resp.status, await parseError(resp))
+}
+
 export async function setSystemPlatform(id: string, isWindows: boolean): Promise<void> {
   const resp = await apiFetch(`/api/systems/${encodeURIComponent(id)}/platform`, {
     method: 'PUT',
