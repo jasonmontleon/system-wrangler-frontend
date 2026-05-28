@@ -20,6 +20,7 @@ import {
 } from '@patternfly/react-core'
 import {
   Chart,
+  ChartArea,
   ChartAxis,
   ChartGroup,
   ChartLegend,
@@ -55,6 +56,21 @@ type LoadState =
   | { kind: 'ready'; series: MatrixEntry[]; endSeconds: number }
   | { kind: 'error'; message: string }
 
+// ThresholdBand shades a horizontal stripe of the plot area between Y
+// values `from` and `to`. Used for attention zones on percent panels
+// — e.g. yellow at 70-90% and red at 90-100%. Bands render behind the
+// lines so values plot on top of the shading. The colors are passed in
+// rather than fixed so a panel can reuse the band machinery for
+// whatever semantic threshold makes sense.
+export type ThresholdBand = {
+  from: number
+  to: number
+  color: string
+  opacity?: number
+}
+
+const DEFAULT_BAND_OPACITY = 0.12
+
 // MetricsPanel renders a single PromQL time-series as a line chart.
 // Polls every 15s by default; cancels on unmount; uses queryRange so
 // the chart shows context, not just the last sample.
@@ -72,6 +88,7 @@ export default function MetricsPanel({
   stepSeconds = 15,
   refreshIntervalMs = 15_000,
   seriesLabel,
+  thresholds,
 }: {
   title: ReactNode
   promql: string
@@ -81,6 +98,7 @@ export default function MetricsPanel({
   stepSeconds?: number
   refreshIntervalMs?: number
   seriesLabel?: (metric: Record<string, string>) => string
+  thresholds?: ThresholdBand[]
 }) {
   const [state, setState] = useState<LoadState>({ kind: 'loading' })
   const timerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
@@ -146,6 +164,7 @@ export default function MetricsPanel({
             windowSeconds={effectiveRangeSeconds}
             endSeconds={state.endSeconds}
             onZoom={ctx?.setZoom}
+            thresholds={thresholds}
           />
         )}
       </CardBody>
@@ -161,6 +180,7 @@ function SeriesChart({
   windowSeconds,
   endSeconds,
   onZoom,
+  thresholds,
 }: {
   series: MatrixEntry[]
   yLabel?: string
@@ -169,6 +189,7 @@ function SeriesChart({
   windowSeconds: number
   endSeconds: number
   onZoom?: (startSec: number, endSec: number) => void
+  thresholds?: ThresholdBand[]
 }) {
   const data = useMemo(() => prepareData(series), [series])
   const xDomain: [Date, Date] = [
@@ -274,6 +295,22 @@ function SeriesChart({
           style={axisStyle}
           tickFormat={(v: number) => formatYTick(v)}
         />
+        {thresholds?.map((t, i) => (
+          <ChartArea
+            key={`threshold-${i}`}
+            data={[
+              { x: xDomain[0], y: t.to, y0: t.from },
+              { x: xDomain[1], y: t.to, y0: t.from },
+            ]}
+            style={{
+              data: {
+                fill: t.color,
+                fillOpacity: t.opacity ?? DEFAULT_BAND_OPACITY,
+                stroke: 'none',
+              },
+            }}
+          />
+        ))}
         <ChartGroup>
           {data.map((s) => (
             <ChartLine

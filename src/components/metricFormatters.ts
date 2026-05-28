@@ -4,6 +4,22 @@
 // overview heatmap cells and the Dashboard leaderboards. Centralised
 // so a threshold tweak applies everywhere consistently.
 
+import type { ThresholdBand } from './MetricsPanel'
+
+// PERCENT_ATTENTION_BANDS shades the warning + danger zones on any
+// time-series panel whose Y axis is a percentage. Thresholds match
+// tintForPercent below so the chart bands and the leaderboard / heatmap
+// tints all flip color at the same numbers.
+//
+// Hex codes mirror PatternFly v6 status tokens (warning #F0AB00,
+// danger #C9190B) — the chart is rendered inline SVG and Victory
+// inlines `fill`, so a CSS var would be overridden. Low opacity keeps
+// the bands as backdrop, not foreground noise.
+export const PERCENT_ATTENTION_BANDS: ThresholdBand[] = [
+  { from: 60, to: 85, color: '#F0AB00', opacity: 0.1 },
+  { from: 85, to: 100, color: '#C9190B', opacity: 0.12 },
+]
+
 export function tintForPercent(pct: number | undefined): string | undefined {
   if (pct === undefined || !Number.isFinite(pct)) return undefined
   if (pct < 60)

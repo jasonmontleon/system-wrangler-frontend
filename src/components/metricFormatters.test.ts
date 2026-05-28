@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { describe, expect, it } from 'vitest'
-import { formatMountLabel } from './metricFormatters'
+import { formatMountLabel, PERCENT_ATTENTION_BANDS } from './metricFormatters'
 
 describe('formatMountLabel', () => {
   it('strips /System/Volumes/ prefix from macOS mountpoints', () => {
@@ -34,5 +34,24 @@ describe('formatMountLabel', () => {
 
   it('returns empty string when neither label is present', () => {
     expect(formatMountLabel({})).toBe('')
+  })
+})
+
+describe('PERCENT_ATTENTION_BANDS', () => {
+  it('defines contiguous warning and danger zones that hand off at 85%', () => {
+    const [warning, danger] = PERCENT_ATTENTION_BANDS
+    expect(warning).toEqual({
+      from: 60,
+      to: 85,
+      color: '#F0AB00',
+      opacity: 0.1,
+    })
+    expect(danger).toEqual({
+      from: 85,
+      to: 100,
+      color: '#C9190B',
+      opacity: 0.12,
+    })
+    expect(warning.to).toBe(danger.from)
   })
 })

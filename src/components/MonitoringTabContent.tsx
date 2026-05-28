@@ -46,7 +46,7 @@ import {
 import TimeRangePicker from './TimeRangePicker'
 import { TimeRangeProvider } from './TimeRangeProvider'
 import { DEFAULT_PRESET_SECONDS } from '../hooks/useTimeRange'
-import { formatMountLabel } from './metricFormatters'
+import { formatMountLabel, PERCENT_ATTENTION_BANDS } from './metricFormatters'
 
 type LoadState =
   | { kind: 'loading' }
@@ -243,6 +243,7 @@ export default function MonitoringTabContent({
                   title="CPU busy (%)"
                   promql={cpuBusyPct(systemId)}
                   yDomain={[0, 100]}
+                  thresholds={PERCENT_ATTENTION_BANDS}
                 />
               </GridItem>
               <GridItem md={6} sm={12}>
@@ -250,6 +251,7 @@ export default function MonitoringTabContent({
                   title="CPU iowait (%)"
                   promql={`avg(rate(node_cpu_seconds_total{system_id="${systemId}",mode="iowait"}[5m])) * 100`}
                   yDomain={[0, 100]}
+                  thresholds={PERCENT_ATTENTION_BANDS}
                 />
               </GridItem>
               <GridItem md={6} sm={12}>
@@ -257,6 +259,7 @@ export default function MonitoringTabContent({
                   title="Memory used (%)"
                   promql={memUsedPct(`{system_id="${systemId}"}`)}
                   yDomain={[0, 100]}
+                  thresholds={PERCENT_ATTENTION_BANDS}
                 />
               </GridItem>
               <GridItem md={6} sm={12}>
@@ -270,6 +273,7 @@ export default function MonitoringTabContent({
                   title="Swap used (%)"
                   promql={`(node_memory_SwapTotal_bytes{system_id="${systemId}"} - node_memory_SwapFree_bytes{system_id="${systemId}"}) / node_memory_SwapTotal_bytes{system_id="${systemId}"} * 100`}
                   yDomain={[0, 100]}
+                  thresholds={PERCENT_ATTENTION_BANDS}
                 />
               </GridItem>
               <GridItem md={6} sm={12}>
@@ -305,6 +309,7 @@ export default function MonitoringTabContent({
                   promql={fsUsedPctPerMount(systemId)}
                   yDomain={[0, 100]}
                   seriesLabel={formatMountLabel}
+                  thresholds={PERCENT_ATTENTION_BANDS}
                 />
               </GridItem>
               <GridItem md={6} sm={12}>

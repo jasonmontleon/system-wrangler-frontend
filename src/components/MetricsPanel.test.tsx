@@ -131,6 +131,52 @@ describe('MetricsPanel', () => {
     expect(url).toContain('step=15')
   })
 
+  it('renders threshold bands as ChartArea paths with the configured fill colors', async () => {
+    fetchMock.mockResolvedValue(
+      jsonResponse({
+        status: 'success',
+        data: {
+          resultType: 'matrix',
+          result: [
+            {
+              metric: { system_name: 'web-1' },
+              values: [
+                [1_716_000_000, '50'],
+                [1_716_000_015, '70'],
+              ],
+            },
+          ],
+        },
+      }),
+    )
+    const { container } = render(
+      <MetricsPanel
+        title="CPU"
+        promql="up"
+        refreshIntervalMs={1_000_000}
+        yDomain={[0, 100]}
+        thresholds={[
+          { from: 60, to: 85, color: '#F0AB00', opacity: 0.1 },
+          { from: 85, to: 100, color: '#C9190B', opacity: 0.12 },
+        ]}
+      />,
+    )
+    await waitFor(() => {
+      expect(screen.queryByText(/No samples/i)).toBeNull()
+    })
+    // Victory inlines style.data via the path's style attribute, and
+    // the browser CSS parser normalises hex colors to rgb(...). Look
+    // for the rgb equivalent of each configured band color.
+    const paths = Array.from(container.querySelectorAll('path'))
+    const styles = paths
+      .map((p) => p.getAttribute('style')?.toLowerCase() ?? '')
+      .join(' ')
+    expect(styles).toContain('rgb(240, 171, 0)') // #F0AB00 — warning
+    expect(styles).toContain('rgb(201, 25, 11)') // #C9190B — danger
+    expect(styles).toContain('fill-opacity: 0.1')
+    expect(styles).toContain('fill-opacity: 0.12')
+  })
+
   it('does not schedule a follow-up refresh in zoom mode', async () => {
     vi.useFakeTimers()
     fetchMock.mockResolvedValue(

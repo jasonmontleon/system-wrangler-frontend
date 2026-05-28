@@ -52,6 +52,7 @@ import LeaderboardCard, {
 import {
   formatBytesPerSec,
   formatPct,
+  PERCENT_ATTENTION_BANDS,
   tintForPending,
   tintForPercent,
 } from '../components/metricFormatters'
@@ -375,6 +376,7 @@ export default function DashboardPage() {
                 promql={cpuBusyPctGlobal()}
                 yDomain={[0, 100]}
                 seriesLabel={aggSeriesLabel}
+                thresholds={PERCENT_ATTENTION_BANDS}
               />
             </GridItem>
             <GridItem md={6} sm={12}>
@@ -383,6 +385,7 @@ export default function DashboardPage() {
                 promql={memUsedPctGlobal()}
                 yDomain={[0, 100]}
                 seriesLabel={aggSeriesLabel}
+                thresholds={PERCENT_ATTENTION_BANDS}
               />
             </GridItem>
             <GridItem md={6} sm={12}>
@@ -391,6 +394,7 @@ export default function DashboardPage() {
                 promql={fsUsedPctGlobal()}
                 yDomain={[0, 100]}
                 seriesLabel={aggSeriesLabel}
+                thresholds={PERCENT_ATTENTION_BANDS}
               />
             </GridItem>
             <GridItem md={6} sm={12}>
