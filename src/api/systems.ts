@@ -54,6 +54,13 @@ export type System = {
   // and click-to-filter without an N+1 per-row fetch. Absent / empty
   // when no labels are set on the system.
   labels?: Label[]
+  // rebootRequiredAt is the UTC timestamp of the most recent apply
+  // that emitted SW_REBOOT_REQUIRED:1 — the host is known to need a
+  // reboot to finish applying staged updates. Absent when the host is
+  // not in needs-reboot state. Cleared by a subsequent
+  // structurally-successful inspect/check/apply that does not re-emit
+  // the marker.
+  rebootRequiredAt?: string
 }
 
 export type SystemInput = {

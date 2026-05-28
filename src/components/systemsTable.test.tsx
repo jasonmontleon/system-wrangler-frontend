@@ -2,7 +2,7 @@
 
 import { describe, expect, it } from 'vitest'
 import { render, screen } from '@testing-library/react'
-import { PlatformIcon } from './systemsTable'
+import { PlatformIcon, SystemStatusIcon } from './systemsTable'
 
 describe('PlatformIcon', () => {
   it('renders the Linux icon with distribution as accessible label', () => {
@@ -71,5 +71,57 @@ describe('PlatformIcon', () => {
       />,
     )
     expect(screen.getAllByLabelText(/fedora 41/i).length).toBeGreaterThan(0)
+  })
+})
+
+describe('SystemStatusIcon', () => {
+  it('renders the reboot-required glyph when rebootRequiredAt is set on an otherwise-healthy host', () => {
+    render(
+      <SystemStatusIcon
+        status="reachable"
+        pendingUpdates={0}
+        lastRunFailed={false}
+        rebootRequired={true}
+      />,
+    )
+    expect(screen.getByLabelText('Reboot required')).toBeTruthy()
+    expect(screen.queryByLabelText('Up to date')).toBeNull()
+  })
+
+  it('keeps lastRunFailed precedence over reboot required', () => {
+    render(
+      <SystemStatusIcon
+        status="reachable"
+        pendingUpdates={0}
+        lastRunFailed={true}
+        rebootRequired={true}
+      />,
+    )
+    expect(screen.getByLabelText('Last run failed')).toBeTruthy()
+    expect(screen.queryByLabelText('Reboot required')).toBeNull()
+  })
+
+  it('keeps unreachable precedence over reboot required', () => {
+    render(
+      <SystemStatusIcon
+        status="unreachable"
+        pendingUpdates={undefined}
+        lastRunFailed={false}
+        rebootRequired={true}
+      />,
+    )
+    expect(screen.getByLabelText('Unreachable')).toBeTruthy()
+    expect(screen.queryByLabelText('Reboot required')).toBeNull()
+  })
+
+  it('falls through to up-to-date when rebootRequiredAt is absent', () => {
+    render(
+      <SystemStatusIcon
+        status="reachable"
+        pendingUpdates={0}
+        lastRunFailed={false}
+      />,
+    )
+    expect(screen.getByLabelText('Up to date')).toBeTruthy()
   })
 })

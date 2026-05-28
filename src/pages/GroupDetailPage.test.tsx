@@ -86,6 +86,11 @@ describe('GroupDetailPage', () => {
       if (url.startsWith('/api/label-styles')) {
         return Promise.resolve(jsonResponse({}))
       }
+      if (url.startsWith('/api/metrics/query')) {
+        return Promise.resolve(
+          jsonResponse({ status: 'success', data: { resultType: 'vector', result: [] } }),
+        )
+      }
       if (url === '/api/systems/bulk-event') {
         return Promise.resolve(new Response(null, { status: 204 }))
       }
@@ -111,6 +116,10 @@ describe('GroupDetailPage', () => {
         return Promise.resolve(jsonResponse(sampleGroup))
       if (url.startsWith('/api/label-styles'))
         return Promise.resolve(jsonResponse({}))
+      if (url.startsWith('/api/metrics/query'))
+        return Promise.resolve(
+          jsonResponse({ status: 'success', data: { resultType: 'vector', result: [] } }),
+        )
       if (url === '/api/systems/bulk-event')
         return Promise.resolve(new Response(null, { status: 204 }))
       if (url === '/api/systems' && method === 'GET')
@@ -174,6 +183,10 @@ describe('GroupDetailPage', () => {
         return Promise.resolve(jsonResponse(sampleGroup))
       if (url.startsWith('/api/label-styles'))
         return Promise.resolve(jsonResponse({}))
+      if (url.startsWith('/api/metrics/query'))
+        return Promise.resolve(
+          jsonResponse({ status: 'success', data: { resultType: 'vector', result: [] } }),
+        )
       if (url === '/api/systems/bulk-event')
         return Promise.resolve(new Response(null, { status: 204 }))
       if (url === '/api/systems' && method === 'GET')
@@ -400,6 +413,11 @@ describe('GroupDetailPage', () => {
       if (url.startsWith('/api/label-styles')) {
         return Promise.resolve(jsonResponse({}))
       }
+      if (url.startsWith('/api/metrics/query')) {
+        return Promise.resolve(
+          jsonResponse({ status: 'success', data: { resultType: 'vector', result: [] } }),
+        )
+      }
       if (url === '/api/systems/bulk-event') {
         return Promise.resolve(new Response(null, { status: 204 }))
       }
@@ -431,6 +449,11 @@ describe('GroupDetailPage', () => {
       }
       if (url.startsWith('/api/label-styles')) {
         return Promise.resolve(jsonResponse({}))
+      }
+      if (url.startsWith('/api/metrics/query')) {
+        return Promise.resolve(
+          jsonResponse({ status: 'success', data: { resultType: 'vector', result: [] } }),
+        )
       }
       if (url === '/api/systems/bulk-event') {
         return Promise.resolve(new Response(null, { status: 204 }))

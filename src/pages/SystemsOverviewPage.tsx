@@ -24,6 +24,7 @@ import { Table, Tbody, Td, Th, Thead, Tr } from '@patternfly/react-table'
 import { listSystems, type System } from '../api/systems'
 import { listGroups, type Group } from '../api/groups'
 import { query } from '../api/metrics'
+import { needsReboot, queryRebootRequiredSet } from '../util/rebootSignal'
 import { cpuBusyPct, fsUsedPctMax, memUsedPct } from '../api/promql'
 import { SystemStatusIcon, PendingUpdatesCell } from '../components/systemsTable'
 import {
@@ -103,6 +104,7 @@ export default function SystemsOverviewPage() {
     disk: new Map(),
   })
   const [lastRefreshedAt, setLastRefreshedAt] = useState<Date | null>(null)
+  const [rebootMetricSet, setRebootMetricSet] = useState<Set<string>>(new Set())
 
   useEffect(() => {
     let cancelled = false
@@ -131,10 +133,11 @@ export default function SystemsOverviewPage() {
     let cancelled = false
     async function tick() {
       try {
-        const [cpu, mem, disk] = await Promise.all([
+        const [cpu, mem, disk, rebootSet] = await Promise.all([
           query(PROMQL.cpu),
           query(PROMQL.mem),
           query(PROMQL.disk),
+          queryRebootRequiredSet(),
         ])
         if (cancelled) return
         setMetrics({
@@ -142,6 +145,7 @@ export default function SystemsOverviewPage() {
           mem: indexBySystemId(mem),
           disk: indexBySystemId(disk),
         })
+        setRebootMetricSet(rebootSet)
         setLastRefreshedAt(new Date())
       } catch {
         // A failed scrape leaves the previous values in place; cells
@@ -388,6 +392,7 @@ export default function SystemsOverviewPage() {
                               status={sys.status}
                               pendingUpdates={sys.pendingUpdates}
                               lastRunFailed={sys.lastRunFailed}
+                              rebootRequired={needsReboot(sys, rebootMetricSet)}
                             />
                           </Td>
                           <Td

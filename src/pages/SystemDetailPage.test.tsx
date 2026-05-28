@@ -110,10 +110,26 @@ describe('SystemDetailPage', () => {
       exitCode?: number
       logTail?: string
     }>
+    rebootMetricSystemIds?: string[]
   } = {}) {
     fetchMock.mockImplementation((input: RequestInfo) => {
       const url = typeof input === 'string' ? input : input.toString()
       if (url.endsWith('/api/me/scope')) return Promise.resolve(scopeAdmin())
+      if (url.startsWith('/api/metrics/query')) {
+        const ids = opts.rebootMetricSystemIds ?? []
+        return Promise.resolve(
+          jsonResponse({
+            status: 'success',
+            data: {
+              resultType: 'vector',
+              result: ids.map((id) => ({
+                metric: { system_id: id },
+                value: [0, '1'],
+              })),
+            },
+          }),
+        )
+      }
       if (url.match(/\/api\/systems\/[^/]+\/updaters$/)) {
         return Promise.resolve(jsonResponse({ updaters: opts.updaters ?? [dnfDetectedEnabled] }))
       }
@@ -586,6 +602,39 @@ describe('SystemDetailPage', () => {
     })
     renderRoute()
     expect(await screen.findByText('System Healthy')).toBeInTheDocument()
+  })
+
+  it('shows "Reboot Required" when only the exporter metric reports it (column NULL)', async () => {
+    seedHappy({
+      system: {
+        ...sampleSystem,
+        status: 'reachable',
+        pendingUpdates: 0,
+        lastCheckedAt: '2026-05-28T14:30:00Z',
+        // Note: no rebootRequiredAt — only the metric path lights this row.
+      },
+      rebootMetricSystemIds: ['host-1'],
+    })
+    renderRoute()
+    expect(await screen.findByText('Reboot Required')).toBeInTheDocument()
+    expect(screen.queryByText('System Healthy')).toBeNull()
+  })
+
+  it('shows "Reboot Required" on the health line and chip when rebootRequiredAt is set', async () => {
+    seedHappy({
+      system: {
+        ...sampleSystem,
+        status: 'reachable',
+        pendingUpdates: 0,
+        lastCheckedAt: '2026-05-28T14:30:00Z',
+        rebootRequiredAt: '2026-05-28T14:30:00Z',
+      },
+    })
+    renderRoute()
+    expect(await screen.findByText('Reboot Required')).toBeInTheDocument()
+    expect(screen.queryByText('System Healthy')).toBeNull()
+    expect(screen.getAllByText(/reboot required/i).length).toBeGreaterThan(1)
+    expect(screen.getByLabelText('Reboot required')).toBeTruthy()
   })
 
   it('omits the health line for an unprobed system', async () => {

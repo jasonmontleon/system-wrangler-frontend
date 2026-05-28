@@ -94,6 +94,8 @@ describe('SystemsPage', () => {
       const url = typeof input === 'string' ? input : input.toString()
       if (url.startsWith('/api/groups')) return Promise.resolve(jsonResponse([]))
       if (url.startsWith('/api/label-styles')) return Promise.resolve(jsonResponse({}))
+      if (url.startsWith('/api/metrics/query'))
+        return Promise.resolve(jsonResponse({ status: 'success', data: { resultType: 'vector', result: [] } }))
       if (url === '/api/systems/bulk-event') return Promise.resolve(new Response(null, { status: 204 }))
       // useScope mounts inside SystemsPage for the operate-action
       // gating. Short-circuit it to an empty scope so the existing
@@ -152,6 +154,46 @@ describe('SystemsPage', () => {
     // Checked system shows a formatted date + the integer count.
     expect(lastChecked(upRow).textContent).not.toMatch(/^Never$/)
     expect(updates(upRow)).toHaveTextContent('3')
+  })
+
+  it('lights the row glyph when the sw_reboot_required metric reports the host (column NULL)', async () => {
+    vi.stubGlobal('fetch', (input: FetchInput) => {
+      const url = typeof input === 'string' ? input : input.toString()
+      if (url.startsWith('/api/groups')) return Promise.resolve(jsonResponse([]))
+      if (url.startsWith('/api/label-styles')) return Promise.resolve(jsonResponse({}))
+      if (url === '/api/me/scope') return Promise.resolve(jsonResponse({ groups: {} }))
+      if (url === '/api/systems') {
+        return Promise.resolve(
+          jsonResponse([
+            system({
+              id: 'fed-1',
+              name: 'fed-1',
+              hostname: 'fed-1.example',
+              status: 'reachable',
+              pendingUpdates: 0,
+            }),
+          ]),
+        )
+      }
+      if (url.startsWith('/api/metrics/query')) {
+        return Promise.resolve(
+          jsonResponse({
+            status: 'success',
+            data: {
+              resultType: 'vector',
+              result: [{ metric: { system_id: 'fed-1' }, value: [0, '1'] }],
+            },
+          }),
+        )
+      }
+      return Promise.resolve(jsonResponse({}, 500))
+    })
+    render(<SystemsPage />)
+    const row = (await screen.findByText('fed-1')).closest('tr')!
+    await waitFor(() => {
+      expect(within(row).getByLabelText('Reboot required')).toBeTruthy()
+    })
+    expect(within(row).queryByLabelText('Up to date')).toBeNull()
   })
 
   it('opens Add system from the Actions menu, defaults Name from Hostname, and submits', async () => {
@@ -440,6 +482,8 @@ describe('SystemsPage', () => {
         return Promise.resolve(jsonResponse({ global: 'admin', groups: {} }))
       if (url.startsWith('/api/groups')) return Promise.resolve(jsonResponse([]))
       if (url.startsWith('/api/label-styles')) return Promise.resolve(jsonResponse({}))
+      if (url.startsWith('/api/metrics/query'))
+        return Promise.resolve(jsonResponse({ status: 'success', data: { resultType: 'vector', result: [] } }))
       if (url === '/api/systems/bulk-event') return Promise.resolve(new Response(null, { status: 204 }))
       if (url === '/api/systems' && method === 'GET') {
         listSystemsCalls++
@@ -507,6 +551,8 @@ describe('SystemsPage', () => {
         return Promise.resolve(jsonResponse({ global: 'admin', groups: {} }))
       if (url.startsWith('/api/groups')) return Promise.resolve(jsonResponse([]))
       if (url.startsWith('/api/label-styles')) return Promise.resolve(jsonResponse({}))
+      if (url.startsWith('/api/metrics/query'))
+        return Promise.resolve(jsonResponse({ status: 'success', data: { resultType: 'vector', result: [] } }))
       if (url === '/api/systems/bulk-event') return Promise.resolve(new Response(null, { status: 204 }))
       if (url === '/api/systems' && method === 'GET')
         return Promise.resolve(
@@ -598,6 +644,8 @@ describe('SystemsPage', () => {
         return Promise.resolve(jsonResponse({ global: 'admin', groups: {} }))
       if (url.startsWith('/api/groups')) return Promise.resolve(jsonResponse([]))
       if (url.startsWith('/api/label-styles')) return Promise.resolve(jsonResponse({}))
+      if (url.startsWith('/api/metrics/query'))
+        return Promise.resolve(jsonResponse({ status: 'success', data: { resultType: 'vector', result: [] } }))
       if (url === '/api/systems/bulk-event') return Promise.resolve(new Response(null, { status: 204 }))
       if (url === '/api/systems' && method === 'GET')
         return Promise.resolve(
@@ -662,6 +710,8 @@ describe('SystemsPage', () => {
         return Promise.resolve(jsonResponse({ global: 'admin', groups: {} }))
       if (url.startsWith('/api/groups')) return Promise.resolve(jsonResponse([]))
       if (url.startsWith('/api/label-styles')) return Promise.resolve(jsonResponse({}))
+      if (url.startsWith('/api/metrics/query'))
+        return Promise.resolve(jsonResponse({ status: 'success', data: { resultType: 'vector', result: [] } }))
       if (url === '/api/systems/bulk-event') return Promise.resolve(new Response(null, { status: 204 }))
       if (url === '/api/systems' && method === 'GET') {
         return Promise.resolve(
@@ -724,6 +774,8 @@ describe('SystemsPage', () => {
           return Promise.resolve(jsonResponse({ global: 'admin', groups: {} }))
         if (url.startsWith('/api/groups')) return Promise.resolve(jsonResponse([]))
       if (url.startsWith('/api/label-styles')) return Promise.resolve(jsonResponse({}))
+      if (url.startsWith('/api/metrics/query'))
+        return Promise.resolve(jsonResponse({ status: 'success', data: { resultType: 'vector', result: [] } }))
       if (url === '/api/systems/bulk-event') return Promise.resolve(new Response(null, { status: 204 }))
         if (url === '/api/systems' && method === 'GET') {
           return Promise.resolve(
@@ -789,6 +841,8 @@ describe('SystemsPage', () => {
           return Promise.resolve(jsonResponse({ global: 'admin', groups: {} }))
         if (url.startsWith('/api/groups')) return Promise.resolve(jsonResponse([]))
       if (url.startsWith('/api/label-styles')) return Promise.resolve(jsonResponse({}))
+      if (url.startsWith('/api/metrics/query'))
+        return Promise.resolve(jsonResponse({ status: 'success', data: { resultType: 'vector', result: [] } }))
       if (url === '/api/systems/bulk-event') return Promise.resolve(new Response(null, { status: 204 }))
         if (url === '/api/systems' && method === 'GET') {
           return Promise.resolve(
@@ -860,6 +914,8 @@ describe('SystemsPage', () => {
         return Promise.resolve(jsonResponse({ global: 'admin', groups: {} }))
       if (url.startsWith('/api/groups')) return Promise.resolve(jsonResponse([]))
       if (url.startsWith('/api/label-styles')) return Promise.resolve(jsonResponse({}))
+      if (url.startsWith('/api/metrics/query'))
+        return Promise.resolve(jsonResponse({ status: 'success', data: { resultType: 'vector', result: [] } }))
       if (url === '/api/systems/bulk-event') return Promise.resolve(new Response(null, { status: 204 }))
       if (url === '/api/systems' && method === 'GET') {
         return Promise.resolve(
@@ -934,6 +990,8 @@ describe('SystemsPage', () => {
         return Promise.resolve(jsonResponse({ global: 'admin', groups: {} }))
       if (url.startsWith('/api/groups')) return Promise.resolve(jsonResponse([]))
       if (url.startsWith('/api/label-styles')) return Promise.resolve(jsonResponse({}))
+      if (url.startsWith('/api/metrics/query'))
+        return Promise.resolve(jsonResponse({ status: 'success', data: { resultType: 'vector', result: [] } }))
       if (url === '/api/systems/bulk-event') return Promise.resolve(new Response(null, { status: 204 }))
       if (url === '/api/systems' && method === 'GET') {
         return Promise.resolve(
@@ -999,6 +1057,8 @@ describe('SystemsPage', () => {
         return Promise.resolve(jsonResponse({ global: 'admin', groups: {} }))
       if (url.startsWith('/api/groups')) return Promise.resolve(jsonResponse([]))
       if (url.startsWith('/api/label-styles')) return Promise.resolve(jsonResponse({}))
+      if (url.startsWith('/api/metrics/query'))
+        return Promise.resolve(jsonResponse({ status: 'success', data: { resultType: 'vector', result: [] } }))
       if (url === '/api/systems/bulk-event') return Promise.resolve(new Response(null, { status: 204 }))
       if (url === '/api/systems' && method === 'GET') {
         return Promise.resolve(
@@ -1173,6 +1233,8 @@ describe('SystemsPage', () => {
         return Promise.resolve(jsonResponse({ global: 'admin', groups: {} }))
       if (url.startsWith('/api/groups')) return Promise.resolve(jsonResponse([]))
       if (url.startsWith('/api/label-styles')) return Promise.resolve(jsonResponse({}))
+      if (url.startsWith('/api/metrics/query'))
+        return Promise.resolve(jsonResponse({ status: 'success', data: { resultType: 'vector', result: [] } }))
       if (url === '/api/systems/bulk-event') return Promise.resolve(new Response(null, { status: 204 }))
       if (url === '/api/systems' && method === 'GET') {
         listCalls++
@@ -1231,6 +1293,8 @@ describe('SystemsPage', () => {
         return Promise.resolve(jsonResponse({ global: 'admin', groups: {} }))
       if (url.startsWith('/api/groups')) return Promise.resolve(jsonResponse([]))
       if (url.startsWith('/api/label-styles')) return Promise.resolve(jsonResponse({}))
+      if (url.startsWith('/api/metrics/query'))
+        return Promise.resolve(jsonResponse({ status: 'success', data: { resultType: 'vector', result: [] } }))
       if (url === '/api/systems/bulk-event') return Promise.resolve(new Response(null, { status: 204 }))
       if (url === '/api/systems' && method === 'GET') {
         return Promise.resolve(

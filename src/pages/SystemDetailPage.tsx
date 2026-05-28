@@ -40,12 +40,14 @@ import {
   CheckCircleIcon,
   ExclamationTriangleIcon,
   OutlinedHddIcon,
+  RebootingIcon,
   TimesCircleIcon,
   VirtualMachineIcon,
 } from '@patternfly/react-icons'
 import { PlatformIcon } from '../components/systemsTable'
 import { Link, useParams } from 'react-router-dom'
 import { ApiError, getSystem, type System } from '../api/systems'
+import { needsReboot, queryRebootRequiredSet } from '../util/rebootSignal'
 import {
   applyUpdater,
   checkUpdater,
@@ -122,6 +124,7 @@ export default function SystemDetailPage() {
   const [actionError, setActionError] = useState<string | null>(null)
   const [busy, setBusy] = useState<string | null>(null)
   const [activeTab, setActiveTab] = useState<TabKey>('overview')
+  const [rebootMetricSet, setRebootMetricSet] = useState<Set<string>>(new Set())
 
   const refresh = useCallback(async () => {
     if (!systemId) {
@@ -158,6 +161,21 @@ export default function SystemDetailPage() {
   useEffect(() => {
     void refresh()
   }, [refresh])
+
+  useEffect(() => {
+    let cancelled = false
+    queryRebootRequiredSet()
+      .then((s) => {
+        if (!cancelled) setRebootMetricSet(s)
+      })
+      .catch(() => {
+        // Prometheus may be unreachable on a fresh install; the
+        // column-only signal still drives the chip.
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [systemId])
 
   // Subscribe to `systems.changed` so a run that ends in another tab
   // (or against another system) flips this page's running flag and
@@ -337,6 +355,7 @@ export default function SystemDetailPage() {
                     status={state.system.status}
                     pendingUpdates={state.system.pendingUpdates}
                     lastRunFailed={state.system.lastRunFailed}
+                    rebootRequired={needsReboot(state.system, rebootMetricSet)}
                   />
                   {state.system.name}
                 </span>
@@ -344,6 +363,12 @@ export default function SystemDetailPage() {
               <small>
                 {state.system.hostname} ·{' '}
                 <StatusBadge status={state.system.status} />
+                {needsReboot(state.system, rebootMetricSet) && (
+                  <>
+                    {' '}
+                    <RebootRequiredBadge at={state.system.rebootRequiredAt} />
+                  </>
+                )}
               </small>
             </StackItem>
             <StackItem>
@@ -399,7 +424,10 @@ export default function SystemDetailPage() {
                   </Toolbar>
                 </StackItem>
                 <StackItem>
-                  <SystemInfoCard system={state.system} />
+                  <SystemInfoCard
+                    system={state.system}
+                    rebootMetricSet={rebootMetricSet}
+                  />
                 </StackItem>
                 <StackItem>
                   <SystemLabelsCard
@@ -517,18 +545,40 @@ function StatusBadge({ status }: { status: System['status'] }) {
   return <Label color={c.color}>{c.text}</Label>
 }
 
+// RebootRequiredBadge surfaces the needs-reboot signal as an orange
+// chip next to the StatusBadge. When the column carried the
+// SW-recorded timestamp, the tooltip discloses since when; when only
+// the exporter metric is reporting (no column-stamp yet because no
+// apply emitted the marker), the tooltip names the metric source.
+function RebootRequiredBadge({ at }: { at: string | undefined }) {
+  let title: string
+  if (at) {
+    const when = new Date(at)
+    title = `Reboot required since ${Number.isNaN(when.getTime()) ? at : when.toLocaleString()}`
+  } else {
+    title = 'Reboot required (reported by exporter)'
+  }
+  return (
+    <Label color="orange" icon={<RebootingIcon />} title={title}>
+      Reboot required
+    </Label>
+  )
+}
+
 // SystemHealthIcon mirrors SystemsPage's row glyph on the detail
 // header. Precedence (most-actionable wins): unreachable → red,
-// last-run failed → red, reachable+pending → yellow, reachable+0 →
-// green, unprobed → no icon.
+// last-run failed → red, reboot required → orange, reachable+pending
+// → yellow, reachable+0 → green, unprobed → no icon.
 function SystemHealthIcon({
   status,
   pendingUpdates,
   lastRunFailed,
+  rebootRequired,
 }: {
   status: System['status']
   pendingUpdates: number | undefined
   lastRunFailed: boolean | undefined
+  rebootRequired: boolean
 }) {
   if (status === 'unreachable') {
     return (
@@ -543,6 +593,14 @@ function SystemHealthIcon({
       <TimesCircleIcon
         aria-label="Last run failed"
         color="var(--pf-t--global--icon--color--status--danger--default)"
+      />
+    )
+  }
+  if (rebootRequired) {
+    return (
+      <RebootingIcon
+        aria-label="Reboot required"
+        color="var(--pf-t--global--icon--color--status--warning--default)"
       />
     )
   }
@@ -571,11 +629,12 @@ function SystemHealthIcon({
 // because we have no probe data to verdict on.
 type HealthSummary =
   | { kind: 'attention'; reason: string }
+  | { kind: 'reboot' }
   | { kind: 'updates' }
   | { kind: 'healthy' }
   | null
 
-function healthSummaryFor(system: System): HealthSummary {
+function healthSummaryFor(system: System, rebootMetricSet: Set<string>): HealthSummary {
   if (system.status === 'unreachable') {
     return { kind: 'attention', reason: 'Unreachable' }
   }
@@ -587,6 +646,9 @@ function healthSummaryFor(system: System): HealthSummary {
         : 'Last run failed',
     }
   }
+  if (needsReboot(system, rebootMetricSet)) {
+    return { kind: 'reboot' }
+  }
   if (system.status === 'reachable' && system.pendingUpdates !== undefined) {
     return system.pendingUpdates === 0
       ? { kind: 'healthy' }
@@ -595,8 +657,14 @@ function healthSummaryFor(system: System): HealthSummary {
   return null
 }
 
-function HealthSummaryLine({ system }: { system: System }) {
-  const summary = healthSummaryFor(system)
+function HealthSummaryLine({
+  system,
+  rebootMetricSet,
+}: {
+  system: System
+  rebootMetricSet: Set<string>
+}) {
+  const summary = healthSummaryFor(system, rebootMetricSet)
   if (!summary) return null
   if (summary.kind === 'attention') {
     return (
@@ -612,6 +680,23 @@ function HealthSummaryLine({ system }: { system: System }) {
           color="var(--pf-t--global--icon--color--status--danger--default)"
         />
         Needs Attention: {summary.reason}
+      </span>
+    )
+  }
+  if (summary.kind === 'reboot') {
+    return (
+      <span
+        style={{
+          display: 'inline-flex',
+          alignItems: 'center',
+          gap: '0.5rem',
+        }}
+      >
+        <RebootingIcon
+          aria-hidden
+          color="var(--pf-t--global--icon--color--status--warning--default)"
+        />
+        Reboot Required
       </span>
     )
   }
@@ -1008,10 +1093,16 @@ function extractActionError(err: unknown): string {
 // live as columns on the Systems table. As we ingest more data
 // from node_exporter (CPU, memory, OS release, kernel, etc.)
 // they slot in here without further restructure.
-function SystemInfoCard({ system }: { system: System }) {
+function SystemInfoCard({
+  system,
+  rebootMetricSet,
+}: {
+  system: System
+  rebootMetricSet: Set<string>
+}) {
   const lastSeen = formatDateOrFallback(system.lastSeen, 'Never')
   const createdAt = formatDateOrFallback(system.createdAt, '—')
-  const health = healthSummaryFor(system)
+  const health = healthSummaryFor(system, rebootMetricSet)
   return (
     <Card>
       <CardTitle>System information</CardTitle>
@@ -1021,7 +1112,7 @@ function SystemInfoCard({ system }: { system: System }) {
             <DescriptionListGroup>
               <DescriptionListTerm>Health</DescriptionListTerm>
               <DescriptionListDescription>
-                <HealthSummaryLine system={system} />
+                <HealthSummaryLine system={system} rebootMetricSet={rebootMetricSet} />
               </DescriptionListDescription>
             </DescriptionListGroup>
           )}

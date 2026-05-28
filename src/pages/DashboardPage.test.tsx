@@ -26,10 +26,11 @@ function metricVector(values: Record<string, number>): Response {
   })
 }
 
-const emptyVector = jsonResponse({
-  status: 'success',
-  data: { resultType: 'vector', result: [] },
-})
+const emptyVector = () =>
+  jsonResponse({
+    status: 'success',
+    data: { resultType: 'vector', result: [] },
+  })
 
 function sys(overrides: Partial<System>): System {
   return {
@@ -63,7 +64,7 @@ describe('DashboardPage', () => {
       const url = String(input)
       if (url === '/api/health') return Promise.resolve(jsonResponse({ status: 'ok' }))
       if (url === '/api/systems') return Promise.resolve(jsonResponse([]))
-      if (url.includes('/api/metrics/query?')) return Promise.resolve(emptyVector)
+      if (url.includes('/api/metrics/query?')) return Promise.resolve(emptyVector())
       return Promise.resolve(jsonResponse({}, 500))
     })
     render(
@@ -74,10 +75,11 @@ describe('DashboardPage', () => {
     expect(await screen.findByText(/No systems yet/i)).toBeInTheDocument()
   })
 
-  it('tallies systems into the five health buckets with precedence', async () => {
+  it('tallies systems into the six health buckets with precedence', async () => {
     // Precedence rule from SystemStatusIcon:
     //   unreachable → red
     //   lastRunFailed → red (Failed run bucket)
+    //   rebootRequiredAt set → orange (Reboot required)
     //   reachable + pending > 0 → yellow
     //   reachable + pending = 0 → green
     //   anything else (unprobed / never checked) → grey
@@ -90,13 +92,19 @@ describe('DashboardPage', () => {
       sys({ status: 'unreachable' }), // unreachable (precedence)
       // lastRunFailed must win over pending > 0:
       sys({ status: 'reachable', pendingUpdates: 5, lastRunFailed: true }),
+      // rebootRequiredAt must win over a pending=0 "healthy" classification:
+      sys({
+        status: 'reachable',
+        pendingUpdates: 0,
+        rebootRequiredAt: '2026-05-28T14:30:00Z',
+      }),
       sys({ status: 'unprobed' }), // unknown
     ]
     vi.stubGlobal('fetch', (input: RequestInfo | URL) => {
       const url = String(input)
       if (url === '/api/health') return Promise.resolve(jsonResponse({ status: 'ok' }))
       if (url === '/api/systems') return Promise.resolve(jsonResponse(systems))
-      if (url.includes('/api/metrics/query?')) return Promise.resolve(emptyVector)
+      if (url.includes('/api/metrics/query?')) return Promise.resolve(emptyVector())
       return Promise.resolve(jsonResponse({}, 500))
     })
     render(
@@ -108,6 +116,7 @@ describe('DashboardPage', () => {
     await screen.findByLabelText('Healthy count')
     expect(screen.getByLabelText('Healthy count').textContent).toBe('2')
     expect(screen.getByLabelText('Updates available count').textContent).toBe('3')
+    expect(screen.getByLabelText('Reboot required count').textContent).toBe('1')
     expect(screen.getByLabelText('Unreachable count').textContent).toBe('1')
     expect(screen.getByLabelText('Failed run count').textContent).toBe('1')
     expect(screen.getByLabelText('Unknown count').textContent).toBe('1')
@@ -119,7 +128,7 @@ describe('DashboardPage', () => {
       if (url === '/api/health') return Promise.resolve(jsonResponse({ status: 'ok' }))
       if (url === '/api/systems')
         return Promise.resolve(jsonResponse({ error: 'down' }, 500))
-      if (url.includes('/api/metrics/query?')) return Promise.resolve(emptyVector)
+      if (url.includes('/api/metrics/query?')) return Promise.resolve(emptyVector())
       return Promise.resolve(jsonResponse({}, 500))
     })
     render(
@@ -167,7 +176,7 @@ describe('DashboardPage', () => {
             metricVector({ 'sys-1': 10_000_000, 'sys-2': 500 }),
           )
         }
-        return Promise.resolve(emptyVector)
+        return Promise.resolve(emptyVector())
       }
       return Promise.resolve(jsonResponse({}, 500))
     })
@@ -227,7 +236,7 @@ describe('DashboardPage', () => {
       const url = String(input)
       if (url === '/api/health') return Promise.resolve(jsonResponse({ status: 'ok' }))
       if (url === '/api/systems') return Promise.resolve(jsonResponse(systems))
-      if (url.includes('/api/metrics/query?')) return Promise.resolve(emptyVector)
+      if (url.includes('/api/metrics/query?')) return Promise.resolve(emptyVector())
       return Promise.resolve(jsonResponse({}, 500))
     })
     render(

@@ -28,6 +28,7 @@ import { ChartDonut } from '@patternfly/react-charts/victory'
 import { apiFetch } from '../api/client'
 import { listSystems, type System } from '../api/systems'
 import { query } from '../api/metrics'
+import { queryRebootRequiredSet } from '../util/rebootSignal'
 import {
   cpuBusyPct,
   diskIoBytesPerSec,
@@ -82,12 +83,13 @@ function indexBySystemId(
   return map
 }
 
-// HealthBucket is one of five mutually exclusive states each system
+// HealthBucket is one of six mutually exclusive states each system
 // rolls up to. The precedence matches SystemStatusIcon so the donut
 // can't disagree with the per-row glyph on the Systems page.
 type HealthBucket =
   | 'healthy'
   | 'updates'
+  | 'reboot'
   | 'unreachable'
   | 'failed'
   | 'unknown'
@@ -105,30 +107,36 @@ type BucketSpec = {
 const BUCKETS: BucketSpec[] = [
   { key: 'healthy', label: 'Healthy', color: '#3E8635' },
   { key: 'updates', label: 'Updates available', color: '#F0AB00' },
+  { key: 'reboot', label: 'Reboot required', color: '#EC7A08' },
   { key: 'unreachable', label: 'Unreachable', color: '#C9190B' },
   { key: 'failed', label: 'Failed run', color: '#7D1007' },
   { key: 'unknown', label: 'Unknown', color: '#8A8D90' },
 ]
 
-function classify(s: System): HealthBucket {
+function classify(s: System, rebootMetricSet: Set<string>): HealthBucket {
   if (s.status === 'unreachable') return 'unreachable'
   if (s.lastRunFailed) return 'failed'
+  if (s.rebootRequiredAt || rebootMetricSet.has(s.id)) return 'reboot'
   if (s.status === 'reachable' && s.pendingUpdates !== undefined) {
     return s.pendingUpdates === 0 ? 'healthy' : 'updates'
   }
   return 'unknown'
 }
 
-function tally(systems: System[]): Record<HealthBucket, number> {
+function tally(
+  systems: System[],
+  rebootMetricSet: Set<string>,
+): Record<HealthBucket, number> {
   const out: Record<HealthBucket, number> = {
     healthy: 0,
     updates: 0,
+    reboot: 0,
     unreachable: 0,
     failed: 0,
     unknown: 0,
   }
   for (const s of systems) {
-    out[classify(s)] += 1
+    out[classify(s, rebootMetricSet)] += 1
   }
   return out
 }
@@ -138,6 +146,7 @@ export default function DashboardPage() {
   const [healthError, setHealthError] = useState<string | null>(null)
   const [systems, setSystems] = useState<System[] | null>(null)
   const [systemsError, setSystemsError] = useState<string | null>(null)
+  const [rebootMetricSet, setRebootMetricSet] = useState<Set<string>>(new Set())
   const [metrics, setMetrics] = useState<DashboardMetrics>({
     cpu: new Map(),
     mem: new Map(),
@@ -196,14 +205,16 @@ export default function DashboardPage() {
     let cancelled = false
     async function tick() {
       try {
-        const [cpu, mem, disk, netIo, diskIo] = await Promise.all([
+        const [cpu, mem, disk, netIo, diskIo, rebootSet] = await Promise.all([
           query(PROMQL.cpu),
           query(PROMQL.mem),
           query(PROMQL.disk),
           query(PROMQL.netIo),
           query(PROMQL.diskIo),
+          queryRebootRequiredSet(),
         ])
         if (cancelled) return
+        setRebootMetricSet(rebootSet)
         setMetrics({
           cpu: indexBySystemId(cpu),
           mem: indexBySystemId(mem),
@@ -269,6 +280,7 @@ export default function DashboardPage() {
             <SystemHealthCard
               systems={systems}
               loadError={systemsError}
+              rebootMetricSet={rebootMetricSet}
             />
           </MasonryItem>
           <MasonryItem>
@@ -357,13 +369,15 @@ function MasonryItem({ children }: { children: ReactNode }) {
 function SystemHealthCard({
   systems,
   loadError,
+  rebootMetricSet,
 }: {
   systems: System[] | null
   loadError: string | null
+  rebootMetricSet: Set<string>
 }) {
   const counts = useMemo(
-    () => (systems ? tally(systems) : null),
-    [systems],
+    () => (systems ? tally(systems, rebootMetricSet) : null),
+    [systems, rebootMetricSet],
   )
   const total = systems?.length ?? 0
 

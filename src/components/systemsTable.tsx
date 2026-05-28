@@ -6,6 +6,7 @@ import {
   ExclamationTriangleIcon,
   FreebsdIcon,
   LinuxIcon,
+  RebootingIcon,
   TimesCircleIcon,
   WindowsIcon,
 } from '@patternfly/react-icons'
@@ -20,16 +21,21 @@ import { formatPendingUpdates } from './systemsTableHelpers'
 // so Vite's fast-refresh rule stays satisfied.
 
 // SystemStatusIcon is the per-row health glyph. Precedence:
-// unreachable → red, last-run failed → red, pending > 0 → yellow,
-// pending = 0 → green, unprobed / never-checked → no icon.
+// unreachable → red, last-run failed → red, reboot required → orange,
+// pending > 0 → yellow, pending = 0 → green, unprobed / never-
+// checked → no icon. The reboot-required slot sits above pending so
+// a host that finished applying updates but hasn't been rebooted
+// doesn't look "healthy."
 export function SystemStatusIcon({
   status,
   pendingUpdates,
   lastRunFailed,
+  rebootRequired,
 }: {
   status: SystemStatus
   pendingUpdates: number | undefined
   lastRunFailed: boolean | undefined
+  rebootRequired?: boolean
 }) {
   if (status === 'unreachable') {
     return (
@@ -44,6 +50,14 @@ export function SystemStatusIcon({
       <TimesCircleIcon
         aria-label="Last run failed"
         color="var(--pf-t--global--icon--color--status--danger--default)"
+      />
+    )
+  }
+  if (rebootRequired) {
+    return (
+      <RebootingIcon
+        aria-label="Reboot required"
+        color="var(--pf-t--global--icon--color--status--warning--default)"
       />
     )
   }
