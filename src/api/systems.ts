@@ -130,7 +130,7 @@ export async function deleteSystem(id: string): Promise<void> {
 export type BulkSkipped = { systemId: string; reason: string }
 
 export async function recordBulkEvent(input: {
-  action: 'check' | 'apply'
+  action: 'check' | 'apply' | 'label.set' | 'label.delete'
   selector?: string
   systemIds: string[]
   skipped?: BulkSkipped[]

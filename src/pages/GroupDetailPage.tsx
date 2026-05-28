@@ -62,7 +62,14 @@ import { useEventStream } from '../hooks/useEventStream'
 import { useLabelStyles } from '../hooks/useLabelStyles'
 import { useMediaQuery } from '../hooks/useMediaQuery'
 import { interpretLabelInput } from '../lib/labelSelectorPartition'
+import BulkLabelModal from '../components/BulkLabelModal'
 import FanOutOutcomesPanel from '../components/FanOutOutcomesPanel'
+import {
+  deleteSystemLabel,
+  setSystemLabel,
+} from '../api/labels'
+import { deleteLabelStyle, setLabelStyle } from '../api/labelStyles'
+import type { ColorChoice } from '../components/BulkLabelModal'
 import SystemLabelsCell from '../components/SystemLabelsCell'
 import {
   PendingUpdatesCell,
@@ -99,6 +106,17 @@ type SortKey =
   | 'lastChecked'
   | 'pendingUpdates'
 type SortDir = 'asc' | 'desc'
+
+// LabelBulkOutcome summarises a bulk add/remove run for the
+// post-run alert. See SystemsPage.tsx for the equivalent type;
+// duplicated locally to keep the page self-contained.
+type LabelBulkOutcome = {
+  mode: 'add' | 'remove'
+  keyText: string
+  ok: number
+  failed: { systemName: string; reason: string }[]
+  skipped: { systemName: string; reason: string }[]
+}
 
 type Confirm =
   | { kind: 'remove-one'; system: System }
@@ -180,6 +198,10 @@ export default function GroupDetailPage() {
   const [sizeOpen, setSizeOpen] = useState(false)
   const [actionsOpen, setActionsOpen] = useState(false)
   const [selected, setSelected] = useState<Set<string>>(new Set())
+  const [bulkLabelMode, setBulkLabelMode] = useState<'add' | 'remove' | null>(
+    null,
+  )
+  const [labelOutcome, setLabelOutcome] = useState<LabelBulkOutcome | null>(null)
   // Updater fan-out state, mirroring SystemsPage. The same
   // FanOutOutcomesPanel renders the results so the operator sees
   // an identical confirmation surface across pages.
@@ -367,6 +389,104 @@ export default function GroupDetailPage() {
       }),
     )
     setUpdaterOutcomes([...outcomes, ...skipped])
+    await refresh()
+  }
+
+  const runBulkLabel = async (
+    mode: 'add' | 'remove',
+    key: string,
+    value: string | null,
+    color: ColorChoice,
+    targets: System[],
+  ) => {
+    if (targets.length === 0) return
+    setLabelOutcome(null)
+    const skipped: { systemId: string; systemName: string; reason: string }[] =
+      []
+    const operable: System[] = []
+    for (const s of targets) {
+      if (!canOperateSystem(s)) {
+        skipped.push({
+          systemId: s.id,
+          systemName: s.name,
+          reason: 'No operator permission on this system.',
+        })
+        continue
+      }
+      operable.push(s)
+    }
+    const keyText = value === null ? key : `${key}=${value}`
+    try {
+      await recordBulkEvent({
+        action: mode === 'add' ? 'label.set' : 'label.delete',
+        selector: labelSelector || undefined,
+        systemIds: operable.map((s) => s.id),
+        skipped: skipped.map((o) => ({
+          systemId: o.systemId,
+          reason: o.reason,
+        })),
+      })
+    } catch (err) {
+      console.warn('bulk-event audit failed', err)
+    }
+    let colorFailure: string | null = null
+    if (mode === 'add' && color !== null) {
+      try {
+        if (color === 'auto') await deleteLabelStyle(key)
+        else await setLabelStyle(key, color)
+      } catch (err) {
+        if (
+          color === 'auto' &&
+          err instanceof ApiError &&
+          err.status === 404
+        ) {
+          // no-op, override didn't exist
+        } else {
+          colorFailure = err instanceof Error ? err.message : String(err)
+        }
+      }
+    }
+    const failed: { systemName: string; reason: string }[] = []
+    const ok: System[] = []
+    if (colorFailure) {
+      failed.push({ systemName: `(color for ${key})`, reason: colorFailure })
+    }
+    await Promise.all(
+      operable.map(async (s) => {
+        try {
+          if (mode === 'add') {
+            await setSystemLabel(s.id, key, value)
+          } else {
+            await deleteSystemLabel(s.id, key)
+          }
+          ok.push(s)
+        } catch (err) {
+          if (
+            mode === 'remove' &&
+            err instanceof ApiError &&
+            err.status === 404
+          ) {
+            skipped.push({
+              systemId: s.id,
+              systemName: s.name,
+              reason: `Label "${key}" was not set on this system.`,
+            })
+            return
+          }
+          failed.push({
+            systemName: s.name,
+            reason: err instanceof Error ? err.message : String(err),
+          })
+        }
+      }),
+    )
+    setLabelOutcome({
+      mode,
+      keyText,
+      ok: ok.length,
+      failed,
+      skipped: skipped.map((s) => ({ systemName: s.systemName, reason: s.reason })),
+    })
     await refresh()
   }
 
@@ -579,11 +699,20 @@ export default function GroupDetailPage() {
 
   const toggleAllVisible = (checked: boolean) => {
     setSelected((prev) => {
+      if (!checked) {
+        // See SystemsPage.tsx for the rationale: an expanded
+        // selection (every matching row picked, typically via the
+        // banner) clears wholesale on untick so off-page rows don't
+        // linger invisibly.
+        const allMatchingSelected =
+          sorted.length > 0 && sorted.every((s) => prev.has(s.id))
+        if (allMatchingSelected) return new Set()
+        const next = new Set(prev)
+        visible.forEach((s) => next.delete(s.id))
+        return next
+      }
       const next = new Set(prev)
-      visible.forEach((s) => {
-        if (checked) next.add(s.id)
-        else next.delete(s.id)
-      })
+      visible.forEach((s) => next.add(s.id))
       return next
     })
   }
@@ -739,6 +868,10 @@ export default function GroupDetailPage() {
                   if (value === 'update-package') {
                     setTargetedOpen(true)
                   }
+                  if (value === 'label-add' || value === 'label-remove') {
+                    if (selected.size === 0) return
+                    setBulkLabelMode(value === 'label-add' ? 'add' : 'remove')
+                  }
                 }}
                 onOpenChange={(open) => setActionsOpen(open)}
                 toggle={(ref: React.Ref<MenuToggleElement>) => (
@@ -779,6 +912,22 @@ export default function GroupDetailPage() {
                     isDisabled={selectionCount === 0 || busyCount > 0}
                   >
                     Update package…
+                    {selectionCount > 0 ? ` (${selectionCount})` : ''}
+                  </DropdownItem>
+                  <DropdownItem
+                    value="label-add"
+                    key="label-add"
+                    isDisabled={selectionCount === 0}
+                  >
+                    Add label…
+                    {selectionCount > 0 ? ` (${selectionCount})` : ''}
+                  </DropdownItem>
+                  <DropdownItem
+                    value="label-remove"
+                    key="label-remove"
+                    isDisabled={selectionCount === 0}
+                  >
+                    Remove label…
                     {selectionCount > 0 ? ` (${selectionCount})` : ''}
                   </DropdownItem>
                   <DropdownItem
@@ -847,6 +996,64 @@ export default function GroupDetailPage() {
             }
           >
             {actionError}
+          </Alert>
+        )}
+        {labelOutcome && (
+          <Alert
+            variant={
+              labelOutcome.failed.length > 0
+                ? 'warning'
+                : labelOutcome.ok === 0
+                  ? 'info'
+                  : 'success'
+            }
+            isInline
+            title={
+              labelOutcome.mode === 'add'
+                ? `Added ${labelOutcome.keyText} to ${labelOutcome.ok} ${
+                    labelOutcome.ok === 1 ? 'system' : 'systems'
+                  }`
+                : `Removed ${labelOutcome.keyText} from ${labelOutcome.ok} ${
+                    labelOutcome.ok === 1 ? 'system' : 'systems'
+                  }`
+            }
+            actionClose={
+              <Button
+                variant="plain"
+                onClick={() => setLabelOutcome(null)}
+                aria-label="Dismiss"
+              >
+                ×
+              </Button>
+            }
+          >
+            {labelOutcome.failed.length > 0 && (
+              <div>
+                <strong>
+                  {labelOutcome.failed.length}{' '}
+                  {labelOutcome.failed.length === 1 ? 'failure' : 'failures'}:
+                </strong>
+                <ul style={{ margin: '0.25rem 0 0 1.25rem' }}>
+                  {labelOutcome.failed.map((f) => (
+                    <li key={f.systemName}>
+                      <code>{f.systemName}</code> — {f.reason}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+            {labelOutcome.skipped.length > 0 && (
+              <div style={{ marginTop: labelOutcome.failed.length > 0 ? '0.5rem' : 0 }}>
+                <strong>{labelOutcome.skipped.length} skipped:</strong>
+                <ul style={{ margin: '0.25rem 0 0 1.25rem' }}>
+                  {labelOutcome.skipped.map((s) => (
+                    <li key={s.systemName}>
+                      <code>{s.systemName}</code> — {s.reason}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
           </Alert>
         )}
         {updaterOutcomes && (
@@ -1208,6 +1415,19 @@ export default function GroupDetailPage() {
             setTargetedOpen(false)
           }
         }}
+      />
+      <BulkLabelModal
+        isOpen={bulkLabelMode !== null}
+        mode={bulkLabelMode ?? 'add'}
+        count={selectionCount}
+        canManageStyles={isGlobalAdmin(scopeState)}
+        onSubmit={async (key, value, color) => {
+          const targets = members.filter((s) => selected.has(s.id))
+          const mode = bulkLabelMode ?? 'add'
+          setBulkLabelMode(null)
+          await runBulkLabel(mode, key, value, color, targets)
+        }}
+        onClose={() => setBulkLabelMode(null)}
       />
     </>
   )

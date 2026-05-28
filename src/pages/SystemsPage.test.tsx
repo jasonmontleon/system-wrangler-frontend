@@ -1442,4 +1442,151 @@ describe('SystemsPage', () => {
       screen.queryByText(/select all 30 matching systems/i),
     ).not.toBeInTheDocument()
   })
+
+  it('clears off-page selections when the header check is unticked after a banner expand', async () => {
+    const many = Array.from({ length: 30 }, (_, i) =>
+      system({
+        id: `s${i}`,
+        name: `host-${i}`,
+        hostname: `${i}.example`,
+        status: 'reachable',
+      }),
+    )
+    fetchMock.mockResolvedValueOnce(jsonResponse(many))
+    render(<SystemsPage />)
+    await screen.findByText('host-0')
+
+    const headerCheckbox = () => screen.getAllByRole('checkbox')[0]
+    fireEvent.click(headerCheckbox())
+    fireEvent.click(
+      await screen.findByRole('button', {
+        name: /select all 30 matching systems/i,
+      }),
+    )
+
+    // Untick the header check. Because every matching row is in
+    // the set (banner expanded), this should wipe the entire
+    // selection — not just the visible 25.
+    fireEvent.click(headerCheckbox())
+
+    // Re-ticking should land us back in the page-only state — the
+    // banner reappears because not every matching row is selected
+    // yet.
+    fireEvent.click(headerCheckbox())
+    expect(
+      await screen.findByText(/select all 30 matching systems/i),
+    ).toBeInTheDocument()
+  })
+
+  it('bulk Add label PUTs the chosen key=value across selected systems', async () => {
+    vi.unstubAllGlobals()
+    const labelPuts: { url: string; body: string }[] = []
+    const wrapped = (input: FetchInput, init?: FetchInit) => {
+      const url = typeof input === 'string' ? input : input.toString()
+      const method = init?.method ?? 'GET'
+      if (url === '/api/me/scope')
+        return Promise.resolve(jsonResponse({ global: 'admin', groups: {} }))
+      if (url.startsWith('/api/groups')) return Promise.resolve(jsonResponse([]))
+      if (url.startsWith('/api/label-styles'))
+        return Promise.resolve(jsonResponse({}))
+      if (url === '/api/systems/bulk-event')
+        return Promise.resolve(new Response(null, { status: 204 }))
+      if (url === '/api/systems' && method === 'GET') {
+        return Promise.resolve(
+          jsonResponse([
+            system({ id: 'a', name: 'host-a', hostname: 'a.example' }),
+            system({ id: 'b', name: 'host-b', hostname: 'b.example' }),
+          ]),
+        )
+      }
+      if (url.match(/^\/api\/systems\/[^/]+\/labels\/[^/]+$/) && method === 'PUT') {
+        labelPuts.push({ url, body: String(init?.body ?? '') })
+        return Promise.resolve(
+          jsonResponse({ key: 'env', value: 'prod' }),
+        )
+      }
+      return Promise.resolve(jsonResponse({}, 500))
+    }
+    vi.stubGlobal('fetch', wrapped)
+    vi.stubGlobal('EventSource', FakeEventSource)
+
+    render(<SystemsPage />)
+    await screen.findByText('host-a')
+
+    // Select all rows via the header checkbox.
+    fireEvent.click(screen.getAllByRole('checkbox')[0])
+
+    // Open the Actions menu and pick "Add label..."
+    fireEvent.click(screen.getByRole('button', { name: /^actions$/i }))
+    fireEvent.click(screen.getByRole('menuitem', { name: /add label/i }))
+
+    fireEvent.change(screen.getByLabelText('Label'), {
+      target: { value: 'env=prod' },
+    })
+    fireEvent.click(screen.getByRole('button', { name: /^add$/i }))
+
+    await waitFor(() => expect(labelPuts.length).toBe(2))
+    expect(labelPuts.map((p) => p.url).sort()).toEqual([
+      '/api/systems/a/labels/env',
+      '/api/systems/b/labels/env',
+    ])
+    expect(JSON.parse(labelPuts[0].body)).toEqual({ value: 'prod' })
+    // Success Alert reports the count.
+    expect(
+      await screen.findByText(/added env=prod to 2 systems/i),
+    ).toBeInTheDocument()
+  })
+
+  it('bulk Remove label DELETEs the key and 404s land as skipped', async () => {
+    vi.unstubAllGlobals()
+    const deletes: string[] = []
+    const wrapped = (input: FetchInput, init?: FetchInit) => {
+      const url = typeof input === 'string' ? input : input.toString()
+      const method = init?.method ?? 'GET'
+      if (url === '/api/me/scope')
+        return Promise.resolve(jsonResponse({ global: 'admin', groups: {} }))
+      if (url.startsWith('/api/groups')) return Promise.resolve(jsonResponse([]))
+      if (url.startsWith('/api/label-styles'))
+        return Promise.resolve(jsonResponse({}))
+      if (url === '/api/systems/bulk-event')
+        return Promise.resolve(new Response(null, { status: 204 }))
+      if (url === '/api/systems' && method === 'GET') {
+        return Promise.resolve(
+          jsonResponse([
+            system({ id: 'a', name: 'host-a', hostname: 'a.example' }),
+            system({ id: 'b', name: 'host-b', hostname: 'b.example' }),
+          ]),
+        )
+      }
+      if (url.match(/^\/api\/systems\/[^/]+\/labels\/[^/]+$/) && method === 'DELETE') {
+        deletes.push(url)
+        // host-a has the label, host-b doesn't (404 → skipped).
+        if (url === '/api/systems/b/labels/env') {
+          return Promise.resolve(jsonResponse({ error: 'not found' }, 404))
+        }
+        return Promise.resolve(new Response(null, { status: 204 }))
+      }
+      return Promise.resolve(jsonResponse({}, 500))
+    }
+    vi.stubGlobal('fetch', wrapped)
+    vi.stubGlobal('EventSource', FakeEventSource)
+
+    render(<SystemsPage />)
+    await screen.findByText('host-a')
+
+    fireEvent.click(screen.getAllByRole('checkbox')[0])
+    fireEvent.click(screen.getByRole('button', { name: /^actions$/i }))
+    fireEvent.click(screen.getByRole('menuitem', { name: /remove label/i }))
+
+    fireEvent.change(screen.getByLabelText('Label'), {
+      target: { value: 'env' },
+    })
+    fireEvent.click(screen.getByRole('button', { name: /^remove$/i }))
+
+    await waitFor(() => expect(deletes.length).toBe(2))
+    expect(
+      await screen.findByText(/removed env from 1 system/i),
+    ).toBeInTheDocument()
+    expect(screen.getByText(/1 skipped/i)).toBeInTheDocument()
+  })
 })

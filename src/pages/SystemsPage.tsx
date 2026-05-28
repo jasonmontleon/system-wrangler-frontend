@@ -57,13 +57,21 @@ import { listGroups, type Group } from '../api/groups'
 import { useEventStream } from '../hooks/useEventStream'
 import { useMediaQuery } from '../hooks/useMediaQuery'
 import {
+  isGlobalAdmin,
   isGlobalOperator,
   roleOnGroup,
   useScope,
 } from '../hooks/useScope'
+import BulkLabelModal from '../components/BulkLabelModal'
 import FanOutOutcomesPanel from '../components/FanOutOutcomesPanel'
 import { useLabelStyles } from '../hooks/useLabelStyles'
 import { interpretLabelInput } from '../lib/labelSelectorPartition'
+import {
+  deleteSystemLabel,
+  setSystemLabel,
+} from '../api/labels'
+import { deleteLabelStyle, setLabelStyle } from '../api/labelStyles'
+import type { ColorChoice } from '../components/BulkLabelModal'
 import SystemLabelsCell from '../components/SystemLabelsCell'
 import TargetedPackageModal from '../components/TargetedPackageModal'
 import {
@@ -89,6 +97,17 @@ type SortKey =
   | 'lastChecked'
   | 'pendingUpdates'
 type SortDir = 'asc' | 'desc'
+
+// LabelBulkOutcome summarises a bulk add/remove run for the
+// post-run alert. ok counts the PUT/DELETE calls that succeeded;
+// failed and skipped carry per-system reasons.
+type LabelBulkOutcome = {
+  mode: 'add' | 'remove'
+  keyText: string
+  ok: number
+  failed: { systemName: string; reason: string }[]
+  skipped: { systemName: string; reason: string }[]
+}
 
 type Confirm =
   | { kind: 'remove-one'; system: System }
@@ -128,6 +147,13 @@ export default function SystemsPage() {
   const [sizeOpen, setSizeOpen] = useState(false)
   const [actionsOpen, setActionsOpen] = useState(false)
   const [selected, setSelected] = useState<Set<string>>(new Set())
+  // bulkLabelMode toggles the Add/Remove label modal. Null means the
+  // modal is closed. labelOutcome carries the summary banner shown
+  // after a bulk label run completes.
+  const [bulkLabelMode, setBulkLabelMode] = useState<'add' | 'remove' | null>(
+    null,
+  )
+  const [labelOutcome, setLabelOutcome] = useState<LabelBulkOutcome | null>(null)
 
   // Scope drives the per-row gating on operate actions; credential
   // management has moved to SystemDetailPage so it isn't relevant
@@ -340,6 +366,116 @@ export default function SystemsPage() {
       }),
     )
     setUpdaterOutcomes([...outcomes, ...skipped])
+    await refresh()
+  }
+
+  // runBulkLabel fans a PUT (add) or DELETE (remove) of a single
+  // label key across the selected systems. Permission gate mirrors
+  // canOperateSystem since /api/systems/{id}/labels/{key} requires
+  // CanEditSystem. Backend errors (reserved prefix, charset, length)
+  // surface per-system in the result alert without aborting the run.
+  const runBulkLabel = async (
+    mode: 'add' | 'remove',
+    key: string,
+    value: string | null,
+    color: ColorChoice,
+    targets: System[],
+  ) => {
+    if (targets.length === 0) return
+    setLabelOutcome(null)
+    const skipped: { systemName: string; reason: string; systemId: string }[] = []
+    const operable: System[] = []
+    for (const s of targets) {
+      if (!canOperateSystem(s)) {
+        skipped.push({
+          systemId: s.id,
+          systemName: s.name,
+          reason: 'No operator permission on this system.',
+        })
+        continue
+      }
+      operable.push(s)
+    }
+    const keyText = value === null ? key : `${key}=${value}`
+    try {
+      await recordBulkEvent({
+        action: mode === 'add' ? 'label.set' : 'label.delete',
+        selector: labelSelector || undefined,
+        systemIds: operable.map((s) => s.id),
+        skipped: skipped.map((o) => ({
+          systemId: o.systemId,
+          reason: o.reason,
+        })),
+      })
+    } catch (err) {
+      console.warn('bulk-event audit failed', err)
+    }
+    // Apply the optional fleet-wide color override before fanning
+    // out the per-system label PUTs so the chips appear in the
+    // chosen color the moment the next refresh lands. Failure is
+    // surfaced as a per-system-style "failed" entry but does not
+    // block the label work.
+    let colorFailure: string | null = null
+    if (mode === 'add' && color !== null) {
+      try {
+        if (color === 'auto') await deleteLabelStyle(key)
+        else await setLabelStyle(key, color)
+      } catch (err) {
+        if (
+          color === 'auto' &&
+          err instanceof ApiError &&
+          err.status === 404
+        ) {
+          // No override existed to clear — that's fine, not an error.
+        } else {
+          colorFailure = err instanceof Error ? err.message : String(err)
+        }
+      }
+    }
+    const failed: { systemName: string; reason: string }[] = []
+    const ok: System[] = []
+    if (colorFailure) {
+      failed.push({ systemName: `(color for ${key})`, reason: colorFailure })
+    }
+    await Promise.all(
+      operable.map(async (s) => {
+        try {
+          if (mode === 'add') {
+            await setSystemLabel(s.id, key, value)
+          } else {
+            await deleteSystemLabel(s.id, key)
+          }
+          ok.push(s)
+        } catch (err) {
+          // Remove of a key the system never had is "skipped" not
+          // "failed"; the backend returns 404 in that case. Treat
+          // that as expected for the remove flow only.
+          if (
+            mode === 'remove' &&
+            err instanceof ApiError &&
+            err.status === 404
+          ) {
+            skipped.push({
+              systemId: s.id,
+              systemName: s.name,
+              reason: `Label "${key}" was not set on this system.`,
+            })
+            return
+          }
+          failed.push({
+            systemName: s.name,
+            reason: err instanceof Error ? err.message : String(err),
+          })
+        }
+      }),
+    )
+    setLabelOutcome({
+      mode,
+      keyText,
+      ok: ok.length,
+      failed,
+      skipped: skipped.map((s) => ({ systemName: s.systemName, reason: s.reason })),
+    })
     await refresh()
   }
 
@@ -612,11 +748,22 @@ export default function SystemsPage() {
 
   const toggleAllVisible = (checked: boolean) => {
     setSelected((prev) => {
+      if (!checked) {
+        // If every matching row is selected — typically because the
+        // user expanded via the "Select all N matching" banner —
+        // untick clears the whole set so off-page rows don't linger
+        // invisibly and silently get acted on by the next bulk
+        // action. When the user is on a fresh per-page selection,
+        // we still only clear the visible slice.
+        const allMatchingSelected =
+          sorted.length > 0 && sorted.every((s) => prev.has(s.id))
+        if (allMatchingSelected) return new Set()
+        const next = new Set(prev)
+        visible.forEach((s) => next.delete(s.id))
+        return next
+      }
       const next = new Set(prev)
-      visible.forEach((s) => {
-        if (checked) next.add(s.id)
-        else next.delete(s.id)
-      })
+      visible.forEach((s) => next.add(s.id))
       return next
     })
   }
@@ -681,6 +828,10 @@ export default function SystemsPage() {
                   if (value === 'update-package') {
                     setTargetedOpen(true)
                   }
+                  if (value === 'label-add' || value === 'label-remove') {
+                    if (selected.size === 0) return
+                    setBulkLabelMode(value === 'label-add' ? 'add' : 'remove')
+                  }
                 }}
                 onOpenChange={(open) => setActionsOpen(open)}
                 toggle={(ref: React.Ref<MenuToggleElement>) => (
@@ -721,6 +872,22 @@ export default function SystemsPage() {
                     isDisabled={selectionCount === 0 || busyCount > 0}
                   >
                     Update package…
+                    {selectionCount > 0 ? ` (${selectionCount})` : ''}
+                  </DropdownItem>
+                  <DropdownItem
+                    value="label-add"
+                    key="label-add"
+                    isDisabled={selectionCount === 0}
+                  >
+                    Add label…
+                    {selectionCount > 0 ? ` (${selectionCount})` : ''}
+                  </DropdownItem>
+                  <DropdownItem
+                    value="label-remove"
+                    key="label-remove"
+                    isDisabled={selectionCount === 0}
+                  >
+                    Remove label…
                     {selectionCount > 0 ? ` (${selectionCount})` : ''}
                   </DropdownItem>
                   <DropdownItem
@@ -785,6 +952,67 @@ export default function SystemsPage() {
             }
           >
             {actionError}
+          </Alert>
+        )}
+        {labelOutcome && (
+          <Alert
+            variant={
+              labelOutcome.failed.length > 0
+                ? 'warning'
+                : labelOutcome.ok === 0
+                  ? 'info'
+                  : 'success'
+            }
+            isInline
+            title={
+              labelOutcome.mode === 'add'
+                ? `Added ${labelOutcome.keyText} to ${labelOutcome.ok} ${
+                    labelOutcome.ok === 1 ? 'system' : 'systems'
+                  }`
+                : `Removed ${labelOutcome.keyText} from ${labelOutcome.ok} ${
+                    labelOutcome.ok === 1 ? 'system' : 'systems'
+                  }`
+            }
+            actionClose={
+              <Button
+                variant="plain"
+                onClick={() => setLabelOutcome(null)}
+                aria-label="Dismiss"
+              >
+                ×
+              </Button>
+            }
+          >
+            {labelOutcome.failed.length > 0 && (
+              <div>
+                <strong>
+                  {labelOutcome.failed.length}{' '}
+                  {labelOutcome.failed.length === 1 ? 'failure' : 'failures'}:
+                </strong>
+                <ul style={{ margin: '0.25rem 0 0 1.25rem' }}>
+                  {labelOutcome.failed.map((f) => (
+                    <li key={f.systemName}>
+                      <code>{f.systemName}</code> — {f.reason}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+            {labelOutcome.skipped.length > 0 && (
+              <div style={{ marginTop: labelOutcome.failed.length > 0 ? '0.5rem' : 0 }}>
+                <strong>
+                  {labelOutcome.skipped.length}{' '}
+                  skipped:
+                </strong>
+                <ul style={{ margin: '0.25rem 0 0 1.25rem' }}>
+                  {labelOutcome.skipped.map((s) => (
+                    <li key={s.systemName}>
+                      <code>{s.systemName}</code> — {s.reason}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
           </Alert>
         )}
         {updaterOutcomes && (
@@ -1150,6 +1378,19 @@ export default function SystemsPage() {
             setTargetedOpen(false)
           }
         }}
+      />
+      <BulkLabelModal
+        isOpen={bulkLabelMode !== null}
+        mode={bulkLabelMode ?? 'add'}
+        count={selectionCount}
+        canManageStyles={isGlobalAdmin(scopeState)}
+        onSubmit={async (key, value, color) => {
+          const targets = systems?.filter((s) => selected.has(s.id)) ?? []
+          const mode = bulkLabelMode ?? 'add'
+          setBulkLabelMode(null)
+          await runBulkLabel(mode, key, value, color, targets)
+        }}
+        onClose={() => setBulkLabelMode(null)}
       />
     </>
   )
