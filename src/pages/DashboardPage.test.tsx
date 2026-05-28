@@ -32,6 +32,12 @@ const emptyVector = () =>
     data: { resultType: 'vector', result: [] },
   })
 
+const emptyMatrix = () =>
+  jsonResponse({
+    status: 'success',
+    data: { resultType: 'matrix', result: [] },
+  })
+
 function sys(overrides: Partial<System>): System {
   return {
     id: 's-' + Math.random().toString(36).slice(2, 8),
@@ -64,6 +70,7 @@ describe('DashboardPage', () => {
       const url = String(input)
       if (url === '/api/health') return Promise.resolve(jsonResponse({ status: 'ok' }))
       if (url === '/api/systems') return Promise.resolve(jsonResponse([]))
+      if (url.includes('/api/metrics/query_range?')) return Promise.resolve(emptyMatrix())
       if (url.includes('/api/metrics/query?')) return Promise.resolve(emptyVector())
       return Promise.resolve(jsonResponse({}, 500))
     })
@@ -104,6 +111,7 @@ describe('DashboardPage', () => {
       const url = String(input)
       if (url === '/api/health') return Promise.resolve(jsonResponse({ status: 'ok' }))
       if (url === '/api/systems') return Promise.resolve(jsonResponse(systems))
+      if (url.includes('/api/metrics/query_range?')) return Promise.resolve(emptyMatrix())
       if (url.includes('/api/metrics/query?')) return Promise.resolve(emptyVector())
       return Promise.resolve(jsonResponse({}, 500))
     })
@@ -128,6 +136,7 @@ describe('DashboardPage', () => {
       if (url === '/api/health') return Promise.resolve(jsonResponse({ status: 'ok' }))
       if (url === '/api/systems')
         return Promise.resolve(jsonResponse({ error: 'down' }, 500))
+      if (url.includes('/api/metrics/query_range?')) return Promise.resolve(emptyMatrix())
       if (url.includes('/api/metrics/query?')) return Promise.resolve(emptyVector())
       return Promise.resolve(jsonResponse({}, 500))
     })
@@ -151,6 +160,7 @@ describe('DashboardPage', () => {
       const url = String(input)
       if (url === '/api/health') return Promise.resolve(jsonResponse({ status: 'ok' }))
       if (url === '/api/systems') return Promise.resolve(jsonResponse(systems))
+      if (url.includes('/api/metrics/query_range?')) return Promise.resolve(emptyMatrix())
       if (url.includes('/api/metrics/query?')) {
         if (url.includes('node_cpu_seconds_total')) {
           return Promise.resolve(
@@ -236,6 +246,7 @@ describe('DashboardPage', () => {
       const url = String(input)
       if (url === '/api/health') return Promise.resolve(jsonResponse({ status: 'ok' }))
       if (url === '/api/systems') return Promise.resolve(jsonResponse(systems))
+      if (url.includes('/api/metrics/query_range?')) return Promise.resolve(emptyMatrix())
       if (url.includes('/api/metrics/query?')) return Promise.resolve(emptyVector())
       return Promise.resolve(jsonResponse({}, 500))
     })
@@ -261,6 +272,37 @@ describe('DashboardPage', () => {
     ).toBeInTheDocument()
     expect(
       screen.getByText(/No systems have pending updates\./i),
+    ).toBeInTheDocument()
+  })
+
+  it('renders the global trends section with time-series panels', async () => {
+    vi.stubGlobal('fetch', (input: RequestInfo | URL) => {
+      const url = String(input)
+      if (url === '/api/health') return Promise.resolve(jsonResponse({ status: 'ok' }))
+      if (url === '/api/systems') return Promise.resolve(jsonResponse([]))
+      if (url.includes('/api/metrics/query_range?')) return Promise.resolve(emptyMatrix())
+      if (url.includes('/api/metrics/query?')) return Promise.resolve(emptyVector())
+      return Promise.resolve(jsonResponse({}, 500))
+    })
+    render(
+      <MemoryRouter>
+        <DashboardPage />
+      </MemoryRouter>,
+    )
+    expect(
+      await screen.findByRole('heading', { name: /Global trends/i, level: 2 }),
+    ).toBeInTheDocument()
+    expect(screen.getByText('CPU busy (%)')).toBeInTheDocument()
+    expect(screen.getByText('Memory used (%)')).toBeInTheDocument()
+    expect(screen.getByText('Worst filesystem usage (%)')).toBeInTheDocument()
+    expect(
+      screen.getByText('Network IO (bytes/sec, all systems)'),
+    ).toBeInTheDocument()
+    expect(
+      screen.getByText('Disk IO (bytes/sec, all systems)'),
+    ).toBeInTheDocument()
+    expect(
+      screen.getByRole('group', { name: /Time range presets/i }),
     ).toBeInTheDocument()
   })
 })

@@ -31,11 +31,20 @@ import { query } from '../api/metrics'
 import { queryRebootRequiredSet } from '../util/rebootSignal'
 import {
   cpuBusyPct,
+  cpuBusyPctGlobal,
   diskIoBytesPerSec,
+  diskIoBytesPerSecGlobal,
+  fsUsedPctGlobal,
   fsUsedPctMax,
   memUsedPct,
+  memUsedPctGlobal,
   netIoBytesPerSec,
+  netIoBytesPerSecGlobal,
 } from '../api/promql'
+import MetricsPanel from '../components/MetricsPanel'
+import TimeRangePicker from '../components/TimeRangePicker'
+import { TimeRangeProvider } from '../components/TimeRangeProvider'
+import { DEFAULT_PRESET_SECONDS } from '../hooks/useTimeRange'
 import { useEventStream } from '../hooks/useEventStream'
 import LeaderboardCard, {
   type LeaderboardEntry,
@@ -269,7 +278,7 @@ export default function DashboardPage() {
       <PageSection>
         <Title headingLevel="h1">Dashboard</Title>
       </PageSection>
-      <PageSection aria-label="Fleet summary and leaderboards">
+      <PageSection aria-label="Global summary and leaderboards">
         <div
           style={{
             columnWidth: '24rem',
@@ -351,8 +360,62 @@ export default function DashboardPage() {
           </MasonryItem>
         </div>
       </PageSection>
+      <PageSection aria-label="Global trends">
+        <Title headingLevel="h2" size="lg" style={{ marginBottom: '1rem' }}>
+          Global trends
+        </Title>
+        <TimeRangeProvider defaultSeconds={DEFAULT_PRESET_SECONDS}>
+          <div style={{ marginBottom: '1rem' }}>
+            <TimeRangePicker defaultSeconds={DEFAULT_PRESET_SECONDS} />
+          </div>
+          <Grid hasGutter>
+            <GridItem md={6} sm={12}>
+              <MetricsPanel
+                title="CPU busy (%)"
+                promql={cpuBusyPctGlobal()}
+                yDomain={[0, 100]}
+                seriesLabel={aggSeriesLabel}
+              />
+            </GridItem>
+            <GridItem md={6} sm={12}>
+              <MetricsPanel
+                title="Memory used (%)"
+                promql={memUsedPctGlobal()}
+                yDomain={[0, 100]}
+                seriesLabel={aggSeriesLabel}
+              />
+            </GridItem>
+            <GridItem md={6} sm={12}>
+              <MetricsPanel
+                title="Worst filesystem usage (%)"
+                promql={fsUsedPctGlobal()}
+                yDomain={[0, 100]}
+                seriesLabel={aggSeriesLabel}
+              />
+            </GridItem>
+            <GridItem md={6} sm={12}>
+              <MetricsPanel
+                title="Network IO (bytes/sec, all systems)"
+                promql={netIoBytesPerSecGlobal()}
+              />
+            </GridItem>
+            <GridItem md={6} sm={12}>
+              <MetricsPanel
+                title="Disk IO (bytes/sec, all systems)"
+                promql={diskIoBytesPerSecGlobal()}
+              />
+            </GridItem>
+          </Grid>
+        </TimeRangeProvider>
+      </PageSection>
     </>
   )
+}
+
+function aggSeriesLabel(metric: Record<string, string>): string {
+  if (metric.agg === 'avg') return 'Average'
+  if (metric.agg === 'peak') return 'Peak'
+  return ''
 }
 
 // MasonryItem wraps each card so CSS multi-column layout treats the

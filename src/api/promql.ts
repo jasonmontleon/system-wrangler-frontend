@@ -193,6 +193,53 @@ export function tcpEstablished(id: string): string {
   )
 }
 
+// cpuBusyPctGlobal returns the cross-system CPU-busy aggregate as two
+// labeled series, "agg=avg" and "agg=peak". Built on top of
+// cpuBusyPct() so the underlying Linux/Windows fallback chain stays in
+// one place. label_replace marks each branch so the chart legend can
+// distinguish average from peak.
+export function cpuBusyPctGlobal(): string {
+  const base = cpuBusyPct()
+  return (
+    `label_replace(avg(${base}), "agg", "avg", "", "") ` +
+    `or label_replace(max(${base}), "agg", "peak", "", "")`
+  )
+}
+
+// memUsedPctGlobal mirrors cpuBusyPctGlobal for memory-used percent.
+export function memUsedPctGlobal(): string {
+  const base = memUsedPct()
+  return (
+    `label_replace(avg(${base}), "agg", "avg", "", "") ` +
+    `or label_replace(max(${base}), "agg", "peak", "", "")`
+  )
+}
+
+// fsUsedPctGlobal returns avg + peak across systems of the worst-mount
+// percentage per system. Builds on fsUsedPctMax() which already
+// max-aggregates per (system_id). avg(...) gives the typical worst
+// mount; max(...) gives the single most-full mount anywhere.
+export function fsUsedPctGlobal(): string {
+  const base = fsUsedPctMax()
+  return (
+    `label_replace(avg(${base}), "agg", "avg", "", "") ` +
+    `or label_replace(max(${base}), "agg", "peak", "", "")`
+  )
+}
+
+// netIoBytesPerSecGlobal returns the sum across systems of combined
+// receive + transmit bytes/sec — i.e. total network traffic across
+// every monitored host.
+export function netIoBytesPerSecGlobal(): string {
+  return `sum(${netIoBytesPerSec()})`
+}
+
+// diskIoBytesPerSecGlobal returns the sum across systems of combined
+// read + write disk bytes/sec.
+export function diskIoBytesPerSecGlobal(): string {
+  return `sum(${diskIoBytesPerSec()})`
+}
+
 // uptimeDays returns the host's uptime in days. Linux uses
 // node_boot_time_seconds (a Unix-timestamp gauge); windows_exporter
 // emits the same shape under one of three names depending on version:

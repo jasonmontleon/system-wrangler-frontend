@@ -3,15 +3,20 @@
 import { describe, expect, it } from 'vitest'
 import {
   cpuBusyPct,
+  cpuBusyPctGlobal,
   diskIoBytesBidi,
   diskIoBytesPerSec,
+  diskIoBytesPerSecGlobal,
   diskIopsBidi,
+  fsUsedPctGlobal,
   fsUsedPctMax,
   fsUsedPctPerMount,
   memAvailBytes,
   memUsedPct,
+  memUsedPctGlobal,
   netIoBidi,
   netIoBytesPerSec,
+  netIoBytesPerSecGlobal,
   tcpEstablished,
   uptimeDays,
 } from './promql'
@@ -153,6 +158,43 @@ describe('tcpEstablished', () => {
     const out = tcpEstablished('abc')
     expect(out).toContain('node_netstat_Tcp_CurrEstab{system_id="abc"}')
     expect(out).toContain('sum without(family)(windows_tcp_connections_established{system_id="abc"})')
+  })
+})
+
+describe('cpuBusyPctGlobal', () => {
+  it('wraps the per-system query with avg + max and tags each branch via label_replace', () => {
+    const out = cpuBusyPctGlobal()
+    expect(out).toContain(`label_replace(avg(${cpuBusyPct()}), "agg", "avg", "", "")`)
+    expect(out).toContain(`label_replace(max(${cpuBusyPct()}), "agg", "peak", "", "")`)
+    expect(out).toContain(' or ')
+  })
+})
+
+describe('memUsedPctGlobal', () => {
+  it('wraps memUsedPct() with avg + max', () => {
+    const out = memUsedPctGlobal()
+    expect(out).toContain(`label_replace(avg(${memUsedPct()}), "agg", "avg", "", "")`)
+    expect(out).toContain(`label_replace(max(${memUsedPct()}), "agg", "peak", "", "")`)
+  })
+})
+
+describe('fsUsedPctGlobal', () => {
+  it('wraps fsUsedPctMax() with avg + max so per-system worst-mount is aggregated', () => {
+    const out = fsUsedPctGlobal()
+    expect(out).toContain(`label_replace(avg(${fsUsedPctMax()}), "agg", "avg", "", "")`)
+    expect(out).toContain(`label_replace(max(${fsUsedPctMax()}), "agg", "peak", "", "")`)
+  })
+})
+
+describe('netIoBytesPerSecGlobal', () => {
+  it('sums netIoBytesPerSec() across systems', () => {
+    expect(netIoBytesPerSecGlobal()).toBe(`sum(${netIoBytesPerSec()})`)
+  })
+})
+
+describe('diskIoBytesPerSecGlobal', () => {
+  it('sums diskIoBytesPerSec() across systems', () => {
+    expect(diskIoBytesPerSecGlobal()).toBe(`sum(${diskIoBytesPerSec()})`)
   })
 })
 
