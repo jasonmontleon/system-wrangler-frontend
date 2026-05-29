@@ -1,0 +1,52 @@
+# Whole-repo line coverage gate. Runs the full vitest suite with
+# coverage and fails if the total line coverage drops below the
+# threshold. The threshold lives inline in the workflow so it can be
+# ratcheted up as coverage improves without code changes.
+#
+# Vitest is configured to emit `coverage-summary.json` (see
+# vite.config.ts → test.coverage.reporter); the gate reads
+# .total.lines.pct from that file.
+
+name: coverage
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  THRESHOLD: '90'
+
+jobs:
+  gate:
+    name: 90% line coverage gate
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run tests with coverage
+        run: npm test -- --run --coverage
+
+      - name: Enforce ≥${{ env.THRESHOLD }}% line coverage
+        run: |
+          set -euo pipefail
+          pct=$(node -e "console.log(JSON.parse(require('fs').readFileSync('coverage/coverage-summary.json','utf8')).total.lines.pct)")
+          echo "line coverage: $pct%, threshold: ${THRESHOLD}%"
+          ok=$(node -e "process.stdout.write(String($pct >= Number(process.env.THRESHOLD)))")
+          if [ "$ok" != "true" ]; then
+            echo "::error::Whole-repo line coverage $pct% is below the ${THRESHOLD}% gate." >&2
+            exit 1
+          fi
