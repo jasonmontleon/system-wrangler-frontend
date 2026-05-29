@@ -150,6 +150,57 @@ describe('UpdatersPage', () => {
     expect(await screen.findByText(/syntax check failed/i)).toBeInTheDocument()
   })
 
+  it('renders the load error when the list call fails', async () => {
+    fetchMock.mockResolvedValueOnce(jsonResponse({ error: 'boom' }, { status: 500 }))
+    render(<UpdatersPage />)
+    expect(await screen.findByText(/Failed to load updaters/i)).toBeInTheDocument()
+  })
+
+  it('renders the empty list message when no updaters are registered', async () => {
+    fetchMock.mockResolvedValueOnce(jsonResponse({ definitions: [] }))
+    render(<UpdatersPage />)
+    expect(await screen.findByText(/No updaters registered/i)).toBeInTheDocument()
+  })
+
+  it('edits an existing custom updater through the modal', async () => {
+    fetchMock
+      .mockResolvedValueOnce(jsonResponse({ definitions: [custom] }))
+      .mockResolvedValueOnce(jsonResponse({ ...custom, displayName: 'fast-dnf v2' }))
+      .mockResolvedValueOnce(jsonResponse({ definitions: [{ ...custom, displayName: 'fast-dnf v2' }] }))
+    render(<UpdatersPage />)
+    await screen.findByText('custom.fast-dnf')
+    fireEvent.click(screen.getByRole('button', { name: /^Edit$/i }))
+    const dialog = await screen.findByRole('dialog')
+    const display = dialog.querySelector('#updater-display') as HTMLInputElement
+    fireEvent.change(display, { target: { value: 'fast-dnf v2' } })
+    const desc = dialog.querySelector('#updater-description') as HTMLInputElement
+    fireEvent.change(desc, { target: { value: 'mine v2' } })
+    const checkOnly = dialog.querySelector('#updater-check-only') as HTMLInputElement
+    fireEvent.click(checkOnly)
+    const save = screen
+      .getAllByRole('button', { name: /^Save changes$/i })[0]
+    fireEvent.click(save)
+    await waitFor(() => {
+      const patch = fetchMock.mock.calls.find(
+        (c) =>
+          String(c[0]).endsWith('/api/admin/updater-definitions/custom.fast-dnf') &&
+          (c[1] as RequestInit | undefined)?.method === 'PATCH',
+      )
+      expect(patch).toBeDefined()
+    })
+  })
+
+  it('surfaces a delete error from the API', async () => {
+    fetchMock
+      .mockResolvedValueOnce(jsonResponse({ definitions: [custom] }))
+      .mockResolvedValueOnce(jsonResponse({ error: 'in use' }, { status: 409 }))
+    render(<UpdatersPage />)
+    await screen.findByText('custom.fast-dnf')
+    // Delete fires immediately on click (no confirm modal).
+    fireEvent.click(screen.getByRole('button', { name: /^Delete$/i }))
+    expect(await screen.findByText(/in use/i)).toBeInTheDocument()
+  })
+
   it('deletes a custom updater after confirmation', async () => {
     fetchMock.mockResolvedValueOnce(
       jsonResponse({ definitions: [builtin, custom] }),

@@ -128,6 +128,66 @@ describe('BulkLabelModal', () => {
     expect(screen.getByText(/Key is required/i)).toBeInTheDocument()
   })
 
+  it('shows the "Label is required" error when the form is submitted empty', () => {
+    const onSubmit = vi.fn()
+    render(
+      <BulkLabelModal
+        isOpen={true}
+        mode="add"
+        count={1}
+        onSubmit={onSubmit}
+        onClose={() => {}}
+      />,
+    )
+    // The primary Add button is disabled while the input is empty,
+    // so click can't fire submit. The form's onSubmit handler runs
+    // when the form is submitted directly (jsdom: fireEvent.submit).
+    const form = document.querySelector('form') as HTMLFormElement
+    fireEvent.submit(form)
+    expect(screen.getByText(/Label is required/i)).toBeInTheDocument()
+    expect(onSubmit).not.toHaveBeenCalled()
+  })
+
+  it('surfaces an error from onSubmit and clears the busy state', async () => {
+    const onSubmit = vi.fn().mockRejectedValue(new Error('label-write-failed'))
+    render(
+      <BulkLabelModal
+        isOpen={true}
+        mode="add"
+        count={2}
+        onSubmit={onSubmit}
+        onClose={() => {}}
+      />,
+    )
+    fireEvent.change(screen.getByLabelText('Label'), {
+      target: { value: 'env=prod' },
+    })
+    fireEvent.click(screen.getByRole('button', { name: /^Add$/i }))
+    expect(await screen.findByText(/label-write-failed/i)).toBeInTheDocument()
+  })
+
+  it('selects the "Don\'t change" color swatch via aria-checked toggle', () => {
+    const onSubmit = vi.fn()
+    render(
+      <BulkLabelModal
+        isOpen={true}
+        mode="add"
+        count={1}
+        canManageStyles
+        onSubmit={onSubmit}
+        onClose={() => {}}
+      />,
+    )
+    // The initial color choice is null ("Don't change"). Click a
+    // colored swatch first, then click "Don't change" to flip back.
+    const blue = screen.getByRole('radio', { name: /Set color to blue/i })
+    fireEvent.click(blue)
+    expect(blue).toHaveAttribute('aria-checked', 'true')
+    const dontChange = screen.getByRole('radio', { name: /Don't change color/i })
+    fireEvent.click(dontChange)
+    expect(dontChange).toHaveAttribute('aria-checked', 'true')
+  })
+
   it('hides the color section when canManageStyles is false', () => {
     render(
       <BulkLabelModal

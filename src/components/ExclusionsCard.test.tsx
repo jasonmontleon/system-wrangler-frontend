@@ -193,6 +193,79 @@ describe('ExclusionsCard', () => {
     expect(onDelete.mock.calls[0][0]).toBe(target)
   })
 
+  it('Cancel on the add form closes the modal without calling onCreate', async () => {
+    const onCreate = vi.fn()
+    render(
+      <ExclusionsCard
+        title="Fleet"
+        description="d"
+        rows={[]}
+        loading={false}
+        canManage
+        updaters={defs()}
+        onCreate={onCreate}
+        onDelete={vi.fn()}
+      />,
+    )
+    fireEvent.click(screen.getByRole('button', { name: /Add exclusion/i }))
+    await screen.findByRole('dialog')
+    fireEvent.click(screen.getByRole('button', { name: /^Cancel$/i }))
+    await waitFor(() => {
+      expect(screen.queryByRole('dialog')).toBeNull()
+    })
+    expect(onCreate).not.toHaveBeenCalled()
+  })
+
+  it('Cancel on the delete confirm closes the modal without calling onDelete', async () => {
+    const onDelete = vi.fn()
+    const target = row({ id: 'e-cancel', pattern: 'redis' })
+    render(
+      <ExclusionsCard
+        title="Fleet"
+        description="d"
+        rows={[target]}
+        loading={false}
+        canManage
+        updaters={defs()}
+        onCreate={vi.fn()}
+        onDelete={onDelete}
+      />,
+    )
+    fireEvent.click(screen.getByRole('button', { name: /^remove$/i }))
+    const dialog = await screen.findByRole('dialog')
+    const cancels = screen.getAllByRole('button', { name: /^Cancel$/i })
+    fireEvent.click(cancels[cancels.length - 1])
+    await waitFor(() => {
+      expect(dialog).not.toBeInTheDocument()
+    })
+    expect(onDelete).not.toHaveBeenCalled()
+  })
+
+  it('surfaces a delete error inline when onDelete rejects', async () => {
+    const onDelete = vi.fn().mockRejectedValue(new Error('blocked'))
+    const target = row({ id: 'e-err', pattern: 'redis' })
+    render(
+      <ExclusionsCard
+        title="Fleet"
+        description="d"
+        rows={[target]}
+        loading={false}
+        canManage
+        updaters={defs()}
+        onCreate={vi.fn()}
+        onDelete={onDelete}
+      />,
+    )
+    fireEvent.click(screen.getByRole('button', { name: /^remove$/i }))
+    await screen.findByRole('dialog')
+    fireEvent.click(
+      screen.getAllByRole('button', { name: 'Remove' })[
+        screen.getAllByRole('button', { name: 'Remove' }).length - 1
+      ],
+    )
+    expect(await screen.findByText(/blocked/i)).toBeInTheDocument()
+  })
+
   it('shows the load-error banner when loadError is set', () => {
     render(
       <ExclusionsCard

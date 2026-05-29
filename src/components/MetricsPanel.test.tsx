@@ -482,16 +482,19 @@ describe('MetricsPanel multi-series rendering', () => {
         refreshIntervalMs={1_000_000}
       />,
     )
-    await waitFor(() => {
-      expect(screen.queryByText(/No samples/i)).toBeNull()
+    // Wait for the chart's SVG to render — that's a positive signal
+    // SeriesChart took the 'ready' branch, more reliable than the
+    // absence of the "No samples" text (which is also absent while
+    // the panel is still loading).
+    const hoverDiv = await waitFor(() => {
+      const svg = container.querySelector('svg')
+      expect(svg).not.toBeNull()
+      const div = container.querySelector(
+        'div[style*="position: relative"]',
+      ) as HTMLDivElement | null
+      expect(div).not.toBeNull()
+      return div as HTMLDivElement
     })
-    // The outermost div in SeriesChart owns the mouse handlers and has
-    // position:relative + a height. Mock its getBoundingClientRect so
-    // computeHover thinks the cursor is inside the plot area.
-    const hoverDiv = container.querySelector(
-      'div[style*="position: relative"]',
-    ) as HTMLDivElement
-    expect(hoverDiv).toBeTruthy()
     vi.spyOn(hoverDiv, 'getBoundingClientRect').mockReturnValue({
       left: 0,
       top: 0,
