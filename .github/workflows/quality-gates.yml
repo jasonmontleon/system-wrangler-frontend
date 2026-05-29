@@ -1,0 +1,90 @@
+name: quality-gates
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  typecheck:
+    name: typecheck
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - run: npm run --silent typecheck
+
+  lint:
+    name: lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - run: npm run --silent lint
+
+  test:
+    name: test (vitest)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - run: npm test --silent -- --run
+
+  gitleaks:
+    name: gitleaks
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Install gitleaks
+        run: |
+          set -euo pipefail
+          mkdir -p "$HOME/bin"
+          tmp=$(mktemp -d)
+          curl -sSfL https://api.github.com/repos/gitleaks/gitleaks/releases/latest \
+            | grep "browser_download_url.*linux_x64.tar.gz" \
+            | cut -d '"' -f 4 \
+            | xargs curl -sSfL -o "$tmp/gitleaks.tar.gz"
+          tar -xzf "$tmp/gitleaks.tar.gz" -C "$tmp"
+          install -m 0755 "$tmp/gitleaks" "$HOME/bin/gitleaks"
+          echo "$HOME/bin" >> "$GITHUB_PATH"
+      - run: gitleaks detect --redact --verbose
+
+  dco:
+    name: DCO sign-off on every commit
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Verify Signed-off-by
+        run: |
+          set -euo pipefail
+          base="${{ github.event.pull_request.base.sha }}"
+          head="${{ github.event.pull_request.head.sha }}"
+          missing=0
+          for sha in $(git rev-list "$base..$head"); do
+            if ! git log -1 --format=%B "$sha" | grep -qE '^Signed-off-by: .+'; then
+              echo "::error::commit $sha is missing a Signed-off-by line (use 'git commit -s')"
+              missing=1
+            fi
+          done
+          exit $missing
