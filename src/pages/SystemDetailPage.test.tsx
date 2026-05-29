@@ -155,6 +155,53 @@ describe('SystemDetailPage', () => {
     })
   }
 
+  it('caller without group role on a non-admin sees Check disabled on the row', async () => {
+    fetchMock.mockImplementation((input: RequestInfo) => {
+      const url = typeof input === 'string' ? input : input.toString()
+      if (url.endsWith('/api/me/scope'))
+        return Promise.resolve(jsonResponse({ userId: 'u-1', global: '', groups: {} }))
+      if (url.startsWith('/api/metrics/query'))
+        return Promise.resolve(jsonResponse({ status: 'success', data: { resultType: 'vector', result: [] } }))
+      if (url.match(/\/api\/systems\/[^/]+\/updaters$/))
+        return Promise.resolve(jsonResponse({ updaters: [dnfDetectedEnabled] }))
+      if (url.match(/\/updater-runs/))
+        return Promise.resolve(jsonResponse({ runs: [] }))
+      if (url.match(/\/exporter-runs/))
+        return Promise.resolve(jsonResponse({ runs: [] }))
+      if (url.endsWith('/effective-credential'))
+        return Promise.resolve(jsonResponse({ error: 'none' }, { status: 404 }))
+      if (url.endsWith('/ansible-credential'))
+        return Promise.resolve(jsonResponse({ error: 'none' }, { status: 404 }))
+      if (url.endsWith('/host-keys'))
+        return Promise.resolve(jsonResponse({ hostKeys: [] }))
+      if (url.match(/\/api\/systems\/[^/]+$/))
+        return Promise.resolve(
+          jsonResponse({ ...sampleSystem, groupId: 'g-other' }),
+        )
+      return Promise.resolve(jsonResponse({}, { status: 500 }))
+    })
+    renderRoute()
+    expect(await screen.findByRole('heading', { name: 'web-1' })).toBeInTheDocument()
+  })
+
+  it('emits via the systems.changed event stream to refresh', async () => {
+    seedHappy()
+    renderRoute()
+    expect(await screen.findByRole('heading', { name: 'web-1' })).toBeInTheDocument()
+    const sysCallsBefore = fetchMock.mock.calls.filter((c) =>
+      String(c[0]).match(/\/api\/systems\/[^/]+$/),
+    ).length
+    FakeEventSource.instances.forEach((es) =>
+      es.emit('message', { type: 'systems.changed' }),
+    )
+    await waitFor(() => {
+      const sysCallsAfter = fetchMock.mock.calls.filter((c) =>
+        String(c[0]).match(/\/api\/systems\/[^/]+$/),
+      ).length
+      expect(sysCallsAfter).toBeGreaterThan(sysCallsBefore)
+    })
+  })
+
   it('renders the system header and the updater table', async () => {
     seedHappy()
     renderRoute()

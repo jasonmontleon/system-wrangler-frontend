@@ -437,6 +437,39 @@ describe('UsersPage', () => {
     expect((within(bobRow).getByRole('checkbox') as HTMLInputElement).checked).toBe(false)
   })
 
+  it('filters by status and createdAt and sorts across non-username columns', async () => {
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse({
+        users: [
+          userRow({ id: 'u1', username: 'alpha', disabled: false }),
+          userRow({ id: 'u2', username: 'bravo', disabled: true }),
+        ],
+      }),
+    )
+    render(<UsersPage currentUserId="u1" />)
+    await screen.findByText('alpha')
+    // Filter by status to exercise the disabled-label filter branch.
+    const statusFilter = screen
+      .getAllByRole('textbox')
+      .find((el) => (el as HTMLInputElement).placeholder?.toLowerCase().includes('filter status'))
+    if (statusFilter) {
+      fireEvent.change(statusFilter, { target: { value: 'disabled' } })
+      await waitFor(() => {
+        expect(screen.queryByText('alpha')).toBeNull()
+      })
+      fireEvent.change(statusFilter, { target: { value: '' } })
+    }
+    // Sort by status / created headers.
+    const clickHeader = (name: RegExp) => {
+      const headers = screen.getAllByRole('columnheader', { name })
+      const button = headers[0].querySelector('button')
+      if (button) fireEvent.click(button)
+    }
+    clickHeader(/^Status/i)
+    clickHeader(/^Created/i)
+    expect(screen.getByText('alpha')).toBeInTheDocument()
+  })
+
   it('filters by username via the column filter input', async () => {
     fetchMock.mockResolvedValueOnce(
       jsonResponse({

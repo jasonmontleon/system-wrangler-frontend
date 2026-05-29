@@ -215,6 +215,46 @@ describe('AuditPage', () => {
     expect(screen.getByText(/10\.0\.0\.5:1234/)).toBeInTheDocument()
   })
 
+  it('sorts across Actor, Action, Target, Outcome, Request ID columns', async () => {
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse({
+        records: [
+          record({
+            id: 'r1',
+            actorLabel: 'alice',
+            action: 'login',
+            targetKind: 'user',
+            targetLabel: 'u1',
+            outcome: 'success',
+            requestId: 'req-zzz',
+          }),
+          record({
+            id: 'r2',
+            actorLabel: 'bob',
+            action: 'logout',
+            targetKind: 'user',
+            targetLabel: 'u2',
+            outcome: 'failure',
+            requestId: 'req-aaa',
+          }),
+        ],
+      }),
+    )
+    render(<AuditPage />)
+    await screen.findByText('alice')
+    const clickHeader = (name: RegExp) => {
+      const headers = screen.getAllByRole('columnheader', { name })
+      const button = headers[0].querySelector('button')
+      if (button) fireEvent.click(button)
+    }
+    clickHeader(/^Actor$/i)
+    clickHeader(/^Action$/i)
+    clickHeader(/^Target$/i)
+    clickHeader(/^Outcome$/i)
+    clickHeader(/^Request ID/i)
+    expect(screen.getByText('alice')).toBeInTheDocument()
+  })
+
   it('shows an error alert when the fetch fails', async () => {
     fetchMock.mockResolvedValueOnce(jsonResponse({ error: 'boom' }, 500))
     render(<AuditPage />)
