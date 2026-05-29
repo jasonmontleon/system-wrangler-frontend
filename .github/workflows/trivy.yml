@@ -1,0 +1,43 @@
+# Trivy vulnerability scan for the SPA's npm dependency tree.
+# package-lock.json is the trivy input; node_modules/ is not committed
+# so the scan reads transitive deps from the lockfile.
+#
+# The official aquasecurity/trivy-action does its own actions/checkout of
+# the upstream trivy repo on github.com to fetch an install script, which
+# fails on Gitea runners that have no github.com credentials. To stay
+# portable we install the trivy binary ourselves and invoke it directly,
+# matching the trufflehog.yml approach.
+
+name: trivy
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  fs-scan:
+    name: Filesystem scan (npm)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install trivy
+        run: |
+          mkdir -p "$HOME/bin"
+          curl -sSfL https://raw.githubusercontent.com/aquasecurity/trivy/main/contrib/install.sh \
+            | sh -s -- -b "$HOME/bin"
+          "$HOME/bin/trivy" --version
+
+      - name: Run trivy on the working tree
+        run: |
+          "$HOME/bin/trivy" fs . \
+            --scanners vuln,secret,misconfig \
+            --severity HIGH,CRITICAL \
+            --ignore-unfixed \
+            --exit-code 1 \
+            --skip-dirs node_modules,dist,coverage
