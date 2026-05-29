@@ -437,6 +437,198 @@ describe('GroupDetailPage', () => {
     expect(link.getAttribute('href')).toBe('/groups')
   })
 
+  it('runs bulk Add label on selected members', async () => {
+    const labelPuts: string[] = []
+    vi.unstubAllGlobals()
+    vi.stubGlobal('fetch', (input: FetchInput, init?: FetchInit) => {
+      const url = String(input)
+      const method = init?.method ?? 'GET'
+      if (url.startsWith('/api/me/scope'))
+        return Promise.resolve(jsonResponse({ global: 'admin', groups: {} }))
+      if (url === '/api/groups/g-1')
+        return Promise.resolve(jsonResponse(sampleGroup))
+      if (url.startsWith('/api/label-styles'))
+        return Promise.resolve(jsonResponse({}))
+      if (url.startsWith('/api/metrics/query'))
+        return Promise.resolve(
+          jsonResponse({ status: 'success', data: { resultType: 'vector', result: [] } }),
+        )
+      if (url === '/api/systems/bulk-event')
+        return Promise.resolve(new Response(null, { status: 204 }))
+      if (url === '/api/systems' && method === 'GET')
+        return Promise.resolve(
+          jsonResponse([system({ id: 's-1', name: 'host-a', groupId: 'g-1' })]),
+        )
+      if (url.match(/\/labels\/[^/]+$/) && method === 'PUT') {
+        labelPuts.push(url)
+        return Promise.resolve(jsonResponse({ key: 'env', value: 'prod' }))
+      }
+      return Promise.resolve(jsonResponse({}, 500))
+    })
+    vi.stubGlobal('EventSource', FakeEventSource)
+
+    renderRoute()
+    await screen.findByText('host-a')
+    fireEvent.click(screen.getAllByRole('checkbox', { name: /select row/i })[0])
+    fireEvent.click(screen.getByRole('button', { name: /^Actions$/i }))
+    fireEvent.click(screen.getByRole('menuitem', { name: /Add label/i }))
+    const input = (await screen.findByLabelText('Label')) as HTMLInputElement
+    fireEvent.change(input, { target: { value: 'env=prod' } })
+    fireEvent.click(screen.getByRole('button', { name: /^Add$/i }))
+    await waitFor(() => expect(labelPuts).toHaveLength(1))
+    expect(labelPuts[0]).toContain('/labels/env')
+  })
+
+  it('runs bulk Remove label and swallows 404 as skipped', async () => {
+    const deletes: string[] = []
+    vi.unstubAllGlobals()
+    vi.stubGlobal('fetch', (input: FetchInput, init?: FetchInit) => {
+      const url = String(input)
+      const method = init?.method ?? 'GET'
+      if (url.startsWith('/api/me/scope'))
+        return Promise.resolve(jsonResponse({ global: 'admin', groups: {} }))
+      if (url === '/api/groups/g-1')
+        return Promise.resolve(jsonResponse(sampleGroup))
+      if (url.startsWith('/api/label-styles'))
+        return Promise.resolve(jsonResponse({}))
+      if (url.startsWith('/api/metrics/query'))
+        return Promise.resolve(
+          jsonResponse({ status: 'success', data: { resultType: 'vector', result: [] } }),
+        )
+      if (url === '/api/systems/bulk-event')
+        return Promise.resolve(new Response(null, { status: 204 }))
+      if (url === '/api/systems' && method === 'GET')
+        return Promise.resolve(
+          jsonResponse([
+            system({ id: 's-1', name: 'host-a', groupId: 'g-1' }),
+            system({ id: 's-2', name: 'host-b', groupId: 'g-1' }),
+          ]),
+        )
+      if (url.match(/\/labels\/[^/]+$/) && method === 'DELETE') {
+        deletes.push(url)
+        // First DELETE returns 404 (not set), second succeeds.
+        return Promise.resolve(
+          deletes.length === 1
+            ? jsonResponse({ error: 'not set' }, 404)
+            : new Response(null, { status: 204 }),
+        )
+      }
+      return Promise.resolve(jsonResponse({}, 500))
+    })
+    vi.stubGlobal('EventSource', FakeEventSource)
+
+    renderRoute()
+    await screen.findByText('host-a')
+    const boxes = screen.getAllByRole('checkbox', { name: /select row/i })
+    fireEvent.click(boxes[0])
+    fireEvent.click(boxes[1])
+    fireEvent.click(screen.getByRole('button', { name: /^Actions$/i }))
+    fireEvent.click(screen.getByRole('menuitem', { name: /Remove label/i }))
+    const input = (await screen.findByLabelText('Label')) as HTMLInputElement
+    fireEvent.change(input, { target: { value: 'oncall' } })
+    fireEvent.click(screen.getByRole('button', { name: /^Remove$/i }))
+    await waitFor(() => expect(deletes).toHaveLength(2))
+    // Outcome alert mentions the skipped count.
+    expect(await screen.findByText(/skipped/i)).toBeInTheDocument()
+  })
+
+  it('switches to the Exclusions tab and renders its content', async () => {
+    vi.unstubAllGlobals()
+    vi.stubGlobal('fetch', (input: FetchInput) => {
+      const url = String(input)
+      if (url.startsWith('/api/me/scope'))
+        return Promise.resolve(jsonResponse({ global: 'admin', groups: {} }))
+      if (url === '/api/groups/g-1')
+        return Promise.resolve(jsonResponse(sampleGroup))
+      if (url.startsWith('/api/label-styles'))
+        return Promise.resolve(jsonResponse({}))
+      if (url.startsWith('/api/metrics/query'))
+        return Promise.resolve(
+          jsonResponse({ status: 'success', data: { resultType: 'vector', result: [] } }),
+        )
+      if (url === '/api/groups/g-1/package-exclusions')
+        return Promise.resolve(jsonResponse([]))
+      if (url === '/api/admin/updater-definitions')
+        return Promise.resolve(jsonResponse({ definitions: [] }))
+      if (url === '/api/systems')
+        return Promise.resolve(jsonResponse([]))
+      return Promise.resolve(jsonResponse({}, 500))
+    })
+    vi.stubGlobal('EventSource', FakeEventSource)
+    renderRoute()
+    fireEvent.click(await screen.findByRole('tab', { name: /^Exclusions$/i }))
+    expect(await screen.findByText(/No exclusions defined/i)).toBeInTheDocument()
+  })
+
+  it('changes page size via the toolbar select', async () => {
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse([system({ id: 's-1', name: 'host-a', groupId: 'g-1' })]),
+    )
+    renderRoute()
+    await screen.findByText('host-a')
+    fireEvent.click(screen.getByRole('button', { name: /Page size/i }))
+    fireEvent.click(screen.getByRole('option', { name: /^All$/i }))
+    expect(screen.getByText('host-a')).toBeInTheDocument()
+  })
+
+  it('filters members by typing in the name search input', async () => {
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse([
+        system({ id: 's-1', name: 'aaa', groupId: 'g-1' }),
+        system({ id: 's-2', name: 'bbb', groupId: 'g-1' }),
+      ]),
+    )
+    renderRoute()
+    await screen.findByText('aaa')
+    fireEvent.change(screen.getByLabelText(/Filter name/i), {
+      target: { value: 'aaa' },
+    })
+    await waitFor(() => {
+      expect(screen.queryByText('bbb')).toBeNull()
+    })
+    expect(screen.getByText('aaa')).toBeInTheDocument()
+  })
+
+  it('removes a system from the group via the row kebab', async () => {
+    const groupPuts: Array<{ url: string; body: string }> = []
+    vi.unstubAllGlobals()
+    vi.stubGlobal('fetch', (input: FetchInput, init?: FetchInit) => {
+      const url = String(input)
+      const method = init?.method ?? 'GET'
+      if (url.startsWith('/api/me/scope'))
+        return Promise.resolve(jsonResponse({ global: 'admin', groups: {} }))
+      if (url === '/api/groups/g-1')
+        return Promise.resolve(jsonResponse(sampleGroup))
+      if (url.startsWith('/api/label-styles'))
+        return Promise.resolve(jsonResponse({}))
+      if (url.startsWith('/api/metrics/query'))
+        return Promise.resolve(
+          jsonResponse({ status: 'success', data: { resultType: 'vector', result: [] } }),
+        )
+      if (url === '/api/systems' && method === 'GET')
+        return Promise.resolve(
+          jsonResponse([system({ id: 's-1', name: 'host-a', groupId: 'g-1' })]),
+        )
+      if (url.endsWith('/api/systems/s-1/group') && method === 'PUT') {
+        groupPuts.push({ url, body: String(init?.body ?? '') })
+        return Promise.resolve(jsonResponse({}))
+      }
+      return Promise.resolve(jsonResponse({}, 500))
+    })
+    vi.stubGlobal('EventSource', FakeEventSource)
+
+    renderRoute()
+    const row = (await screen.findByText('host-a')).closest('tr')!
+    fireEvent.click(within(row).getByRole('button', { name: /kebab toggle/i }))
+    fireEvent.click(
+      screen.getByRole('menuitem', { name: /Remove host-a from group/i }),
+    )
+    // Confirm modal danger button.
+    fireEvent.click(await screen.findByRole('button', { name: /^Remove$/i }))
+    await waitFor(() => expect(groupPuts).toHaveLength(1))
+    expect(JSON.parse(groupPuts[0].body)).toEqual({ groupId: null })
+  })
+
   it('surfaces a not-found message when the group fetch 404s', async () => {
     vi.unstubAllGlobals()
     vi.stubGlobal('fetch', (input: FetchInput) => {
