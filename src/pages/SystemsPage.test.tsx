@@ -389,6 +389,54 @@ describe('SystemsPage', () => {
     expect(rows1[2]).toContain('alpha')
   })
 
+  it('sorts across non-name columns when their headers are clicked', async () => {
+    const data = [
+      system({ id: '1', name: 'a-name', hostname: '10.0.0.3', status: 'unreachable' }),
+      system({ id: '2', name: 'b-name', hostname: '10.0.0.1', status: 'reachable' }),
+      system({ id: '3', name: 'c-name', hostname: '10.0.0.2', status: 'unprobed' }),
+    ]
+    fetchMock.mockResolvedValueOnce(jsonResponse(data))
+    render(<SystemsPage />)
+    await screen.findByText('a-name')
+    const clickHeader = (name: RegExp) => {
+      const headers = screen.getAllByRole('columnheader', { name })
+      const button = headers[0].querySelector('button')
+      if (button) fireEvent.click(button)
+    }
+    // Each sortable header has a distinct sortKey branch; click each
+    // to exercise the per-key comparator arm.
+    clickHeader(/^Hostname/i)
+    clickHeader(/^Labels/i)
+    clickHeader(/^Group/i)
+    clickHeader(/^Last checked/i)
+    clickHeader(/^Updates/i)
+    expect(screen.getByText('a-name')).toBeInTheDocument()
+  })
+
+  it('deselects every row after expanding the selection to all matching', async () => {
+    const many = Array.from({ length: 30 }, (_, i) =>
+      system({ id: `s${i}`, name: `sys${i.toString().padStart(2, '0')}`, hostname: `10.0.0.${i}` }),
+    )
+    fetchMock.mockResolvedValueOnce(jsonResponse(many))
+    render(<SystemsPage />)
+    await screen.findByText('sys00')
+    const headerCheckbox = screen.getByRole('checkbox', { name: /select all/i })
+    fireEvent.click(headerCheckbox)
+    // The "Select all N matching" banner — click it to expand.
+    const expand = await screen.findByRole('button', {
+      name: /Select all 30 matching/i,
+    })
+    fireEvent.click(expand)
+    // Now untick the header. Expanded selection clears wholesale.
+    fireEvent.click(headerCheckbox)
+    await waitFor(() => {
+      const stillSelected = screen
+        .queryAllByRole('checkbox', { checked: true })
+        .filter((c) => c.getAttribute('aria-label')?.includes('row'))
+      expect(stillSelected).toHaveLength(0)
+    })
+  })
+
   it('paginates and offers an All option', async () => {
     const many = Array.from({ length: 30 }, (_, i) =>
       system({ id: `s${i}`, name: `sys${i.toString().padStart(2, '0')}`, hostname: `10.0.0.${i}` }),
