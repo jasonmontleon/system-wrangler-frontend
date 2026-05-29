@@ -351,6 +351,92 @@ describe('UsersPage', () => {
     ])
   })
 
+  it('bulk-disables selected users via the Actions menu', async () => {
+    fetchMock
+      .mockResolvedValueOnce(
+        jsonResponse({
+          users: [
+            userRow({ id: 'u1', username: 'alice', disabled: false }),
+            userRow({ id: 'u2', username: 'bob', disabled: false }),
+          ],
+        }),
+      )
+      .mockResolvedValueOnce(new Response(null, { status: 204 }))
+      .mockResolvedValueOnce(
+        jsonResponse({
+          users: [
+            userRow({ id: 'u1', username: 'alice', disabled: false }),
+            userRow({ id: 'u2', username: 'bob', disabled: true }),
+          ],
+        }),
+      )
+    render(<UsersPage currentUserId="u1" />)
+    await screen.findByText('bob')
+    const bobRow = screen.getByText('bob').closest('tr')!
+    fireEvent.click(within(bobRow).getByRole('checkbox'))
+    clickActionsItem(/disable selected/i)
+    await waitFor(() => {
+      const puts = (fetchMock.mock.calls as Array<[FetchInput, FetchInit]>)
+        .filter((c) => c[1]?.method === 'PATCH')
+        .map((c) => String(c[0]))
+      expect(puts).toContain('/api/admin/users/u2')
+    })
+  })
+
+  it('bulk-enables selected users via the Actions menu', async () => {
+    fetchMock
+      .mockResolvedValueOnce(
+        jsonResponse({
+          users: [
+            userRow({ id: 'u1', username: 'alice', disabled: false }),
+            userRow({ id: 'u2', username: 'bob', disabled: true }),
+          ],
+        }),
+      )
+      .mockResolvedValueOnce(new Response(null, { status: 204 }))
+      .mockResolvedValueOnce(
+        jsonResponse({
+          users: [
+            userRow({ id: 'u1', username: 'alice', disabled: false }),
+            userRow({ id: 'u2', username: 'bob', disabled: false }),
+          ],
+        }),
+      )
+    render(<UsersPage currentUserId="u1" />)
+    await screen.findByText('bob')
+    const bobRow = screen.getByText('bob').closest('tr')!
+    fireEvent.click(within(bobRow).getByRole('checkbox'))
+    clickActionsItem(/enable selected/i)
+    await waitFor(() => {
+      const patches = (fetchMock.mock.calls as Array<[FetchInput, FetchInit]>)
+        .filter((c) => c[1]?.method === 'PATCH')
+        .map((c) => String(c[0]))
+      expect(patches).toContain('/api/admin/users/u2')
+    })
+  })
+
+  it('toggleAllVisible header checkbox selects every non-self row', async () => {
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse({
+        users: [
+          userRow({ id: 'u1', username: 'alice' }),
+          userRow({ id: 'u2', username: 'bob' }),
+          userRow({ id: 'u3', username: 'carol' }),
+        ],
+      }),
+    )
+    render(<UsersPage currentUserId="u1" />)
+    await screen.findByText('bob')
+    const headerCheckbox = screen.getByRole('checkbox', { name: /select all/i })
+    fireEvent.click(headerCheckbox)
+    // alice is the caller and her row checkbox is disabled (self
+    // can't be bulk-acted-on). bob and carol toggle on.
+    const bobRow = screen.getByText('bob').closest('tr')!
+    expect((within(bobRow).getByRole('checkbox') as HTMLInputElement).checked).toBe(true)
+    fireEvent.click(headerCheckbox)
+    expect((within(bobRow).getByRole('checkbox') as HTMLInputElement).checked).toBe(false)
+  })
+
   it('filters by username via the column filter input', async () => {
     fetchMock.mockResolvedValueOnce(
       jsonResponse({
