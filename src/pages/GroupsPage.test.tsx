@@ -325,6 +325,168 @@ describe('GroupsPage', () => {
     ).toBeNull()
   })
 
+  it('bulk Check on a no-member group reports a skipped outcome', async () => {
+    vi.unstubAllGlobals()
+    vi.stubGlobal('fetch', (input: FetchInput, init?: FetchInit) => {
+      const url = typeof input === 'string' ? input : input.toString()
+      const method = init?.method ?? 'GET'
+      if (url === '/api/me/scope')
+        return Promise.resolve(jsonResponse({ global: 'admin', groups: {} }))
+      if (url === '/api/groups' && method === 'GET')
+        return Promise.resolve(
+          jsonResponse([group({ id: 'g-1', name: 'empty', systemCount: 0 })]),
+        )
+      if (url === '/api/systems' && method === 'GET')
+        return Promise.resolve(jsonResponse([]))
+      return Promise.resolve(jsonResponse({}, 500))
+    })
+    vi.stubGlobal('EventSource', FakeEventSource)
+    renderWithRouter()
+    await screen.findByText('empty')
+    fireEvent.click(screen.getAllByRole('checkbox', { name: /select row/i })[0])
+    fireEvent.click(screen.getByRole('button', { name: /^Actions$/i }))
+    fireEvent.click(
+      screen.getByRole('menuitem', { name: /Check selected groups/i }),
+    )
+    expect(
+      await screen.findByText(/No systems in the selected group/i),
+    ).toBeInTheDocument()
+  })
+
+  it('bulk Remove selected groups runs DELETE on confirm', async () => {
+    const deletes: string[] = []
+    vi.unstubAllGlobals()
+    vi.stubGlobal('fetch', (input: FetchInput, init?: FetchInit) => {
+      const url = typeof input === 'string' ? input : input.toString()
+      const method = init?.method ?? 'GET'
+      if (url === '/api/me/scope')
+        return Promise.resolve(jsonResponse({ global: 'admin', groups: {} }))
+      if (url === '/api/groups' && method === 'GET')
+        return Promise.resolve(
+          jsonResponse([
+            group({ id: 'g-1', name: 'a' }),
+            group({ id: 'g-2', name: 'b' }),
+          ]),
+        )
+      if (url === '/api/systems' && method === 'GET')
+        return Promise.resolve(jsonResponse([]))
+      if (url.match(/^\/api\/groups\/g-\d+$/) && method === 'DELETE') {
+        deletes.push(url)
+        return Promise.resolve(new Response(null, { status: 204 }))
+      }
+      return Promise.resolve(jsonResponse({}, 500))
+    })
+    vi.stubGlobal('EventSource', FakeEventSource)
+    renderWithRouter()
+    await screen.findByText('a')
+    const boxes = screen.getAllByRole('checkbox', { name: /select row/i })
+    fireEvent.click(boxes[0])
+    fireEvent.click(boxes[1])
+    fireEvent.click(screen.getByRole('button', { name: /^Actions$/i }))
+    fireEvent.click(
+      screen.getByRole('menuitem', { name: /^Remove selected/i }),
+    )
+    // Confirm modal danger button.
+    fireEvent.click(await screen.findByRole('button', { name: /^Remove$/i }))
+    await waitFor(() => expect(deletes).toHaveLength(2))
+  })
+
+  it('surfaces a delete error from removeOne and clears via Dismiss', async () => {
+    vi.unstubAllGlobals()
+    vi.stubGlobal('fetch', (input: FetchInput, init?: FetchInit) => {
+      const url = typeof input === 'string' ? input : input.toString()
+      const method = init?.method ?? 'GET'
+      if (url === '/api/me/scope')
+        return Promise.resolve(jsonResponse({ global: 'admin', groups: {} }))
+      if (url === '/api/groups' && method === 'GET')
+        return Promise.resolve(jsonResponse([group({ id: 'g-1', name: 'doomed' })]))
+      if (url === '/api/systems' && method === 'GET')
+        return Promise.resolve(jsonResponse([]))
+      if (url === '/api/groups/g-1' && method === 'DELETE')
+        return Promise.resolve(jsonResponse({ error: 'in use' }, 409))
+      return Promise.resolve(jsonResponse({}, 500))
+    })
+    vi.stubGlobal('EventSource', FakeEventSource)
+    renderWithRouter()
+    const row = (await screen.findByText('doomed')).closest('tr')!
+    fireEvent.click(within(row).getByRole('button', { name: /kebab toggle/i }))
+    fireEvent.click(screen.getByRole('menuitem', { name: /Remove doomed/i }))
+    fireEvent.click(await screen.findByRole('button', { name: /^Remove$/i }))
+    expect(await screen.findByText(/in use/i)).toBeInTheDocument()
+  })
+
+  it('renames a group via the rename modal', async () => {
+    const puts: Array<{ url: string; body: string }> = []
+    vi.unstubAllGlobals()
+    vi.stubGlobal('fetch', (input: FetchInput, init?: FetchInit) => {
+      const url = typeof input === 'string' ? input : input.toString()
+      const method = init?.method ?? 'GET'
+      if (url === '/api/me/scope')
+        return Promise.resolve(jsonResponse({ global: 'admin', groups: {} }))
+      if (url === '/api/groups' && method === 'GET')
+        return Promise.resolve(jsonResponse([group({ id: 'g-1', name: 'old' })]))
+      if (url === '/api/systems' && method === 'GET')
+        return Promise.resolve(jsonResponse([]))
+      if (url === '/api/groups/g-1' && method === 'PATCH') {
+        puts.push({ url, body: String(init?.body ?? '') })
+        return Promise.resolve(
+          jsonResponse({ ...group({ id: 'g-1', name: 'new' }) }),
+        )
+      }
+      return Promise.resolve(jsonResponse({}, 500))
+    })
+    vi.stubGlobal('EventSource', FakeEventSource)
+    renderWithRouter()
+    const row = (await screen.findByText('old')).closest('tr')!
+    fireEvent.click(within(row).getByRole('button', { name: /kebab toggle/i }))
+    fireEvent.click(screen.getByRole('menuitem', { name: /Rename old/i }))
+    const dialog = await screen.findByRole('dialog')
+    const input = dialog.querySelector('#rename-group-name') as HTMLInputElement
+    fireEvent.change(input, { target: { value: 'new' } })
+    // jsdom's button[type="submit" form="..."] doesn't always trigger
+    // the form submit handler — fire submit directly on the form.
+    const form = dialog.querySelector('#rename-group-form') as HTMLFormElement
+    fireEvent.submit(form)
+    await waitFor(() => expect(puts).toHaveLength(1))
+    expect(JSON.parse(puts[0].body)).toEqual({ name: 'new' })
+  })
+
+  it('filters groups by typing in the name search input', async () => {
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse([
+        group({ id: 'g-1', name: 'alpha' }),
+        group({ id: 'g-2', name: 'beta' }),
+      ]),
+    )
+    renderWithRouter()
+    await screen.findByText('alpha')
+    fireEvent.change(screen.getByLabelText(/Filter name/i), {
+      target: { value: 'beta' },
+    })
+    await waitFor(() => {
+      expect(screen.queryByText('alpha')).toBeNull()
+    })
+    expect(screen.getByText('beta')).toBeInTheDocument()
+  })
+
+  it('toggleAllVisible selects every visible row when header is ticked', async () => {
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse([
+        group({ id: 'g-1', name: 'a' }),
+        group({ id: 'g-2', name: 'b' }),
+      ]),
+    )
+    renderWithRouter()
+    await screen.findByText('a')
+    const allRows = screen.getByRole('checkbox', { name: /select all/i })
+    fireEvent.click(allRows)
+    const rowBoxes = screen.getAllByRole('checkbox', { name: /select row/i })
+    rowBoxes.forEach((b) => expect((b as HTMLInputElement).checked).toBe(true))
+    // Untick deselects.
+    fireEvent.click(allRows)
+    rowBoxes.forEach((b) => expect((b as HTMLInputElement).checked).toBe(false))
+  })
+
   it('row kebab Check skips unreachable members and reports them in the outcomes panel', async () => {
     const checks: string[] = []
     vi.unstubAllGlobals()
