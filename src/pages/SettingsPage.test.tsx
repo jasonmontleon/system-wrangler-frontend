@@ -134,6 +134,56 @@ describe('SettingsPage', () => {
     expect(input.value).toBe('0')
   })
 
+  it('surfaces a 400 error from update_concurrency_limit save', async () => {
+    fetchMock
+      .mockResolvedValueOnce(
+        jsonResponse({
+          settings: { run_history_limit: '100', update_concurrency_limit: '4' },
+        }),
+      )
+      .mockResolvedValueOnce(
+        jsonResponse({ error: 'concurrency must be between 1 and 64' }, 400),
+      )
+    render(<SettingsPage />)
+    const input = (await screen.findByLabelText(
+      /Simultaneous check \/ update runs/i,
+    )) as HTMLInputElement
+    fireEvent.change(input, { target: { value: '0' } })
+    fireEvent.click(screen.getAllByRole('button', { name: /^Save$/i })[1])
+    expect(
+      await screen.findByText(/concurrency must be between 1 and 64/i),
+    ).toBeInTheDocument()
+    expect(input.value).toBe('0')
+  })
+
+  it('resyncs the input when the parent passes a different value after save', async () => {
+    // First load returns 100; user types 250; Save returns 204; the
+    // refresh after save returns 500 (server normalized). The input
+    // must reflect the server's authoritative value, not the user's
+    // typed 250 — that's what the value-vs-input useEffect guards.
+    fetchMock
+      .mockResolvedValueOnce(
+        jsonResponse({
+          settings: { run_history_limit: '100', update_concurrency_limit: '4' },
+        }),
+      )
+      .mockResolvedValueOnce(new Response(null, { status: 204 }))
+      .mockResolvedValueOnce(
+        jsonResponse({
+          settings: { run_history_limit: '500', update_concurrency_limit: '4' },
+        }),
+      )
+    render(<SettingsPage />)
+    const input = (await screen.findByLabelText(
+      /Per-system row cap/i,
+    )) as HTMLInputElement
+    fireEvent.change(input, { target: { value: '250' } })
+    fireEvent.click(screen.getAllByRole('button', { name: /^Save$/i })[0])
+    await waitFor(() => {
+      expect(input.value).toBe('500')
+    })
+  })
+
   it('shows a load error if /api/admin/settings fails', async () => {
     fetchMock.mockResolvedValueOnce(jsonResponse({ error: 'boom' }, 500))
     render(<SettingsPage />)
