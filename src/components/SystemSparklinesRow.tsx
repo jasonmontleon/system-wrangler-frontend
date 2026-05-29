@@ -3,6 +3,7 @@
 import { Grid, GridItem } from '@patternfly/react-core'
 import SparklineCard from './SparklineCard'
 import { cpuBusyPct, diskIoBytesPerSec, memUsedPct } from '../api/promql'
+import { formatBytesPerSec } from './metricFormatters'
 
 // SystemSparklinesRow renders three glance-metric cards above the
 // SystemDetailPage tabs. The first card varies by platform: Linux /
@@ -67,11 +68,3 @@ export default function SystemSparklinesRow({
   )
 }
 
-function formatBytesPerSec(v: number): string {
-  const abs = Math.abs(v)
-  if (abs < 1000) return `${v.toFixed(0)} B/s`
-  if (abs < 1e6) return `${(v / 1000).toFixed(1)} KB/s`
-  if (abs < 1e9) return `${(v / 1e6).toFixed(1)} MB/s`
-  if (abs < 1e12) return `${(v / 1e9).toFixed(1)} GB/s`
-  return `${(v / 1e12).toFixed(1)} TB/s`
-}

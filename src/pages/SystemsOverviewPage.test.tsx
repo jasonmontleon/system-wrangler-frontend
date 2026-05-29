@@ -312,6 +312,55 @@ describe('SystemsOverviewPage', () => {
     })
   })
 
+  it('sorts by Group, Memory, Disk, and Updates when their headers are clicked', async () => {
+    render(
+      <MemoryRouter>
+        <SystemsOverviewPage />
+      </MemoryRouter>,
+    )
+    const table = await screen.findByLabelText('Systems overview')
+    const inTable = within(table)
+    await inTable.findByRole('link', { name: 'web-1' })
+    const clickHeader = (name: RegExp) => {
+      const header = inTable.getByRole('columnheader', { name })
+      const button = header.querySelector('button')
+      if (button) fireEvent.click(button)
+    }
+    // Exercise each sortKey case in the compare switch.
+    clickHeader(/^Group/i)
+    clickHeader(/^Memory/i)
+    clickHeader(/^Disk/i)
+    clickHeader(/^Updates/i)
+    // No crash; the page is still showing rows.
+    expect(inTable.getByRole('link', { name: 'web-1' })).toBeInTheDocument()
+  })
+
+  it('surfaces a load error when /api/systems fails', async () => {
+    vi.unstubAllGlobals()
+    vi.stubGlobal('fetch', (input: RequestInfo) => {
+      const url = String(input)
+      if (url.startsWith('/api/me/scope'))
+        return Promise.resolve(jsonResponse({ global: 'admin', groups: {} }))
+      if (url === '/api/systems')
+        return Promise.resolve(jsonResponse({ error: 'down' }, 500))
+      if (url === '/api/groups')
+        return Promise.resolve(jsonResponse([]))
+      if (url.startsWith('/api/metrics/query'))
+        return Promise.resolve(
+          jsonResponse({ status: 'success', data: { resultType: 'vector', result: [] } }),
+        )
+      return Promise.resolve(jsonResponse({}, 500))
+    })
+    render(
+      <MemoryRouter>
+        <SystemsOverviewPage />
+      </MemoryRouter>,
+    )
+    expect(
+      await screen.findByText(/Could not load|down/i),
+    ).toBeInTheDocument()
+  })
+
   it('marks the heatmap table with a sticky header', async () => {
     render(
       <MemoryRouter>

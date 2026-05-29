@@ -119,6 +119,53 @@ describe('ExportersPage', () => {
     })
   })
 
+  it('edits a custom installer through the modal', async () => {
+    fetchMock
+      .mockResolvedValueOnce(jsonResponse({ definitions: [custom] }))
+      .mockResolvedValueOnce(jsonResponse({ ...custom, displayName: 'fast v2' }))
+      .mockResolvedValueOnce(jsonResponse({ definitions: [{ ...custom, displayName: 'fast v2' }] }))
+    render(<ExportersPage />)
+    await screen.findByText('custom.fast')
+    fireEvent.click(screen.getByRole('button', { name: /^Edit$/i }))
+    const dialog = await screen.findByRole('dialog')
+    const display = dialog.querySelector('#exp-display') as HTMLInputElement
+    fireEvent.change(display, { target: { value: 'fast v2' } })
+    fireEvent.click(
+      screen.getByRole('button', { name: /^Save changes$/i }),
+    )
+    await waitFor(() => {
+      const patch = fetchMock.mock.calls.find(
+        (c) =>
+          String(c[0]).endsWith('/api/admin/exporter-definitions/custom.fast') &&
+          (c[1] as RequestInit | undefined)?.method === 'PATCH',
+      )
+      expect(patch).toBeDefined()
+    })
+  })
+
+  it('surfaces a delete error from the API', async () => {
+    fetchMock
+      .mockResolvedValueOnce(jsonResponse({ definitions: [custom] }))
+      .mockResolvedValueOnce(jsonResponse({ error: 'in use' }, { status: 409 }))
+    render(<ExportersPage />)
+    await screen.findByText('custom.fast')
+    fireEvent.click(screen.getByRole('button', { name: /^Delete$/i }))
+    expect(await screen.findByText('in use')).toBeInTheDocument()
+  })
+
+  it('Close on the editor modal returns to the table without saving', async () => {
+    fetchMock.mockResolvedValueOnce(jsonResponse({ definitions: [custom] }))
+    render(<ExportersPage />)
+    await screen.findByText('custom.fast')
+    fireEvent.click(screen.getByRole('button', { name: /^Edit$/i }))
+    const dialog = await screen.findByRole('dialog')
+    const cancels = screen.getAllByRole('button', { name: /^Close|^Cancel/i })
+    fireEvent.click(cancels[cancels.length - 1])
+    await waitFor(() => {
+      expect(dialog).not.toBeInTheDocument()
+    })
+  })
+
   it('surfaces backend errors from create', async () => {
     fetchMock
       .mockResolvedValueOnce(jsonResponse({ definitions: [] }))

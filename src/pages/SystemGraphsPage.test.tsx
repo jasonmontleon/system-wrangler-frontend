@@ -240,6 +240,35 @@ describe('SystemGraphsPage', () => {
     expect(screen.getByRole('link', { name: 'web-1' })).toBeInTheDocument()
   })
 
+  it('cycles through each METRIC option to exercise every PromQL builder', async () => {
+    render(
+      <MemoryRouter>
+        <SystemGraphsPage />
+      </MemoryRouter>,
+    )
+    await screen.findByRole('link', { name: 'web-1' })
+    const optionLabels = [
+      'CPU busy (%)',
+      'CPU iowait (%)',
+      'Memory available (bytes)',
+      'Swap used (%)',
+      'Network IO (bytes/sec)',
+      'TCP connections (established)',
+      'Disk IO (bytes/sec)',
+      'Disk IOPS',
+      'Filesystem usage (%)',
+      'Open file descriptors',
+      'Processes',
+      'Uptime (days)',
+    ]
+    for (const label of optionLabels) {
+      fireEvent.click(screen.getByRole('button', { name: /Metric/i }))
+      fireEvent.click(await screen.findByRole('option', { name: label }))
+    }
+    // Final assertion: nothing crashed and rows still render.
+    expect(screen.getByRole('link', { name: 'web-1' })).toBeInTheDocument()
+  })
+
   it('shows a "no systems match" message when the filter excludes everything', async () => {
     render(
       <MemoryRouter>
