@@ -1,5 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 
+import type { MouseEvent as ReactMouseEvent } from 'react'
+import type { MatrixEntry } from '../api/metrics'
+
 // formatXTick renders the X-axis label for a sample timestamp. Victory
 // otherwise stringifies Date objects to their numeric epoch ms, which
 // is unreadable. For windows up to a day we show HH:MM; beyond that
@@ -47,6 +50,88 @@ export function formatTooltipLabel(
     return `${seriesName}\n${value}\n${time}`
   }
   return `${value}\n${time}`
+}
+
+export type Prepared = {
+  key: string
+  metric: Record<string, string>
+  points: Array<{ x: Date; y: number }>
+}
+
+// prepareData turns wire-shape MatrixEntry samples into per-series
+// Prepared objects with Date X's and number Y's, dropping non-finite
+// samples and any series whose entire window is non-finite.
+export function prepareData(series: MatrixEntry[]): Prepared[] {
+  const out: Prepared[] = []
+  for (const entry of series) {
+    const points = entry.values
+      .map(([ts, raw]) => ({ x: new Date(ts * 1000), y: parseFloat(raw) }))
+      .filter((p) => Number.isFinite(p.y))
+    if (points.length === 0) continue
+    out.push({
+      key: serializeMetric(entry.metric),
+      metric: entry.metric,
+      points,
+    })
+  }
+  return out
+}
+
+function serializeMetric(metric: Record<string, string>): string {
+  const keys = Object.keys(metric).sort()
+  return keys.map((k) => `${k}=${metric[k]}`).join(',')
+}
+
+export type HoverState = {
+  cursorX: number
+  cursorY: number
+  viewportX: number
+  viewportY: number
+  point: { x: Date; y: number }
+  seriesName: string
+}
+
+// computeHover finds the prepared sample nearest the cursor's X position
+// inside the plot area. Returns null when the container ref is absent,
+// the cursor is outside the plot area, or no samples are available.
+export function computeHover(
+  e: ReactMouseEvent<HTMLDivElement>,
+  el: HTMLDivElement | null,
+  data: Prepared[],
+  xDomain: [Date, Date],
+  padLeft: number,
+  padRight: number,
+): HoverState | null {
+  if (!el) return null
+  const rect = el.getBoundingClientRect()
+  const cursorX = e.clientX - rect.left
+  const cursorY = e.clientY - rect.top
+  const dataLeft = padLeft
+  const dataRight = rect.width - padRight
+  if (cursorX < dataLeft || cursorX > dataRight) return null
+  const frac = (cursorX - dataLeft) / (dataRight - dataLeft)
+  const startMs = xDomain[0].getTime()
+  const endMs = xDomain[1].getTime()
+  const targetMs = startMs + frac * (endMs - startMs)
+  let best: { diff: number; point: Prepared['points'][number]; name: string } | null = null
+  for (const s of data) {
+    const name = s.metric.system_name ?? s.metric.instance ?? ''
+    for (const p of s.points) {
+      const diff = Math.abs(p.x.getTime() - targetMs)
+      if (!best || diff < best.diff) {
+        best = { diff, point: p, name }
+      }
+    }
+  }
+  if (!best) return null
+  return {
+    cursorX,
+    cursorY,
+    viewportX: e.clientX,
+    viewportY: e.clientY,
+    point: best.point,
+    seriesName: best.name,
+  }
 }
 
 // formatYTick renders large values with SI suffixes (1.2G, 480M) so

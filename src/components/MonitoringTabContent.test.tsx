@@ -260,4 +260,134 @@ describe('MonitoringTabContent', () => {
       await screen.findByText(/Failed to load exporters/i),
     ).toBeInTheDocument()
   })
+
+  it('shows the "No system id" error when systemId is empty', async () => {
+    render(<MonitoringTabContent systemId="" canOperate />)
+    expect(await screen.findByText(/No system id/i)).toBeInTheDocument()
+    expect(fetchMock).not.toHaveBeenCalled()
+  })
+
+  it('fires the Probe action on Status click', async () => {
+    fetchMock
+      .mockResolvedValueOnce(
+        jsonResponse({
+          scrapeMode: 'localhost',
+          detectedPkgManagers: ['builtin.dnf'],
+          exporters: [
+            {
+              ...baseExporter,
+              availability: 'available',
+              installed: true,
+              state: 'running',
+            },
+          ],
+        }),
+      )
+      .mockResolvedValueOnce(
+        jsonResponse({
+          runId: 'r1',
+          exporterId: 'builtin.dnf.exporter',
+          kind: 'status',
+          status: 'success',
+          exitCode: 0,
+          state: 'running',
+          durationMs: 1,
+        }),
+      )
+      .mockResolvedValueOnce(
+        jsonResponse({
+          scrapeMode: 'localhost',
+          detectedPkgManagers: ['builtin.dnf'],
+          exporters: [
+            {
+              ...baseExporter,
+              availability: 'available',
+              installed: true,
+              state: 'running',
+            },
+          ],
+        }),
+      )
+    render(<MonitoringTabContent systemId="s1" canOperate />)
+    fireEvent.click(await screen.findByRole('button', { name: /^Probe$/i }))
+    await waitFor(() => {
+      const statusCall = fetchMock.mock.calls.find((c) =>
+        String(c[0]).endsWith('/exporters/builtin.dnf.exporter/status'),
+      )
+      expect(statusCall).toBeDefined()
+    })
+  })
+
+  it('fires the Remove action on Remove click', async () => {
+    fetchMock
+      .mockResolvedValueOnce(
+        jsonResponse({
+          scrapeMode: 'localhost',
+          detectedPkgManagers: ['builtin.dnf'],
+          exporters: [
+            {
+              ...baseExporter,
+              hasRemove: true,
+              availability: 'available',
+              installed: true,
+              state: 'running',
+            },
+          ],
+        }),
+      )
+      .mockResolvedValueOnce(
+        jsonResponse({
+          runId: 'r1',
+          exporterId: 'builtin.dnf.exporter',
+          kind: 'remove',
+          status: 'success',
+          exitCode: 0,
+          state: 'removed',
+          durationMs: 1,
+        }),
+      )
+      .mockResolvedValueOnce(
+        jsonResponse({
+          scrapeMode: 'localhost',
+          detectedPkgManagers: ['builtin.dnf'],
+          exporters: [
+            {
+              ...baseExporter,
+              hasRemove: true,
+              availability: 'available',
+              installed: false,
+              state: 'removed',
+            },
+          ],
+        }),
+      )
+    render(<MonitoringTabContent systemId="s1" canOperate />)
+    fireEvent.click(await screen.findByRole('button', { name: /^Remove$/i }))
+    await waitFor(() => {
+      const removeCall = fetchMock.mock.calls.find((c) =>
+        String(c[0]).endsWith('/exporters/builtin.dnf.exporter/remove'),
+      )
+      expect(removeCall).toBeDefined()
+    })
+  })
+
+  it('surfaces a non-ApiError exception via extractActionError fallthrough', async () => {
+    fetchMock
+      .mockResolvedValueOnce(
+        jsonResponse({
+          scrapeMode: 'localhost',
+          detectedPkgManagers: ['builtin.dnf'],
+          exporters: [
+            { ...baseExporter, availability: 'available', installed: false },
+          ],
+        }),
+      )
+      .mockRejectedValueOnce(new Error('network down'))
+    render(<MonitoringTabContent systemId="s1" canOperate />)
+    fireEvent.click(await screen.findByRole('button', { name: /^Install$/i }))
+    await waitFor(() => {
+      expect(screen.getByText(/Action failed/i)).toBeInTheDocument()
+      expect(screen.getByText(/network down/)).toBeInTheDocument()
+    })
+  })
 })

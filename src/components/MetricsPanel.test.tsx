@@ -1,14 +1,17 @@
 // SPDX-License-Identifier: Apache-2.0
 
-import { render, screen, waitFor } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import MetricsPanel from './MetricsPanel'
 import { TimeRangeContext } from '../hooks/useTimeRange'
 import {
+  computeHover,
   defaultSeriesName,
   formatTooltipLabel,
   formatXTick,
   formatYTick,
+  prepareData,
+  type Prepared,
 } from './metricsPanelHelpers'
 
 function jsonResponse(body: unknown, status = 200): Response {
@@ -274,5 +277,279 @@ describe('formatYTick', () => {
   it('survives NaN / Infinity', () => {
     expect(formatYTick(NaN)).toBe('NaN')
     expect(formatYTick(Infinity)).toBe('Infinity')
+  })
+})
+
+describe('prepareData', () => {
+  it('converts wire samples into Date / number points', () => {
+    const out = prepareData([
+      {
+        metric: { system_name: 'web-1' },
+        values: [
+          [1_716_000_000, '0.5'],
+          [1_716_000_015, '0.7'],
+        ],
+      },
+    ])
+    expect(out).toHaveLength(1)
+    expect(out[0].metric.system_name).toBe('web-1')
+    expect(out[0].points).toHaveLength(2)
+    expect(out[0].points[0].y).toBe(0.5)
+    expect(out[0].points[0].x).toBeInstanceOf(Date)
+  })
+
+  it('filters out non-finite y values', () => {
+    const out = prepareData([
+      {
+        metric: { system_name: 'web-1' },
+        values: [
+          [1_716_000_000, '0.5'],
+          [1_716_000_015, 'NaN'],
+          [1_716_000_030, 'Infinity'],
+          [1_716_000_045, '0.7'],
+        ],
+      },
+    ])
+    expect(out[0].points).toHaveLength(2)
+    expect(out[0].points.map((p) => p.y)).toEqual([0.5, 0.7])
+  })
+
+  it('drops an entire series whose every sample is non-finite', () => {
+    const out = prepareData([
+      {
+        metric: { system_name: 'allNaN' },
+        values: [[1_716_000_000, 'NaN']],
+      },
+      {
+        metric: { system_name: 'web-1' },
+        values: [[1_716_000_000, '0.5']],
+      },
+    ])
+    expect(out).toHaveLength(1)
+    expect(out[0].metric.system_name).toBe('web-1')
+  })
+
+  it('serializes metric labels stably into the key', () => {
+    const out = prepareData([
+      {
+        metric: { system_name: 'web-1', instance: '10.0.0.5:9100' },
+        values: [[1_716_000_000, '0.5']],
+      },
+    ])
+    expect(out[0].key).toBe('instance=10.0.0.5:9100,system_name=web-1')
+  })
+})
+
+describe('computeHover', () => {
+  function makePrepared(): Prepared[] {
+    return [
+      {
+        key: 'system_name=web-1',
+        metric: { system_name: 'web-1' },
+        points: [
+          { x: new Date(1_716_000_000_000), y: 1 },
+          { x: new Date(1_716_000_060_000), y: 5 },
+          { x: new Date(1_716_000_120_000), y: 9 },
+        ],
+      },
+    ]
+  }
+  const xDomain: [Date, Date] = [
+    new Date(1_716_000_000_000),
+    new Date(1_716_000_120_000),
+  ]
+
+  function fakeEvent(clientX: number, clientY: number) {
+    return { clientX, clientY } as unknown as Parameters<typeof computeHover>[0]
+  }
+
+  function fakeContainer(rect: Partial<DOMRect>): HTMLDivElement {
+    return {
+      getBoundingClientRect: () =>
+        ({
+          left: 0,
+          top: 0,
+          right: 400,
+          bottom: 200,
+          width: 400,
+          height: 200,
+          x: 0,
+          y: 0,
+          ...rect,
+        }) as DOMRect,
+    } as unknown as HTMLDivElement
+  }
+
+  it('returns null when the container ref is null', () => {
+    expect(computeHover(fakeEvent(200, 100), null, makePrepared(), xDomain, 60, 30)).toBeNull()
+  })
+
+  it('returns null when the cursor is left of the plot area', () => {
+    expect(
+      computeHover(fakeEvent(40, 100), fakeContainer({}), makePrepared(), xDomain, 60, 30),
+    ).toBeNull()
+  })
+
+  it('returns null when the cursor is right of the plot area', () => {
+    expect(
+      computeHover(fakeEvent(400, 100), fakeContainer({}), makePrepared(), xDomain, 60, 30),
+    ).toBeNull()
+  })
+
+  it('returns null when there are no series', () => {
+    expect(
+      computeHover(fakeEvent(200, 100), fakeContainer({}), [], xDomain, 60, 30),
+    ).toBeNull()
+  })
+
+  it('returns the nearest point and its enclosing series name', () => {
+    // Plot area: x=60..370 (width 400 - padRight 30). Cursor at x=215
+    // is fraction (215-60)/(370-60) ≈ 0.5 → target ms is the midpoint
+    // → nearest is the middle point at t=60s with y=5.
+    const out = computeHover(
+      fakeEvent(215, 100),
+      fakeContainer({}),
+      makePrepared(),
+      xDomain,
+      60,
+      30,
+    )
+    expect(out).not.toBeNull()
+    expect(out!.point.y).toBe(5)
+    expect(out!.seriesName).toBe('web-1')
+    expect(out!.viewportX).toBe(215)
+    expect(out!.viewportY).toBe(100)
+  })
+
+  it('falls back to the `instance` label when system_name is absent', () => {
+    const data: Prepared[] = [
+      {
+        key: 'instance=10.0.0.5:9100',
+        metric: { instance: '10.0.0.5:9100' },
+        points: [{ x: new Date(1_716_000_060_000), y: 5 }],
+      },
+    ]
+    const out = computeHover(fakeEvent(215, 100), fakeContainer({}), data, xDomain, 60, 30)
+    expect(out!.seriesName).toBe('10.0.0.5:9100')
+  })
+
+  it('uses an empty series name when neither system_name nor instance are present', () => {
+    const data: Prepared[] = [
+      {
+        key: 'job=foo',
+        metric: { job: 'foo' },
+        points: [{ x: new Date(1_716_000_060_000), y: 5 }],
+      },
+    ]
+    const out = computeHover(fakeEvent(215, 100), fakeContainer({}), data, xDomain, 60, 30)
+    expect(out!.seriesName).toBe('')
+  })
+})
+
+describe('MetricsPanel multi-series rendering', () => {
+  let fetchMock: ReturnType<typeof vi.fn>
+  beforeEach(() => {
+    fetchMock = vi.fn()
+    vi.stubGlobal('fetch', fetchMock)
+  })
+  afterEach(() => {
+    vi.unstubAllGlobals()
+  })
+
+  it('shows a HoverTooltip on mouseMove and clears it on mouseLeave', async () => {
+    fetchMock.mockResolvedValue(
+      jsonResponse({
+        status: 'success',
+        data: {
+          resultType: 'matrix',
+          result: [
+            {
+              metric: { system_name: 'web-1' },
+              values: [
+                [1_716_000_000, '0.5'],
+                [1_716_000_015, '0.7'],
+                [1_716_000_030, '0.8'],
+              ],
+            },
+          ],
+        },
+      }),
+    )
+    const { container } = render(
+      <MetricsPanel
+        title="Hover"
+        promql="node_load1"
+        refreshIntervalMs={1_000_000}
+      />,
+    )
+    await waitFor(() => {
+      expect(screen.queryByText(/No samples/i)).toBeNull()
+    })
+    // The outermost div in SeriesChart owns the mouse handlers and has
+    // position:relative + a height. Mock its getBoundingClientRect so
+    // computeHover thinks the cursor is inside the plot area.
+    const hoverDiv = container.querySelector(
+      'div[style*="position: relative"]',
+    ) as HTMLDivElement
+    expect(hoverDiv).toBeTruthy()
+    vi.spyOn(hoverDiv, 'getBoundingClientRect').mockReturnValue({
+      left: 0,
+      top: 0,
+      right: 400,
+      bottom: 260,
+      width: 400,
+      height: 260,
+      x: 0,
+      y: 0,
+      toJSON: () => ({}),
+    } as DOMRect)
+    fireEvent.mouseMove(hoverDiv, { clientX: 200, clientY: 100 })
+    expect(await screen.findByRole('tooltip')).toBeInTheDocument()
+    fireEvent.mouseLeave(hoverDiv)
+    await waitFor(() => {
+      expect(screen.queryByRole('tooltip')).toBeNull()
+    })
+  })
+
+  it('renders a legend when there are multiple labeled series', async () => {
+    fetchMock.mockResolvedValue(
+      jsonResponse({
+        status: 'success',
+        data: {
+          resultType: 'matrix',
+          result: [
+            {
+              metric: { system_name: 'web-1' },
+              values: [
+                [1_716_000_000, '0.5'],
+                [1_716_000_015, '0.7'],
+              ],
+            },
+            {
+              metric: { system_name: 'web-2' },
+              values: [
+                [1_716_000_000, '0.4'],
+                [1_716_000_015, '0.6'],
+              ],
+            },
+          ],
+        },
+      }),
+    )
+    const { container } = render(
+      <MetricsPanel
+        title="Two-series"
+        promql="node_load1"
+        refreshIntervalMs={1_000_000}
+      />,
+    )
+    await waitFor(() => {
+      expect(screen.queryByText(/No samples/i)).toBeNull()
+    })
+    // ChartLegend renders as inline text inside the SVG; sniff for the
+    // series labels we provided.
+    const svg = container.querySelector('svg')
+    expect(svg?.textContent).toContain('web-1')
+    expect(svg?.textContent).toContain('web-2')
   })
 })

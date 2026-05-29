@@ -31,10 +31,13 @@ import {
 import { queryRange, type MatrixEntry } from '../api/metrics'
 import { useTimeRange } from '../hooks/useTimeRange'
 import {
+  computeHover,
   defaultSeriesName,
   formatTooltipLabel,
   formatXTick,
   formatYTick,
+  prepareData,
+  type HoverState,
 } from './metricsPanelHelpers'
 
 // Brush container for drag-to-zoom. createContainer requires two
@@ -326,15 +329,6 @@ function SeriesChart({
   )
 }
 
-type HoverState = {
-  cursorX: number
-  cursorY: number
-  viewportX: number
-  viewportY: number
-  point: { x: Date; y: number }
-  seriesName: string
-}
-
 function HoverTooltip({ hover }: { hover: HoverState }) {
   if (typeof document === 'undefined') return null
   return createPortal(
@@ -367,69 +361,3 @@ function HoverTooltip({ hover }: { hover: HoverState }) {
   )
 }
 
-function computeHover(
-  e: ReactMouseEvent<HTMLDivElement>,
-  el: HTMLDivElement | null,
-  data: Prepared[],
-  xDomain: [Date, Date],
-  padLeft: number,
-  padRight: number,
-): HoverState | null {
-  if (!el) return null
-  const rect = el.getBoundingClientRect()
-  const cursorX = e.clientX - rect.left
-  const cursorY = e.clientY - rect.top
-  const dataLeft = padLeft
-  const dataRight = rect.width - padRight
-  if (cursorX < dataLeft || cursorX > dataRight) return null
-  const frac = (cursorX - dataLeft) / (dataRight - dataLeft)
-  const startMs = xDomain[0].getTime()
-  const endMs = xDomain[1].getTime()
-  const targetMs = startMs + frac * (endMs - startMs)
-  let best: { diff: number; point: Prepared['points'][number]; name: string } | null = null
-  for (const s of data) {
-    const name = s.metric.system_name ?? s.metric.instance ?? ''
-    for (const p of s.points) {
-      const diff = Math.abs(p.x.getTime() - targetMs)
-      if (!best || diff < best.diff) {
-        best = { diff, point: p, name }
-      }
-    }
-  }
-  if (!best) return null
-  return {
-    cursorX,
-    cursorY,
-    viewportX: e.clientX,
-    viewportY: e.clientY,
-    point: best.point,
-    seriesName: best.name,
-  }
-}
-
-type Prepared = {
-  key: string
-  metric: Record<string, string>
-  points: Array<{ x: Date; y: number }>
-}
-
-function prepareData(series: MatrixEntry[]): Prepared[] {
-  const out: Prepared[] = []
-  for (const entry of series) {
-    const points = entry.values
-      .map(([ts, raw]) => ({ x: new Date(ts * 1000), y: parseFloat(raw) }))
-      .filter((p) => Number.isFinite(p.y))
-    if (points.length === 0) continue
-    out.push({
-      key: serializeMetric(entry.metric),
-      metric: entry.metric,
-      points,
-    })
-  }
-  return out
-}
-
-function serializeMetric(metric: Record<string, string>): string {
-  const keys = Object.keys(metric).sort()
-  return keys.map((k) => `${k}=${metric[k]}`).join(',')
-}
