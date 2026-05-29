@@ -23,6 +23,8 @@ type Routes = {
   authLogout?: () => Response
   health?: () => Response
   systems?: () => Response
+  scope?: () => Response
+  secrets?: () => Response
 }
 
 function jsonResponse(body: unknown, status = 200): Response {
@@ -62,6 +64,16 @@ function installFetch(routes: Routes) {
     }
     if (url.endsWith('/api/systems')) {
       return routes.systems ? routes.systems() : jsonResponse([])
+    }
+    if (url.endsWith('/api/me/scope')) {
+      return routes.scope
+        ? routes.scope()
+        : jsonResponse({ global: '', groups: {} })
+    }
+    if (url.endsWith('/api/admin/secrets/undecryptable')) {
+      return routes.secrets
+        ? routes.secrets()
+        : jsonResponse({ count: 0, items: [] })
     }
     return new Response('', { status: 404 })
   })
@@ -180,6 +192,121 @@ describe('App', () => {
       expect(
         document.documentElement.classList.contains('pf-v6-theme-dark'),
       ).toBe(false)
+    })
+  })
+
+  describe('mustChangePassword', () => {
+    it('renders the ForcePasswordChange screen when the flag is set', async () => {
+      installFetch({
+        authStatus: () =>
+          jsonResponse({
+            setupRequired: false,
+            authenticated: true,
+            user: { ...sampleUser, mustChangePassword: true },
+          }),
+      })
+      renderApp()
+      expect(await screen.findByText(/Set a new password/i)).toBeInTheDocument()
+    })
+  })
+
+  describe('global-admin extras', () => {
+    it('navigates to the Users page when the banner action link is clicked', async () => {
+      installFetch({
+        scope: () => jsonResponse({ global: 'admin', groups: {} }),
+        secrets: () =>
+          jsonResponse({
+            count: 1,
+            items: [
+              {
+                kind: 'user_totp',
+                field: 'secret',
+                targetId: 'u-1',
+                targetLabel: 'op',
+                keyVersion: 1,
+              },
+            ],
+          }),
+      })
+      renderApp()
+      const link = await screen.findByRole('button', { name: /Open Users page/i })
+      fireEvent.click(link)
+      await waitFor(() => {
+        expect(
+          screen.getByRole('heading', { name: /^users$/i }),
+        ).toBeInTheDocument()
+      })
+    })
+
+    it('shows the UndecryptableSecretsBanner when there are affected secrets', async () => {
+      installFetch({
+        scope: () => jsonResponse({ global: 'admin', groups: {} }),
+        secrets: () =>
+          jsonResponse({
+            count: 1,
+            items: [
+              {
+                kind: 'user_totp',
+                field: 'secret',
+                targetId: 'u-1',
+                targetLabel: 'op',
+                keyVersion: 1,
+              },
+            ],
+          }),
+      })
+      renderApp()
+      expect(
+        await screen.findByText(/cannot be decrypted with the current master key/i),
+      ).toBeInTheDocument()
+    })
+  })
+
+  describe('SidebarNav modifier-key handling', () => {
+    it('lets ⌘-click fall through to the browser without intercepting', async () => {
+      installFetch({})
+      renderApp()
+      const systemsNav = await screen.findByText('Systems')
+      // Plain click would navigate via SPA; meta-click must NOT call
+      // preventDefault, so the surrounding anchor can do its native
+      // navigation. We assert preventDefault was not called.
+      const event = new MouseEvent('click', {
+        bubbles: true,
+        cancelable: true,
+        button: 0,
+        metaKey: true,
+      })
+      const prevented = !systemsNav.dispatchEvent(event)
+      expect(prevented).toBe(false)
+    })
+
+    it('respects defaultPrevented and does not re-route', async () => {
+      installFetch({})
+      renderApp()
+      const systemsNav = await screen.findByText('Systems')
+      // A click whose preventDefault was already called upstream
+      // should be a no-op — App's NavItem onClick returns early.
+      const event = new MouseEvent('click', {
+        bubbles: true,
+        cancelable: true,
+        button: 0,
+      })
+      event.preventDefault()
+      const prevented = !systemsNav.dispatchEvent(event)
+      expect(prevented).toBe(true)
+    })
+
+    it('lets middle-click fall through without intercepting', async () => {
+      installFetch({})
+      renderApp()
+      const systemsNav = await screen.findByText('Systems')
+      const event = new MouseEvent('click', {
+        bubbles: true,
+        cancelable: true,
+        button: 1,
+      })
+      const prevented = !systemsNav.dispatchEvent(event)
+      expect(prevented).toBe(false)
     })
   })
 

@@ -45,6 +45,20 @@ describe('connection api', () => {
     await expect(testConnection('host-1')).rejects.toBeInstanceOf(ApiError)
   })
 
+  it('falls back to statusText / HTTP code when the error body is not JSON', async () => {
+    fetchMock.mockResolvedValueOnce(
+      new Response('plain text', { status: 503, statusText: 'Service Unavailable' }),
+    )
+    await expect(testConnection('host-1')).rejects.toThrow('Service Unavailable')
+  })
+
+  it('falls back to "HTTP <status>" when statusText is empty and body is not JSON', async () => {
+    fetchMock.mockResolvedValueOnce(
+      new Response('plain text', { status: 522, statusText: '' }),
+    )
+    await expect(testConnection('host-1')).rejects.toThrow('HTTP 522')
+  })
+
   it('encodes the system id', async () => {
     fetchMock.mockResolvedValueOnce(
       jsonResponse({ status: 'success', reason: 'pong', exitCode: 0, durationMs: 0 }),

@@ -75,6 +75,34 @@ describe('TestConnectionCard', () => {
     expect(await screen.findByText(/Missing credentials/i)).toBeInTheDocument()
   })
 
+  it('shows the host-key mismatch title on host_key_mismatch', async () => {
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse({
+        status: 'host_key_mismatch',
+        reason: 'host key changed',
+        exitCode: 1,
+        durationMs: 5,
+      }),
+    )
+    render(<TestConnectionCard systemId="s1" />)
+    fireEvent.click(screen.getByRole('button', { name: /Run `ansible -m ping`/i }))
+    expect(await screen.findByText(/Host key mismatch/i)).toBeInTheDocument()
+  })
+
+  it('shows the no-accepted-host-key title on no_accepted_host_key', async () => {
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse({
+        status: 'no_accepted_host_key',
+        reason: 'TOFU pending',
+        exitCode: 1,
+        durationMs: 5,
+      }),
+    )
+    render(<TestConnectionCard systemId="s1" />)
+    fireEvent.click(screen.getByRole('button', { name: /Run `ansible -m ping`/i }))
+    expect(await screen.findByText(/No accepted host key/i)).toBeInTheDocument()
+  })
+
   it('surfaces server errors via a danger alert', async () => {
     fetchMock.mockResolvedValueOnce(jsonResponse({ error: 'boom' }, { status: 500 }))
     render(<TestConnectionCard systemId="s1" />)

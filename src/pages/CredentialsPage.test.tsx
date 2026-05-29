@@ -88,6 +88,48 @@ describe('CredentialsPage', () => {
     ).toBeInTheDocument()
   })
 
+  it('renders system-scope slots with user-supplied and configured origins', async () => {
+    fetchMock.mockImplementation((input: RequestInfo) => {
+      const url = typeof input === 'string' ? input : input.toString()
+      if (url === '/api/admin/ansible-credentials/global') {
+        return Promise.resolve(jsonResponse({ error: 'none' }, { status: 404 }))
+      }
+      if (url === '/api/admin/ansible-credentials') {
+        return Promise.resolve(
+          jsonResponse({
+            slots: [
+              {
+                scopeKind: 'system',
+                scopeId: 'sys-1',
+                ansibleUser: 'opsy',
+                publicKey: 'ssh-ed25519 USER',
+                origin: 'user_supplied',
+                createdAt: '2026-05-15T00:00:00Z',
+                updatedAt: '2026-05-15T00:00:00Z',
+              },
+              {
+                scopeKind: 'system',
+                scopeId: 'sys-2',
+                ansibleUser: 'opsy',
+                publicKey: 'ssh-ed25519 CFG',
+                // origin falls through originLabel's default branch
+                origin: 'externally_managed' as unknown as 'user_supplied',
+                createdAt: '2026-05-15T00:00:00Z',
+                updatedAt: '2026-05-15T00:00:00Z',
+              },
+            ],
+          }),
+        )
+      }
+      return Promise.resolve(jsonResponse({ error: 'unexpected' }, { status: 500 }))
+    })
+    render(<CredentialsPage />)
+    expect(await screen.findByText('sys-1')).toBeInTheDocument()
+    expect(screen.getByText('sys-2')).toBeInTheDocument()
+    expect(screen.getByText(/user-supplied/i)).toBeInTheDocument()
+    expect(screen.getByText(/^configured$/i)).toBeInTheDocument()
+  })
+
   it('shows an error alert when the list call fails', async () => {
     fetchMock.mockImplementation((input: RequestInfo) => {
       const url = typeof input === 'string' ? input : input.toString()
