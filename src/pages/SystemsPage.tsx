@@ -1075,6 +1075,7 @@ export default function SystemsPage() {
             <Thead>
               <Tr>
                 <Th
+                  aria-label="Select all"
                   select={{
                     onSelect: () => toggleAllVisible(!allVisibleSelected),
                     isSelected: allVisibleSelected,

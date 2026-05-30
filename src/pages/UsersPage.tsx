@@ -401,6 +401,7 @@ export default function UsersPage({ currentUserId }: Props) {
             <Thead>
               <Tr>
                 <Th
+                  aria-label="Select all"
                   select={{
                     onSelect: () => toggleAllVisible(!allVisibleSelected),
                     isSelected: allVisibleSelected,
