@@ -8,8 +8,16 @@ npm run --silent typecheck
 echo "==> lint"
 npm run --silent lint
 
-echo "==> test"
-npm test --silent -- --run
+echo "==> test --coverage"
+npm test --silent -- --run --coverage
+total_pct=$(node -e "console.log(JSON.parse(require('fs').readFileSync('coverage/coverage-summary.json','utf8')).total.lines.pct)")
+echo "    whole-repo line coverage: ${total_pct}%"
+ok=$(node -e "process.stdout.write(String(Number(process.argv[1]) >= 90))" "$total_pct")
+if [ "$ok" != "true" ]; then
+  echo "coverage: whole-repo line coverage ${total_pct}% is below the 90% gate." >&2
+  echo "Add tests anywhere in the repo until total is ≥90% before committing." >&2
+  exit 1
+fi
 
 if command -v gitleaks >/dev/null 2>&1; then
   echo "==> gitleaks"
