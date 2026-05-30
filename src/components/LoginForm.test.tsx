@@ -3,6 +3,15 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import LoginForm from './LoginForm'
+import { fetchBuildInfo } from '../api/buildInfo'
+
+// The login footer fires fetchBuildInfo on mount in every test. Default
+// it to a never-resolving promise so it neither pollutes other tests'
+// fetch counters nor leaves an unhandled rejection; the dedicated
+// build-footer describe block overrides this per-test.
+vi.mock('../api/buildInfo', () => ({
+  fetchBuildInfo: vi.fn(() => new Promise(() => {})),
+}))
 
 function authenticatedResult() {
   return {
@@ -197,5 +206,36 @@ describe('LoginForm TOTP step', () => {
     expect(screen.getByLabelText(/username/i)).toBeInTheDocument()
     // Password should have been cleared so the user has to retype it.
     expect((screen.getByLabelText(/password/i) as HTMLInputElement).value).toBe('')
+  })
+})
+
+describe('LoginForm build footer', () => {
+  const fetchBuildInfoMock = vi.mocked(fetchBuildInfo)
+
+  afterEach(() => {
+    fetchBuildInfoMock.mockReset()
+    fetchBuildInfoMock.mockImplementation(() => new Promise(() => {}))
+  })
+
+  it('renders the build identifiers in the lower-right after fetch resolves', async () => {
+    fetchBuildInfoMock.mockResolvedValueOnce({
+      backend: 'be01234',
+      frontend: 'fe05678',
+      buildDate: '2026-05-29T22:00:00Z',
+    })
+    render(<LoginForm onLogin={vi.fn()} />)
+    const footer = await screen.findByTestId('build-footer')
+    expect(footer).toHaveTextContent('frontend fe05678')
+    expect(footer).toHaveTextContent('backend be01234')
+    expect(footer).toHaveTextContent('built 2026-05-29T22:00:00Z')
+  })
+
+  it('does not render the footer when /api/build-info errors', async () => {
+    fetchBuildInfoMock.mockRejectedValueOnce(new Error('boom'))
+    render(<LoginForm onLogin={vi.fn()} />)
+    await waitFor(() => {
+      expect(fetchBuildInfoMock).toHaveBeenCalled()
+    })
+    expect(screen.queryByTestId('build-footer')).not.toBeInTheDocument()
   })
 })

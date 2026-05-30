@@ -13,6 +13,7 @@ import {
 } from '@patternfly/react-core'
 import type { LoginResult } from '../api/auth'
 import { totpVerify } from '../api/auth'
+import { fetchBuildInfo, type BuildInfo } from '../api/buildInfo'
 import TotpChallengeForm from './TotpChallengeForm'
 import wordmarkDark from '../assets/wordmark-dark.svg'
 import wordmarkLight from '../assets/wordmark-light.svg'
@@ -47,6 +48,22 @@ export default function LoginForm({ onLogin, onTotpComplete }: Props) {
   // Conditional-reveal lockout: only populated when correct credentials
   // land on a locked account. Resets when the user re-edits the form.
   const [lockedUntil, setLockedUntil] = useState<string | null>(null)
+  const [buildInfo, setBuildInfo] = useState<BuildInfo | null>(null)
+
+  useEffect(() => {
+    let cancelled = false
+    fetchBuildInfo()
+      .then((info) => {
+        if (!cancelled) setBuildInfo(info)
+      })
+      .catch(() => {
+        // Footer is decorative; swallow the failure rather than
+        // showing an error to a user trying to sign in.
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [])
 
   const valid = username.trim().length > 0 && password.length > 0
 
@@ -165,6 +182,29 @@ export default function LoginForm({ onLogin, onTotpComplete }: Props) {
           </Form>
         </CardBody>
       </Card>
+      {buildInfo && <BuildFooter info={buildInfo} />}
+    </div>
+  )
+}
+
+function BuildFooter({ info }: { info: BuildInfo }) {
+  return (
+    <div
+      data-testid="build-footer"
+      style={{
+        position: 'fixed',
+        right: 12,
+        bottom: 8,
+        fontSize: 11,
+        opacity: 0.6,
+        textAlign: 'right',
+        lineHeight: 1.4,
+        pointerEvents: 'none',
+      }}
+    >
+      <div>frontend {info.frontend}</div>
+      <div>backend {info.backend}</div>
+      <div>built {info.buildDate}</div>
     </div>
   )
 }
