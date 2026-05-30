@@ -26,7 +26,13 @@ describe('SettingsPage', () => {
   it('renders the run_history_limit and update_concurrency_limit values', async () => {
     fetchMock.mockResolvedValueOnce(
       jsonResponse({
-        settings: { run_history_limit: '250', update_concurrency_limit: '6' },
+        settings: {
+          run_history_limit: '250',
+          update_concurrency_limit: '6',
+          probe_interval_seconds: '30',
+          probe_failure_threshold: '1',
+          probe_success_threshold: '1',
+        },
       }),
     )
     render(<SettingsPage />)
@@ -182,6 +188,127 @@ describe('SettingsPage', () => {
     await waitFor(() => {
       expect(input.value).toBe('500')
     })
+  })
+
+  it('renders the three reachability probe settings', async () => {
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse({
+        settings: {
+          run_history_limit: '100',
+          update_concurrency_limit: '4',
+          probe_interval_seconds: '45',
+          probe_failure_threshold: '3',
+          probe_success_threshold: '2',
+        },
+      }),
+    )
+    render(<SettingsPage />)
+    const interval = (await screen.findByLabelText(
+      /Seconds between probe cycles/i,
+    )) as HTMLInputElement
+    expect(interval.value).toBe('45')
+    const failure = (await screen.findByLabelText(
+      /Consecutive failures before Unreachable/i,
+    )) as HTMLInputElement
+    expect(failure.value).toBe('3')
+    const success = (await screen.findByLabelText(
+      /Consecutive successes before Reachable/i,
+    )) as HTMLInputElement
+    expect(success.value).toBe('2')
+  })
+
+  it.each([
+    {
+      label: /Seconds between probe cycles/i,
+      key: 'probe_interval_seconds',
+      typed: '60',
+    },
+    {
+      label: /Consecutive failures before Unreachable/i,
+      key: 'probe_failure_threshold',
+      typed: '3',
+    },
+    {
+      label: /Consecutive successes before Reachable/i,
+      key: 'probe_success_threshold',
+      typed: '5',
+    },
+  ])('PUTs $key on Save', async ({ label, key, typed }) => {
+    fetchMock
+      .mockResolvedValueOnce(
+        jsonResponse({
+          settings: {
+            run_history_limit: '100',
+            update_concurrency_limit: '4',
+            probe_interval_seconds: '30',
+            probe_failure_threshold: '1',
+            probe_success_threshold: '1',
+          },
+        }),
+      )
+      .mockResolvedValueOnce(new Response(null, { status: 204 }))
+      .mockResolvedValueOnce(
+        jsonResponse({
+          settings: {
+            run_history_limit: '100',
+            update_concurrency_limit: '4',
+            probe_interval_seconds: '30',
+            probe_failure_threshold: '1',
+            probe_success_threshold: '1',
+            [key]: typed,
+          },
+        }),
+      )
+
+    render(<SettingsPage />)
+    const input = (await screen.findByLabelText(label)) as HTMLInputElement
+    fireEvent.change(input, { target: { value: typed } })
+    // The submit button inside the same Card form fires the matching
+    // setter — query within the input's enclosing form to avoid
+    // grabbing a Save from a sibling card.
+    const form = input.closest('form')!
+    fireEvent.submit(form)
+
+    await waitFor(() => {
+      const put = fetchMock.mock.calls.find(
+        (c) => (c[1] as RequestInit | undefined)?.method === 'PUT',
+      )
+      expect(put?.[0]).toBe(`/api/admin/settings/${key}`)
+      expect(JSON.parse((put?.[1] as RequestInit).body as string)).toEqual({
+        value: typed,
+      })
+    })
+  })
+
+  it('surfaces a 400 error from a probe-setting save without losing input', async () => {
+    fetchMock
+      .mockResolvedValueOnce(
+        jsonResponse({
+          settings: {
+            run_history_limit: '100',
+            update_concurrency_limit: '4',
+            probe_interval_seconds: '30',
+            probe_failure_threshold: '1',
+            probe_success_threshold: '1',
+          },
+        }),
+      )
+      .mockResolvedValueOnce(
+        jsonResponse(
+          { error: 'probe_interval_seconds must be between 5 and 3600' },
+          400,
+        ),
+      )
+    render(<SettingsPage />)
+    const input = (await screen.findByLabelText(
+      /Seconds between probe cycles/i,
+    )) as HTMLInputElement
+    fireEvent.change(input, { target: { value: '1' } })
+    fireEvent.submit(input.closest('form')!)
+    expect(
+      await screen.findByText(/probe_interval_seconds must be between/i),
+    ).toBeInTheDocument()
+    expect(input.value).toBe('1')
   })
 
   it('shows a load error if /api/admin/settings fails', async () => {
