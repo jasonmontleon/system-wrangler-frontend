@@ -62,6 +62,25 @@ describe('BackendReadinessWidget', () => {
     expect(screen.queryByRole('list')).toBeNull()
   })
 
+  it('shows the error message even when a stale readiness value is still cached', () => {
+    // After a poll fails, DashboardPage clears the cached readiness
+    // value so this combination shouldn't happen in production — but if
+    // a future regression leaves both populated, the error must win so
+    // an operator never reads a stale "ready" next to a fresh error.
+    render(
+      <DashboardProvider
+        value={ctx({
+          readiness: { status: 'ready', checks: { database: 'ok' } },
+          readinessError: 'Failed to fetch',
+        })}
+      >
+        <BackendReadinessWidget />
+      </DashboardProvider>,
+    )
+    expect(screen.getByText(/error: Failed to fetch/)).toBeInTheDocument()
+    expect(screen.queryByText(/status: ready/)).toBeNull()
+  })
+
   it('lists the failing checks when status is not_ready', () => {
     render(
       <DashboardProvider

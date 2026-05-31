@@ -10,35 +10,40 @@ import { useDashboardData } from '../dashboardContext'
 // blocker.
 export default function BackendReadinessWidget() {
   const { readiness, readinessError } = useDashboardData()
-  const failingChecks = readiness
-    ? Object.entries(readiness.checks).filter(([, result]) => result !== 'ok')
-    : []
+  // Order matters: an error means the latest poll failed, so it
+  // supersedes any cached readiness value the previous poll left behind.
+  let body
+  if (readinessError) {
+    body = <span>error: {readinessError}</span>
+  } else if (readiness) {
+    const failingChecks = Object.entries(readiness.checks).filter(
+      ([, result]) => result !== 'ok',
+    )
+    body = failingChecks.length === 0 ? (
+      <span>status: {readiness.status}</span>
+    ) : (
+      <div>
+        <div>status: {readiness.status}</div>
+        <ul style={{ marginTop: '0.5rem', paddingLeft: '1.25rem' }}>
+          {failingChecks.map(([name, result]) => (
+            <li key={name}>
+              {name}: {result}
+            </li>
+          ))}
+        </ul>
+      </div>
+    )
+  } else {
+    body = (
+      <Bullseye>
+        <Spinner />
+      </Bullseye>
+    )
+  }
   return (
     <Card style={{ height: '100%' }}>
       <CardTitle>Backend readiness</CardTitle>
-      <CardBody>
-        {readinessError && <span>error: {readinessError}</span>}
-        {!readinessError && !readiness && (
-          <Bullseye>
-            <Spinner />
-          </Bullseye>
-        )}
-        {readiness && failingChecks.length === 0 && (
-          <span>status: {readiness.status}</span>
-        )}
-        {readiness && failingChecks.length > 0 && (
-          <div>
-            <div>status: {readiness.status}</div>
-            <ul style={{ marginTop: '0.5rem', paddingLeft: '1.25rem' }}>
-              {failingChecks.map(([name, result]) => (
-                <li key={name}>
-                  {name}: {result}
-                </li>
-              ))}
-            </ul>
-          </div>
-        )}
-      </CardBody>
+      <CardBody>{body}</CardBody>
     </Card>
   )
 }

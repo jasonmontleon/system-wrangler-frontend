@@ -5,18 +5,24 @@ import { useDashboardData } from '../dashboardContext'
 
 export default function BackendHealthWidget() {
   const { health, healthError } = useDashboardData()
+  // Order matters: an error means the latest poll failed, so it
+  // supersedes any cached health value the previous poll left behind.
+  let body
+  if (healthError) {
+    body = <span>error: {healthError}</span>
+  } else if (health) {
+    body = <span>status: {health.status}</span>
+  } else {
+    body = (
+      <Bullseye>
+        <Spinner />
+      </Bullseye>
+    )
+  }
   return (
     <Card style={{ height: '100%' }}>
       <CardTitle>Backend health</CardTitle>
-      <CardBody>
-        {healthError && <span>error: {healthError}</span>}
-        {!healthError && !health && (
-          <Bullseye>
-            <Spinner />
-          </Bullseye>
-        )}
-        {health && <span>status: {health.status}</span>}
-      </CardBody>
+      <CardBody>{body}</CardBody>
     </Card>
   )
 }

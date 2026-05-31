@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
-import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { MemoryRouter } from 'react-router'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import DashboardPage from './DashboardPage'
@@ -182,6 +182,57 @@ describe('DashboardPage', () => {
     expect(screen.getByLabelText('Unreachable count').textContent).toBe('1')
     expect(screen.getByLabelText('Failed run count').textContent).toBe('1')
     expect(screen.getByLabelText('Unknown count').textContent).toBe('1')
+  })
+
+  it('flips the backend-health card from ok to error when the polled fetch starts failing', async () => {
+    // Layout pinned so the backend-health card is the only widget on
+    // screen, otherwise the assertions race against the other widgets
+    // making their own /api/systems / metrics calls.
+    window.localStorage.setItem(
+      'sw.dashboard.layout.v1',
+      JSON.stringify([
+        { instanceId: 'backend-health', widgetId: 'backend-health', enabled: true },
+      ]),
+    )
+    let healthShouldFail = false
+    vi.stubGlobal('fetch', async (input: RequestInfo | URL) => {
+      const url = String(input)
+      if (url === '/api/health') {
+        if (healthShouldFail) return new Response('', { status: 500 })
+        return jsonResponse({ status: 'ok' })
+      }
+      if (url === '/api/ready')
+        return jsonResponse({ status: 'ready', checks: { database: 'ok' } })
+      if (url === '/api/systems') return jsonResponse([])
+      if (url === '/api/dashboard/layout') return jsonResponse({})
+      if (url.includes('/api/metrics/query_range?')) return emptyMatrix()
+      if (url.includes('/api/metrics/query?')) return emptyVector()
+      return jsonResponse({}, 500)
+    })
+
+    vi.useFakeTimers({ shouldAdvanceTime: true })
+    try {
+      render(
+        <MemoryRouter>
+          <DashboardPage />
+        </MemoryRouter>,
+      )
+      // First poll: card reports the live backend.
+      expect(await screen.findByText(/status: ok/)).toBeInTheDocument()
+
+      healthShouldFail = true
+      // Advance past the 15 s poll interval.
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(15_500)
+      })
+
+      await waitFor(() => {
+        expect(screen.queryByText(/status: ok/)).toBeNull()
+      })
+      expect(screen.getByText(/error: HTTP 500/)).toBeInTheDocument()
+    } finally {
+      vi.useRealTimers()
+    }
   })
 
   it('surfaces a load error when /api/systems fails', async () => {

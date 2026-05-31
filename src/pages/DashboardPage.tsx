@@ -43,6 +43,13 @@ import CustomizeDashboardModal from '../components/CustomizeDashboardModal'
 
 const METRIC_REFRESH_INTERVAL_MS = 30_000
 
+// Health and readiness poll on a shorter cadence than metrics so the
+// status cards reflect a backend that disappeared within roughly one
+// poll window. The frontend is served from the same binary, so anyone
+// looking at the dashboard after it shuts down is reading a stale
+// page — the cards are the only signal that something changed.
+const HEALTH_POLL_INTERVAL_MS = 15_000
+
 const PROMQL = {
   cpu: cpuBusyPct(),
   mem: memUsedPct(),
@@ -85,16 +92,56 @@ export default function DashboardPage() {
   const isNarrow = useMediaQuery('(max-width: 767px)')
 
   useEffect(() => {
-    apiFetch('/api/health')
-      .then((r) => r.json() as Promise<BackendHealth>)
-      .then(setHealth)
-      .catch((e) => setHealthError(String(e)))
+    let cancelled = false
+    async function pollHealth() {
+      try {
+        const r = await apiFetch('/api/health')
+        if (!r.ok) throw new Error(`HTTP ${r.status}`)
+        const body = (await r.json()) as BackendHealth
+        if (cancelled) return
+        setHealth(body)
+        setHealthError(null)
+      } catch (e) {
+        if (cancelled) return
+        // Clear the cached value so the widget falls through to the
+        // error branch; a stale "ok" next to an error message would
+        // mislead the operator.
+        setHealth(null)
+        setHealthError(e instanceof Error ? e.message : String(e))
+      }
+    }
+    void pollHealth()
+    const handle = window.setInterval(() => {
+      void pollHealth()
+    }, HEALTH_POLL_INTERVAL_MS)
+    return () => {
+      cancelled = true
+      window.clearInterval(handle)
+    }
   }, [])
 
   useEffect(() => {
-    fetchReadiness()
-      .then(setReadiness)
-      .catch((e) => setReadinessError(String(e)))
+    let cancelled = false
+    async function pollReadiness() {
+      try {
+        const body = await fetchReadiness()
+        if (cancelled) return
+        setReadiness(body)
+        setReadinessError(null)
+      } catch (e) {
+        if (cancelled) return
+        setReadiness(null)
+        setReadinessError(e instanceof Error ? e.message : String(e))
+      }
+    }
+    void pollReadiness()
+    const handle = window.setInterval(() => {
+      void pollReadiness()
+    }, HEALTH_POLL_INTERVAL_MS)
+    return () => {
+      cancelled = true
+      window.clearInterval(handle)
+    }
   }, [])
 
   const refresh = useCallback(async () => {
