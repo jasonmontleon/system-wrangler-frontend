@@ -23,6 +23,8 @@ function ctx(overrides: Partial<DashboardContextValue> = {}): DashboardContextVa
     rebootMetricSet: new Set(),
     health: { status: 'ok' },
     healthError: null,
+    readiness: { status: 'ready', checks: { database: 'ok' } },
+    readinessError: null,
     metrics: {
       cpu: new Map(),
       mem: new Map(),

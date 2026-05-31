@@ -16,6 +16,7 @@ import {
 } from '@patternfly/react-core'
 import { CogIcon } from '@patternfly/react-icons'
 import { apiFetch } from '../api/client'
+import { fetchReadiness, type Readiness } from '../api/readiness'
 import { listSystems, type System } from '../api/systems'
 import { listGroups, type Group } from '../api/groups'
 import { query } from '../api/metrics'
@@ -66,6 +67,8 @@ function indexBySystemId(
 export default function DashboardPage() {
   const [health, setHealth] = useState<BackendHealth | null>(null)
   const [healthError, setHealthError] = useState<string | null>(null)
+  const [readiness, setReadiness] = useState<Readiness | null>(null)
+  const [readinessError, setReadinessError] = useState<string | null>(null)
   const [systems, setSystems] = useState<System[] | null>(null)
   const [systemsError, setSystemsError] = useState<string | null>(null)
   const [groups, setGroups] = useState<Group[]>([])
@@ -86,6 +89,12 @@ export default function DashboardPage() {
       .then((r) => r.json() as Promise<BackendHealth>)
       .then(setHealth)
       .catch((e) => setHealthError(String(e)))
+  }, [])
+
+  useEffect(() => {
+    fetchReadiness()
+      .then(setReadiness)
+      .catch((e) => setReadinessError(String(e)))
   }, [])
 
   const refresh = useCallback(async () => {
@@ -174,10 +183,22 @@ export default function DashboardPage() {
       rebootMetricSet,
       health,
       healthError,
+      readiness,
+      readinessError,
       metrics,
       groups,
     }),
-    [systems, systemsError, rebootMetricSet, health, healthError, metrics, groups],
+    [
+      systems,
+      systemsError,
+      rebootMetricSet,
+      health,
+      healthError,
+      readiness,
+      readinessError,
+      metrics,
+      groups,
+    ],
   )
 
   const visible = layout.filter((e) => e.enabled)

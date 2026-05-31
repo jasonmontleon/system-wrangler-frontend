@@ -3,6 +3,7 @@
 import { createContext, useContext } from 'react'
 import type { System } from '../api/systems'
 import type { Group } from '../api/groups'
+import type { Readiness } from '../api/readiness'
 import type { LeaderboardEntry } from '../components/LeaderboardCard'
 
 export type Leaderboards = {
@@ -32,6 +33,8 @@ export type DashboardContextValue = {
   rebootMetricSet: Set<string>
   health: BackendHealth | null
   healthError: string | null
+  readiness: Readiness | null
+  readinessError: string | null
   metrics: DashboardMetrics
   groups: Group[]
 }

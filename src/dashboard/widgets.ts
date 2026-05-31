@@ -7,6 +7,7 @@ import SystemHealthWidget, {
 } from './widgets/SystemHealthWidget'
 import SystemHealthLegendWidget from './widgets/SystemHealthLegendWidget'
 import BackendHealthWidget from './widgets/BackendHealthWidget'
+import BackendReadinessWidget from './widgets/BackendReadinessWidget'
 import {
   BusiestCpuWidget,
   HighestDiskIoWidget,
@@ -37,6 +38,7 @@ export type WidgetId =
   | 'system-health-compact'
   | 'system-health-legend'
   | 'backend-health'
+  | 'backend-readiness'
   | 'busiest-cpu'
   | 'lowest-free-memory'
   | 'lowest-free-disk'
@@ -119,6 +121,15 @@ export const WIDGETS: ReadonlyArray<WidgetSpec> = [
     cell: CELL_S,
     templated: false,
     Component: BackendHealthWidget,
+  },
+  {
+    id: 'backend-readiness',
+    title: 'Backend readiness',
+    description: 'Whether the backend reports its dependencies as reachable.',
+    defaultEnabled: false,
+    cell: CELL_S,
+    templated: false,
+    Component: BackendReadinessWidget,
   },
   {
     id: 'busiest-cpu',

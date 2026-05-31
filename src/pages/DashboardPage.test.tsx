@@ -92,6 +92,8 @@ function stubFetch(opts: {
   vi.stubGlobal('fetch', async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = String(input)
     if (url === '/api/health') return jsonResponse({ status: 'ok' })
+    if (url === '/api/ready')
+      return jsonResponse({ status: 'ready', checks: { database: 'ok' } })
     if (url === '/api/systems') {
       if (opts.systemsStatus && opts.systemsStatus !== 200) {
         return jsonResponse({ error: 'down' }, opts.systemsStatus)
