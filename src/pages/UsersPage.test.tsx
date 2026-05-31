@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
-import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import UsersPage from './UsersPage'
 
@@ -606,8 +606,12 @@ describe('UsersPage', () => {
     )
     render(<UsersPage currentUserId="u1" />)
     const bobRow = (await screen.findByText('bob')).closest('tr')!
-    fireEvent.click(within(bobRow).getByRole('button', { name: /kebab toggle/i }))
-    fireEvent.click(screen.getByRole('menuitem', { name: /reset 2fa for bob/i }))
+    await act(async () => {
+      fireEvent.click(within(bobRow).getByRole('button', { name: /kebab toggle/i }))
+    })
+    await act(async () => {
+      fireEvent.click(screen.getByRole('menuitem', { name: /reset 2fa for bob/i }))
+    })
     // Disabled item: no confirm dialog opens and no POST happens.
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
     expect(

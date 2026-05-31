@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
-import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import ProfilePage from './ProfilePage'
 import type { AuthUser } from '../api/auth'
@@ -53,13 +53,14 @@ describe('ProfilePage', () => {
     vi.unstubAllGlobals()
   })
 
-  it('shows the username read-only and the existing email pre-filled', () => {
+  it('shows the username read-only and the existing email pre-filled', async () => {
     render(
       <ProfilePage
         user={{ ...baseUser, email: 'pre@filled.com' }}
         onProfileUpdate={() => {}}
       />,
     )
+    await act(async () => {})
     const username = screen.getByLabelText(/username/i)
     expect(username).toBeDisabled()
     expect((username as HTMLInputElement).value).toBe('admin')
@@ -117,8 +118,9 @@ describe('ProfilePage', () => {
     })
   })
 
-  it('warns when the new password is shorter than the minimum', () => {
+  it('warns when the new password is shorter than the minimum', async () => {
     render(<ProfilePage user={baseUser} onProfileUpdate={() => {}} />)
+    await act(async () => {})
     expect(screen.queryByText(/too short/i)).toBeNull()
 
     fireEvent.change(screen.getByLabelText(/^new password/i), {
@@ -132,8 +134,9 @@ describe('ProfilePage', () => {
     expect(screen.queryByText(/too short/i)).toBeNull()
   })
 
-  it('disables the change-password submit until both passwords match', () => {
+  it('disables the change-password submit until both passwords match', async () => {
     render(<ProfilePage user={baseUser} onProfileUpdate={() => {}} />)
+    await act(async () => {})
     const button = screen.getByRole('button', { name: /change password/i })
     expect(button).toBeDisabled()
 

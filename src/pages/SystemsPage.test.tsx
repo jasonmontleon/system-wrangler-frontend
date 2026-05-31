@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
-import { fireEvent, render as rtlRender, screen, waitFor, within } from '@testing-library/react'
+import { act, fireEvent, render as rtlRender, screen, waitFor, within } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { ReactElement } from 'react'
@@ -77,9 +77,13 @@ function clickActionsItem(label: RegExp) {
   fireEvent.click(screen.getByRole('menuitem', { name: label }))
 }
 
-function clickRowKebab(row: HTMLElement, label: RegExp) {
-  fireEvent.click(within(row).getByRole('button', { name: /kebab toggle/i }))
-  fireEvent.click(screen.getByRole('menuitem', { name: label }))
+async function clickRowKebab(row: HTMLElement, label: RegExp) {
+  await act(async () => {
+    fireEvent.click(within(row).getByRole('button', { name: /kebab toggle/i }))
+  })
+  await act(async () => {
+    fireEvent.click(screen.getByRole('menuitem', { name: label }))
+  })
 }
 
 describe('SystemsPage', () => {
@@ -288,7 +292,7 @@ describe('SystemsPage', () => {
 
     render(<SystemsPage />)
     const row = (await screen.findByText('doomed')).closest('tr')!
-    clickRowKebab(row, /remove doomed/i)
+    await clickRowKebab(row, /remove doomed/i)
 
     const dialog = await screen.findByRole('dialog')
     expect(within(dialog).getByText(/permanently remove doomed/i)).toBeInTheDocument()
@@ -480,11 +484,12 @@ describe('SystemsPage', () => {
 
     const fan = (e: { type: string }) =>
       FakeEventSource.instances.forEach((es) => es.emit('message', e))
-    fan({ type: 'systems.changed' })
-    fan({ type: 'systems.changed' })
-    fan({ type: 'systems.changed' })
-
-    await new Promise((r) => setTimeout(r, 300))
+    await act(async () => {
+      fan({ type: 'systems.changed' })
+      fan({ type: 'systems.changed' })
+      fan({ type: 'systems.changed' })
+      await new Promise((r) => setTimeout(r, 300))
+    })
 
     const newCalls = fetchMock.mock.calls.filter((c) => c[0] === '/api/systems').length
     expect(newCalls - initialCalls).toBe(1)
@@ -496,8 +501,10 @@ describe('SystemsPage', () => {
     await waitFor(() => expect(screen.getByText(/no systems yet/i)).toBeInTheDocument())
     const initialCalls = fetchMock.mock.calls.filter((c) => c[0] === '/api/systems').length
 
-    FakeEventSource.instances[0].emit('message', { type: 'something.else' })
-    await new Promise((r) => setTimeout(r, 300))
+    await act(async () => {
+      FakeEventSource.instances[0].emit('message', { type: 'something.else' })
+      await new Promise((r) => setTimeout(r, 300))
+    })
 
     const newCalls = fetchMock.mock.calls.filter((c) => c[0] === '/api/systems').length
     expect(newCalls - initialCalls).toBe(0)
@@ -515,7 +522,9 @@ describe('SystemsPage', () => {
     )
     render(<SystemsPage />)
     const row = (await screen.findByText('host-x')).closest('tr')!
-    fireEvent.click(within(row).getByRole('button', { name: /kebab toggle/i }))
+    await act(async () => {
+      fireEvent.click(within(row).getByRole('button', { name: /kebab toggle/i }))
+    })
     expect(screen.queryByRole('menuitem', { name: /^Check$/i })).toBeNull()
     expect(screen.queryByRole('menuitem', { name: /^Update$/i })).toBeNull()
   })
@@ -574,7 +583,7 @@ describe('SystemsPage', () => {
 
     render(<SystemsPage />)
     const row = (await screen.findByText('host-x')).closest('tr')!
-    clickRowKebab(row, /^Check$/i)
+    await clickRowKebab(row, /^Check$/i)
     // Phase 5 results card: aggregate "Ran check on 1 system" header
     // plus a per-system row linking to /systems/host-x with the
     // "1/1 updater(s) ok" summary.
@@ -628,7 +637,7 @@ describe('SystemsPage', () => {
 
     render(<SystemsPage />)
     const row = (await screen.findByText('host-x')).closest('tr')!
-    clickRowKebab(row, /^Check$/i)
+    await clickRowKebab(row, /^Check$/i)
 
     // While the /check request is in flight, the row should swap its
     // status icon for a spinner and the toolbar should show a pill
@@ -801,7 +810,7 @@ describe('SystemsPage', () => {
 
     render(<SystemsPage />)
     const row = (await screen.findByText('host-x')).closest('tr')!
-    clickRowKebab(row, /^Check$/i)
+    await clickRowKebab(row, /^Check$/i)
     const card = await screen.findByLabelText(/Updater action results/i)
     // The wrapper that the card lives in must use fixed positioning
     // — that's what stops the table beneath from shifting on
@@ -865,11 +874,13 @@ describe('SystemsPage', () => {
 
       render(<SystemsPage />)
       const row = (await screen.findByText('host-x')).closest('tr')!
-      clickRowKebab(row, /^Check$/i)
+      await clickRowKebab(row, /^Check$/i)
       const card = await screen.findByLabelText(/Updater action results/i)
       expect(card).toBeInTheDocument()
       // Advance past the 8s auto-dismiss window.
-      await vi.advanceTimersByTimeAsync(8100)
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(8100)
+      })
       await waitFor(() =>
         expect(screen.queryByLabelText(/Updater action results/i)).toBeNull(),
       )
@@ -932,18 +943,22 @@ describe('SystemsPage', () => {
 
       render(<SystemsPage />)
       const row = (await screen.findByText('host-x')).closest('tr')!
-      clickRowKebab(row, /^Check$/i)
+      await clickRowKebab(row, /^Check$/i)
       const card = await screen.findByLabelText(/Updater action results/i)
       const wrapper = card.parentElement as HTMLElement
       fireEvent.mouseEnter(wrapper)
-      await vi.advanceTimersByTimeAsync(8100)
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(8100)
+      })
       // Still present despite the idle window having passed.
       expect(
         screen.getByLabelText(/Updater action results/i),
       ).toBeInTheDocument()
       // Leaving restarts the window; advancing through it clears the panel.
       fireEvent.mouseLeave(wrapper)
-      await vi.advanceTimersByTimeAsync(8100)
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(8100)
+      })
       await waitFor(() =>
         expect(screen.queryByLabelText(/Updater action results/i)).toBeNull(),
       )
@@ -1326,7 +1341,7 @@ describe('SystemsPage', () => {
     render(<SystemsPage />)
     const row = (await screen.findByText('host-x')).closest('tr')!
     const before = listCalls
-    clickRowKebab(row, /^Check$/i)
+    await clickRowKebab(row, /^Check$/i)
     await screen.findByText(/Ran check on 1 system/i)
     // Initial mount fetch + one refresh after fan-out.
     expect(listCalls).toBeGreaterThan(before)
@@ -1359,7 +1374,7 @@ describe('SystemsPage', () => {
 
     render(<SystemsPage />)
     const row = (await screen.findByText('host-x')).closest('tr')!
-    clickRowKebab(row, /^Update$/i)
+    await clickRowKebab(row, /^Update$/i)
     // Skipped row renders the reason inline next to the Skipped
     // label (no expandable body for skipped outcomes).
     expect(

@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
-import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { MemoryRouter, Route, Routes } from 'react-router-dom'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import GroupDetailPage from './GroupDetailPage'
@@ -566,8 +566,12 @@ describe('GroupDetailPage', () => {
     )
     renderRoute()
     await screen.findByText('host-a')
-    fireEvent.click(screen.getByRole('button', { name: /Page size/i }))
-    fireEvent.click(screen.getByRole('option', { name: /^All$/i }))
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: /Page size/i }))
+    })
+    await act(async () => {
+      fireEvent.click(screen.getByRole('option', { name: /^All$/i }))
+    })
     expect(screen.getByText('host-a')).toBeInTheDocument()
   })
 

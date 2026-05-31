@@ -2,6 +2,7 @@
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import {
+  act,
   fireEvent,
   render,
   screen,
@@ -343,7 +344,9 @@ describe('TargetedPackageModal', () => {
         onSubmit={() => {}}
       />,
     )
-    fireEvent.click(screen.getByRole('button', { name: /cancel/i }))
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: /cancel/i }))
+    })
     expect(onClose).toHaveBeenCalled()
   })
 

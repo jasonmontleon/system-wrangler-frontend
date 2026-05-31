@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
-import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { MemoryRouter } from 'react-router'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import SystemGraphsPage from './SystemGraphsPage'
@@ -262,8 +262,12 @@ describe('SystemGraphsPage', () => {
       'Uptime (days)',
     ]
     for (const label of optionLabels) {
-      fireEvent.click(screen.getByRole('button', { name: /Metric/i }))
-      fireEvent.click(await screen.findByRole('option', { name: label }))
+      await act(async () => {
+        fireEvent.click(screen.getByRole('button', { name: /Metric/i }))
+      })
+      await act(async () => {
+        fireEvent.click(await screen.findByRole('option', { name: label }))
+      })
     }
     // Final assertion: nothing crashed and rows still render.
     expect(screen.getByRole('link', { name: 'web-1' })).toBeInTheDocument()

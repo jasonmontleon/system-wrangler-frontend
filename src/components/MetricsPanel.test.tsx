@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
-import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import MetricsPanel from './MetricsPanel'
 import { TimeRangeContext } from '../hooks/useTimeRange'
@@ -203,9 +203,13 @@ describe('MetricsPanel', () => {
         <MetricsPanel title="Zoomed" promql="up" refreshIntervalMs={1_000} />
       </TimeRangeContext.Provider>,
     )
-    await vi.runOnlyPendingTimersAsync()
+    await act(async () => {
+      await vi.runOnlyPendingTimersAsync()
+    })
     const callsBefore = fetchMock.mock.calls.length
-    await vi.advanceTimersByTimeAsync(30_000)
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(30_000)
+    })
     expect(fetchMock.mock.calls.length).toBe(callsBefore)
     vi.useRealTimers()
   })
