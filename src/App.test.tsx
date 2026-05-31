@@ -115,6 +115,12 @@ describe('App', () => {
 
     it('switches to the Systems page when the Systems nav item is clicked', async () => {
       renderApp()
+      // Inventory is collapsed by default at /, so click its toggle
+      // first to expose the Systems link.
+      const inventoryToggle = await screen.findByRole('button', {
+        name: /^inventory$/i,
+      })
+      fireEvent.click(inventoryToggle)
       const systemsNav = await screen.findByText('Systems')
       fireEvent.click(systemsNav)
       await waitFor(() => {
@@ -124,21 +130,43 @@ describe('App', () => {
       })
     })
 
-    it('groups the sidebar into Inventory, Administration, and Monitoring sections', async () => {
+    it('renders Inventory, Monitoring, and Administration as collapsible sections in that order', async () => {
       renderApp()
-      // Section titles are rendered as headings inside PatternFly NavGroup.
-      const inventory = await screen.findByRole('heading', { name: /^inventory$/i })
-      const administration = screen.getByRole('heading', { name: /^administration$/i })
-      const monitoring = screen.getByRole('heading', { name: /^monitoring$/i })
+      // NavExpandable renders its title as a <button> toggle, so the
+      // section labels are queryable by role=button.
+      const inventory = await screen.findByRole('button', { name: /^inventory$/i })
+      const monitoring = screen.getByRole('button', { name: /^monitoring$/i })
+      const administration = screen.getByRole('button', { name: /^administration$/i })
       expect(inventory).toBeInTheDocument()
-      expect(administration).toBeInTheDocument()
       expect(monitoring).toBeInTheDocument()
-      // Systems lives under Inventory, Audit under Administration,
-      // Systems overview + System graphs under Monitoring.
-      const monitoringSection = monitoring.closest('section')
+      expect(administration).toBeInTheDocument()
+      // Order must be Dashboard → Inventory → Monitoring → Administration.
+      const inventoryLi = inventory.closest('li')!
+      const monitoringLi = monitoring.closest('li')!
+      const administrationLi = administration.closest('li')!
+      const navList = inventoryLi.parentElement!
+      const order = Array.from(navList.children).indexOf
+      expect(order.call(navList.children, inventoryLi)).toBeLessThan(
+        order.call(navList.children, monitoringLi),
+      )
+      expect(order.call(navList.children, monitoringLi)).toBeLessThan(
+        order.call(navList.children, administrationLi),
+      )
+      // Children live in DOM even when their section is collapsed —
+      // the <section> just has the hidden attribute. The Monitoring
+      // sub-list should still own the two Monitoring routes.
+      const monitoringSection = monitoringLi.querySelector('section')
       expect(monitoringSection).not.toBeNull()
       expect(monitoringSection!.querySelector('a[href="/monitoring/systems-overview"]')).not.toBeNull()
       expect(monitoringSection!.querySelector('a[href="/monitoring/system-graphs"]')).not.toBeNull()
+    })
+
+    it('auto-expands Inventory on navigation to a Systems route', async () => {
+      renderApp('/systems')
+      const inventoryToggle = await screen.findByRole('button', {
+        name: /^inventory$/i,
+      })
+      expect(inventoryToggle.getAttribute('aria-expanded')).toBe('true')
     })
 
     it('does not expose the theme toggle from the masthead', async () => {
@@ -263,10 +291,18 @@ describe('App', () => {
   })
 
   describe('SidebarNav modifier-key handling', () => {
+    async function expandInventoryAndGetSystemsLink() {
+      const inventoryToggle = await screen.findByRole('button', {
+        name: /^inventory$/i,
+      })
+      fireEvent.click(inventoryToggle)
+      return screen.findByText('Systems')
+    }
+
     it('lets ⌘-click fall through to the browser without intercepting', async () => {
       installFetch({})
       renderApp()
-      const systemsNav = await screen.findByText('Systems')
+      const systemsNav = await expandInventoryAndGetSystemsLink()
       // Plain click would navigate via SPA; meta-click must NOT call
       // preventDefault, so the surrounding anchor can do its native
       // navigation. We assert preventDefault was not called.
@@ -283,7 +319,7 @@ describe('App', () => {
     it('respects defaultPrevented and does not re-route', async () => {
       installFetch({})
       renderApp()
-      const systemsNav = await screen.findByText('Systems')
+      const systemsNav = await expandInventoryAndGetSystemsLink()
       // A click whose preventDefault was already called upstream
       // should be a no-op — App's NavItem onClick returns early.
       const event = new MouseEvent('click', {
@@ -299,7 +335,7 @@ describe('App', () => {
     it('lets middle-click fall through without intercepting', async () => {
       installFetch({})
       renderApp()
-      const systemsNav = await screen.findByText('Systems')
+      const systemsNav = await expandInventoryAndGetSystemsLink()
       const event = new MouseEvent('click', {
         bubbles: true,
         cancelable: true,

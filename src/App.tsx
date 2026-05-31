@@ -15,7 +15,7 @@ import {
   MenuToggle,
   type MenuToggleElement,
   Nav,
-  NavGroup,
+  NavExpandable,
   NavItem,
   NavList,
   Page,
@@ -187,49 +187,7 @@ export default function App() {
     </Masthead>
   )
 
-  const sidebar = (
-    <PageSidebar>
-      <PageSidebarBody>
-        <Nav aria-label="Primary">
-          <NavList>
-            <RouterNavItem to="/" end>
-              Dashboard
-            </RouterNavItem>
-          </NavList>
-          <NavGroup title="Inventory">
-            <RouterNavItem to="/systems">Systems</RouterNavItem>
-            <RouterNavItem to="/groups">System Groups</RouterNavItem>
-          </NavGroup>
-          <NavGroup title="Administration">
-            <RouterNavItem to="/users">Users</RouterNavItem>
-            <RouterNavItem to="/audit">Audit</RouterNavItem>
-            {isGlobalAdmin(scope.state) && (
-              <RouterNavItem to="/credentials">Credentials</RouterNavItem>
-            )}
-            {isGlobalAdmin(scope.state) && (
-              <RouterNavItem to="/updaters">Updaters</RouterNavItem>
-            )}
-            {isGlobalAdmin(scope.state) && (
-              <RouterNavItem to="/exporters">Exporters</RouterNavItem>
-            )}
-            {isGlobalAdmin(scope.state) && (
-              <RouterNavItem to="/exclusions">Exclusions</RouterNavItem>
-            )}
-            {isGlobalAdmin(scope.state) && (
-              <RouterNavItem to="/backup">Backup</RouterNavItem>
-            )}
-            {isGlobalAdmin(scope.state) && (
-              <RouterNavItem to="/settings">Settings</RouterNavItem>
-            )}
-          </NavGroup>
-          <NavGroup title="Monitoring">
-            <RouterNavItem to="/monitoring/systems-overview">Systems overview</RouterNavItem>
-            <RouterNavItem to="/monitoring/system-graphs">System graphs</RouterNavItem>
-          </NavGroup>
-        </Nav>
-      </PageSidebarBody>
-    </PageSidebar>
-  )
+  const sidebar = <Sidebar isGlobalAdmin={isGlobalAdmin(scope.state)} />
 
   return (
     <Page
@@ -318,6 +276,116 @@ export default function App() {
         <Route path="*" element={<NotFoundPage />} />
       </Routes>
     </Page>
+  )
+}
+
+// Sidebar groups the secondary nav into collapsible NavExpandable
+// sections. A section auto-expands when the current route lives
+// inside it so a returning user lands with their place visible.
+// Tracking the section state locally (rather than letting
+// NavExpandable manage it internally) means a user-driven toggle
+// still wins even after a route change — without this, navigating
+// inside a section the user had just collapsed would re-expand it.
+function Sidebar({ isGlobalAdmin }: { isGlobalAdmin: boolean }) {
+  const { pathname } = useLocation()
+  const isInventoryRoute =
+    pathname === '/systems' ||
+    pathname.startsWith('/systems/') ||
+    pathname === '/groups' ||
+    pathname.startsWith('/groups/')
+  const isMonitoringRoute = pathname.startsWith('/monitoring/')
+  const adminPaths = [
+    '/users',
+    '/audit',
+    '/credentials',
+    '/updaters',
+    '/exporters',
+    '/exclusions',
+    '/backup',
+    '/settings',
+  ]
+  const isAdminRoute = adminPaths.some(
+    (p) => pathname === p || pathname.startsWith(p + '/'),
+  )
+
+  const [inventoryOpen, setInventoryOpen] = useState(isInventoryRoute)
+  const [monitoringOpen, setMonitoringOpen] = useState(isMonitoringRoute)
+  const [adminOpen, setAdminOpen] = useState(isAdminRoute)
+
+  // Auto-expand the owning section *on* a route transition, not on
+  // every render that happens to share a route — otherwise a user
+  // who collapses the section while viewing one of its pages would
+  // see it pop back open on every re-render. Tracking the previous
+  // pathname lets us fire the adjustment exactly once per navigation.
+  const [prevPathname, setPrevPathname] = useState(pathname)
+  if (pathname !== prevPathname) {
+    setPrevPathname(pathname)
+    if (isInventoryRoute) setInventoryOpen(true)
+    if (isMonitoringRoute) setMonitoringOpen(true)
+    if (isAdminRoute) setAdminOpen(true)
+  }
+
+  return (
+    <PageSidebar>
+      <PageSidebarBody>
+        <Nav aria-label="Primary">
+          <NavList>
+            <RouterNavItem to="/" end>
+              Dashboard
+            </RouterNavItem>
+            <NavExpandable
+              title="Inventory"
+              isExpanded={inventoryOpen}
+              isActive={isInventoryRoute}
+              onExpand={(_e, val) => setInventoryOpen(val)}
+            >
+              <RouterNavItem to="/systems">Systems</RouterNavItem>
+              <RouterNavItem to="/groups">System Groups</RouterNavItem>
+            </NavExpandable>
+            <NavExpandable
+              title="Monitoring"
+              isExpanded={monitoringOpen}
+              isActive={isMonitoringRoute}
+              onExpand={(_e, val) => setMonitoringOpen(val)}
+            >
+              <RouterNavItem to="/monitoring/systems-overview">
+                Systems overview
+              </RouterNavItem>
+              <RouterNavItem to="/monitoring/system-graphs">
+                System graphs
+              </RouterNavItem>
+            </NavExpandable>
+            <NavExpandable
+              title="Administration"
+              isExpanded={adminOpen}
+              isActive={isAdminRoute}
+              onExpand={(_e, val) => setAdminOpen(val)}
+            >
+              <RouterNavItem to="/users">Users</RouterNavItem>
+              <RouterNavItem to="/audit">Audit</RouterNavItem>
+              {isGlobalAdmin && (
+                <RouterNavItem to="/credentials">Credentials</RouterNavItem>
+              )}
+              {isGlobalAdmin && (
+                <RouterNavItem to="/updaters">Updaters</RouterNavItem>
+              )}
+              {isGlobalAdmin && (
+                <RouterNavItem to="/exporters">Exporters</RouterNavItem>
+              )}
+              {isGlobalAdmin && (
+                <RouterNavItem to="/exclusions">Exclusions</RouterNavItem>
+              )}
+              {isGlobalAdmin && (
+                <RouterNavItem to="/backup">Backup</RouterNavItem>
+              )}
+              {isGlobalAdmin && (
+                <RouterNavItem to="/settings">Settings</RouterNavItem>
+              )}
+            </NavExpandable>
+          </NavList>
+        </Nav>
+      </PageSidebarBody>
+    </PageSidebar>
   )
 }
 
