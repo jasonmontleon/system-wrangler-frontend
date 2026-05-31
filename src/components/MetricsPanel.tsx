@@ -92,6 +92,8 @@ export default function MetricsPanel({
   refreshIntervalMs = 15_000,
   seriesLabel,
   thresholds,
+  fillHeight = false,
+  chartHeight,
 }: {
   title: ReactNode
   promql: string
@@ -102,6 +104,8 @@ export default function MetricsPanel({
   refreshIntervalMs?: number
   seriesLabel?: (metric: Record<string, string>) => string
   thresholds?: ThresholdBand[]
+  fillHeight?: boolean
+  chartHeight?: number
 }) {
   const [state, setState] = useState<LoadState>({ kind: 'loading' })
   const timerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
@@ -145,7 +149,7 @@ export default function MetricsPanel({
   }, [fetchOnce, refreshIntervalMs, isZoom])
 
   return (
-    <Card>
+    <Card style={fillHeight ? { height: '100%' } : undefined}>
       <CardTitle>{title}</CardTitle>
       <CardBody>
         {state.kind === 'loading' && (
@@ -168,6 +172,7 @@ export default function MetricsPanel({
             endSeconds={state.endSeconds}
             onZoom={ctx?.setZoom}
             thresholds={thresholds}
+            chartHeight={chartHeight}
           />
         )}
       </CardBody>
@@ -184,6 +189,7 @@ function SeriesChart({
   endSeconds,
   onZoom,
   thresholds,
+  chartHeight,
 }: {
   series: MatrixEntry[]
   yLabel?: string
@@ -193,6 +199,7 @@ function SeriesChart({
   endSeconds: number
   onZoom?: (startSec: number, endSec: number) => void
   thresholds?: ThresholdBand[]
+  chartHeight?: number
 }) {
   const data = useMemo(() => prepareData(series), [series])
   const xDomain: [Date, Date] = [
@@ -228,7 +235,7 @@ function SeriesChart({
 
   const PAD_LEFT = 60
   const PAD_RIGHT = 30
-  const HEIGHT = 260
+  const HEIGHT = chartHeight ?? 260
   const seriesNames = data.map((s) => (seriesLabel ?? defaultSeriesName)(s.metric))
   const showLegend = seriesNames.filter((n) => n !== '').length > 1
   const PAD_BOTTOM = showLegend ? 80 : 40

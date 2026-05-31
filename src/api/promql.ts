@@ -240,6 +240,82 @@ export function diskIoBytesPerSecGlobal(): string {
   return `sum(${diskIoBytesPerSec()})`
 }
 
+// sysIdsRegex returns a Prometheus regex selector that matches any of
+// the given system IDs. Caller is expected to pass a non-empty list —
+// the per-group widgets early-out when their group has no members so
+// no query fires for an empty group.
+function sysIdsRegex(ids: readonly string[]): string {
+  if (ids.length === 1) return `system_id="${ids[0]}"`
+  return `system_id=~"${ids.join('|')}"`
+}
+
+// cpuBusyPctGroup mirrors cpuBusyPctGlobal but constrains the inner
+// per-system query to ids. Used by per-group trend cards. The inner
+// `by (system_id)` aggregation is needed so the outer avg/max sees
+// one point per system, not one per CPU core.
+export function cpuBusyPctGroup(ids: readonly string[]): string {
+  const idSel = sysIdsRegex(ids)
+  const nodeSel = `{${idSel},mode="idle"}`
+  const winSel = `{${idSel},mode="idle"}`
+  const inner =
+    `100 - (avg by (system_id)(rate(node_cpu_seconds_total${nodeSel}[${DEFAULT_RANGE}])) * 100) ` +
+    `or 100 - (avg by (system_id)(rate(windows_cpu_time_total${winSel}[${DEFAULT_RANGE}])) * 100)`
+  return (
+    `label_replace(avg(${inner}), "agg", "avg", "", "") ` +
+    `or label_replace(max(${inner}), "agg", "peak", "", "")`
+  )
+}
+
+// memUsedPctGroup mirrors memUsedPctGlobal for a group.
+export function memUsedPctGroup(ids: readonly string[]): string {
+  const sel = `{${sysIdsRegex(ids)}}`
+  const inner = memUsedPct(sel)
+  return (
+    `label_replace(avg(${inner}), "agg", "avg", "", "") ` +
+    `or label_replace(max(${inner}), "agg", "peak", "", "")`
+  )
+}
+
+// fsUsedPctGroup mirrors fsUsedPctGlobal for a group.
+export function fsUsedPctGroup(ids: readonly string[]): string {
+  const idSel = sysIdsRegex(ids)
+  const nodeSel = `{${idSel},${FS_FILTER_NODE}}`
+  const winSel = `{${idSel},${FS_FILTER_WINDOWS}}`
+  const inner =
+    `max by (system_id)((1 - node_filesystem_avail_bytes${nodeSel} / node_filesystem_size_bytes${nodeSel}) * 100) ` +
+    `or max by (system_id)((1 - windows_logical_disk_free_bytes${winSel} / windows_logical_disk_size_bytes${winSel}) * 100)`
+  return (
+    `label_replace(avg(${inner}), "agg", "avg", "", "") ` +
+    `or label_replace(max(${inner}), "agg", "peak", "", "")`
+  )
+}
+
+// netIoBytesPerSecGroup mirrors netIoBytesPerSecGlobal for a group.
+export function netIoBytesPerSecGroup(ids: readonly string[]): string {
+  const idSel = sysIdsRegex(ids)
+  const nodeSel = `{${idSel},${NET_FILTER_NODE}}`
+  const winSel = `{${idSel},${NET_FILTER_WINDOWS}}`
+  const inner =
+    `sum by (system_id)(rate(node_network_receive_bytes_total${nodeSel}[${DEFAULT_RANGE}])) ` +
+    `+ sum by (system_id)(rate(node_network_transmit_bytes_total${nodeSel}[${DEFAULT_RANGE}])) ` +
+    `or sum by (system_id)(rate(windows_net_bytes_received_total${winSel}[${DEFAULT_RANGE}])) ` +
+    `+ sum by (system_id)(rate(windows_net_bytes_sent_total${winSel}[${DEFAULT_RANGE}]))`
+  return `sum(${inner})`
+}
+
+// diskIoBytesPerSecGroup mirrors diskIoBytesPerSecGlobal for a group.
+export function diskIoBytesPerSecGroup(ids: readonly string[]): string {
+  const idSel = sysIdsRegex(ids)
+  const nodeSel = `{${idSel}}`
+  const winSel = `{${idSel},${FS_FILTER_WINDOWS}}`
+  const inner =
+    `sum by (system_id)(rate(node_disk_read_bytes_total${nodeSel}[${DEFAULT_RANGE}])) ` +
+    `+ sum by (system_id)(rate(node_disk_written_bytes_total${nodeSel}[${DEFAULT_RANGE}])) ` +
+    `or sum by (system_id)(rate(windows_logical_disk_read_bytes_total${winSel}[${DEFAULT_RANGE}])) ` +
+    `+ sum by (system_id)(rate(windows_logical_disk_write_bytes_total${winSel}[${DEFAULT_RANGE}]))`
+  return `sum(${inner})`
+}
+
 // uptimeDays returns the host's uptime in days. Linux uses
 // node_boot_time_seconds (a Unix-timestamp gauge); windows_exporter
 // emits the same shape under one of three names depending on version:

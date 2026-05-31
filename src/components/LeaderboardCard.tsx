@@ -22,7 +22,7 @@ export default function LeaderboardCard({
   emptyText,
 }: LeaderboardCardProps) {
   return (
-    <Card isCompact>
+    <Card isCompact style={{ height: '100%' }}>
       <CardTitle>{title}</CardTitle>
       <CardBody>
         {entries.length === 0 ? (

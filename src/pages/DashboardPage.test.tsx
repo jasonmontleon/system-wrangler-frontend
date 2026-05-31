@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
-import { render, screen, waitFor, within } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { MemoryRouter } from 'react-router'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import DashboardPage from './DashboardPage'
@@ -56,30 +56,89 @@ class FakeEventSource {
   close() {}
 }
 
+// allWidgetsLayout builds a server-side layout that enables every
+// single-instance widget. Used by tests that pre-date the change
+// shrinking the new-user default to just SH + Backend health; the
+// rest of the original surface still needs to be exercised here.
+function allWidgetsLayout() {
+  return [
+    { instanceId: 'system-health', widgetId: 'system-health', enabled: true },
+    { instanceId: 'backend-health', widgetId: 'backend-health', enabled: true },
+    { instanceId: 'busiest-cpu', widgetId: 'busiest-cpu', enabled: true },
+    { instanceId: 'lowest-free-memory', widgetId: 'lowest-free-memory', enabled: true },
+    { instanceId: 'lowest-free-disk', widgetId: 'lowest-free-disk', enabled: true },
+    { instanceId: 'highest-network-io', widgetId: 'highest-network-io', enabled: true },
+    { instanceId: 'highest-disk-io', widgetId: 'highest-disk-io', enabled: true },
+    { instanceId: 'most-pending-updates', widgetId: 'most-pending-updates', enabled: true },
+    { instanceId: 'global-cpu-trend', widgetId: 'global-cpu-trend', enabled: true },
+    { instanceId: 'global-memory-trend', widgetId: 'global-memory-trend', enabled: true },
+    { instanceId: 'global-fs-trend', widgetId: 'global-fs-trend', enabled: true },
+    { instanceId: 'global-network-io-trend', widgetId: 'global-network-io-trend', enabled: true },
+    { instanceId: 'global-disk-io-trend', widgetId: 'global-disk-io-trend', enabled: true },
+  ]
+}
+
+// stubFetch wires a single fetch stub that handles every endpoint the
+// dashboard touches. It exposes a `layoutStore` ref the test can read
+// or seed to model server-side per-user persistence; PUTs to
+// /api/dashboard/layout mutate it so the next GET reflects the change.
+function stubFetch(opts: {
+  systems?: System[]
+  systemsStatus?: number
+  metricVectorFor?: (urlPart: string) => Response | null
+  layoutStore?: { value: unknown }
+}) {
+  const layoutStore = opts.layoutStore ?? { value: null }
+  vi.stubGlobal('fetch', async (input: RequestInfo | URL, init?: RequestInit) => {
+    const url = String(input)
+    if (url === '/api/health') return jsonResponse({ status: 'ok' })
+    if (url === '/api/systems') {
+      if (opts.systemsStatus && opts.systemsStatus !== 200) {
+        return jsonResponse({ error: 'down' }, opts.systemsStatus)
+      }
+      return jsonResponse(opts.systems ?? [])
+    }
+    if (url === '/api/dashboard/layout') {
+      if ((init?.method ?? 'GET') === 'PUT') {
+        const body = JSON.parse(String(init?.body)) as { layout: unknown }
+        layoutStore.value = body.layout
+        return new Response(null, { status: 204 })
+      }
+      const payload = layoutStore.value === null ? {} : { layout: layoutStore.value }
+      return jsonResponse(payload)
+    }
+    if (url.includes('/api/metrics/query_range?')) return emptyMatrix()
+    if (url.includes('/api/metrics/query?')) {
+      if (opts.metricVectorFor) {
+        const r = opts.metricVectorFor(url)
+        if (r) return r
+      }
+      return emptyVector()
+    }
+    return jsonResponse({}, 500)
+  })
+  return layoutStore
+}
+
 describe('DashboardPage', () => {
   beforeEach(() => {
     vi.stubGlobal('EventSource', FakeEventSource)
+    window.localStorage.clear()
   })
 
   afterEach(() => {
     vi.unstubAllGlobals()
+    window.localStorage.clear()
   })
 
   it('shows the empty state when no systems exist', async () => {
-    vi.stubGlobal('fetch', (input: RequestInfo | URL) => {
-      const url = String(input)
-      if (url === '/api/health') return Promise.resolve(jsonResponse({ status: 'ok' }))
-      if (url === '/api/systems') return Promise.resolve(jsonResponse([]))
-      if (url.includes('/api/metrics/query_range?')) return Promise.resolve(emptyMatrix())
-      if (url.includes('/api/metrics/query?')) return Promise.resolve(emptyVector())
-      return Promise.resolve(jsonResponse({}, 500))
-    })
+    stubFetch({ systems: [] })
     render(
       <MemoryRouter>
         <DashboardPage />
       </MemoryRouter>,
     )
-    expect(await screen.findByText(/No systems yet/i)).toBeInTheDocument()
+    expect(await screen.findByText(/No systems/i)).toBeInTheDocument()
   })
 
   it('tallies systems into the six health buckets with precedence', async () => {
@@ -107,14 +166,7 @@ describe('DashboardPage', () => {
       }),
       sys({ status: 'unprobed' }), // unknown
     ]
-    vi.stubGlobal('fetch', (input: RequestInfo | URL) => {
-      const url = String(input)
-      if (url === '/api/health') return Promise.resolve(jsonResponse({ status: 'ok' }))
-      if (url === '/api/systems') return Promise.resolve(jsonResponse(systems))
-      if (url.includes('/api/metrics/query_range?')) return Promise.resolve(emptyMatrix())
-      if (url.includes('/api/metrics/query?')) return Promise.resolve(emptyVector())
-      return Promise.resolve(jsonResponse({}, 500))
-    })
+    stubFetch({ systems })
     render(
       <MemoryRouter>
         <DashboardPage />
@@ -131,15 +183,7 @@ describe('DashboardPage', () => {
   })
 
   it('surfaces a load error when /api/systems fails', async () => {
-    vi.stubGlobal('fetch', (input: RequestInfo | URL) => {
-      const url = String(input)
-      if (url === '/api/health') return Promise.resolve(jsonResponse({ status: 'ok' }))
-      if (url === '/api/systems')
-        return Promise.resolve(jsonResponse({ error: 'down' }, 500))
-      if (url.includes('/api/metrics/query_range?')) return Promise.resolve(emptyMatrix())
-      if (url.includes('/api/metrics/query?')) return Promise.resolve(emptyVector())
-      return Promise.resolve(jsonResponse({}, 500))
-    })
+    stubFetch({ systemsStatus: 500 })
     render(
       <MemoryRouter>
         <DashboardPage />
@@ -156,39 +200,27 @@ describe('DashboardPage', () => {
       sys({ id: 'sys-2', name: 'db-1', status: 'reachable', pendingUpdates: 0 }),
       sys({ id: 'sys-3', name: 'offline-1', status: 'unreachable' }),
     ]
-    vi.stubGlobal('fetch', (input: RequestInfo | URL) => {
-      const url = String(input)
-      if (url === '/api/health') return Promise.resolve(jsonResponse({ status: 'ok' }))
-      if (url === '/api/systems') return Promise.resolve(jsonResponse(systems))
-      if (url.includes('/api/metrics/query_range?')) return Promise.resolve(emptyMatrix())
-      if (url.includes('/api/metrics/query?')) {
+    stubFetch({
+      systems,
+      layoutStore: { value: allWidgetsLayout() },
+      metricVectorFor: (url) => {
         if (url.includes('node_cpu_seconds_total')) {
-          return Promise.resolve(
-            metricVector({ 'sys-1': 90, 'sys-2': 15, 'sys-3': 99 }),
-          )
+          return metricVector({ 'sys-1': 90, 'sys-2': 15, 'sys-3': 99 })
         }
-        if (
-          url.includes('MemAvailable_bytes') &&
-          !url.includes('node_network')
-        ) {
-          return Promise.resolve(metricVector({ 'sys-1': 80, 'sys-2': 20 }))
+        if (url.includes('MemAvailable_bytes') && !url.includes('node_network')) {
+          return metricVector({ 'sys-1': 80, 'sys-2': 20 })
         }
         if (url.includes('node_filesystem_avail_bytes')) {
-          return Promise.resolve(metricVector({ 'sys-1': 40, 'sys-2': 95 }))
+          return metricVector({ 'sys-1': 40, 'sys-2': 95 })
         }
         if (url.includes('node_network_receive_bytes_total')) {
-          return Promise.resolve(
-            metricVector({ 'sys-1': 5_000_000, 'sys-2': 200 }),
-          )
+          return metricVector({ 'sys-1': 5_000_000, 'sys-2': 200 })
         }
         if (url.includes('node_disk_read_bytes_total')) {
-          return Promise.resolve(
-            metricVector({ 'sys-1': 10_000_000, 'sys-2': 500 }),
-          )
+          return metricVector({ 'sys-1': 10_000_000, 'sys-2': 500 })
         }
-        return Promise.resolve(emptyVector())
-      }
-      return Promise.resolve(jsonResponse({}, 500))
+        return null
+      },
     })
     render(
       <MemoryRouter>
@@ -242,14 +274,7 @@ describe('DashboardPage', () => {
     const systems: System[] = [
       sys({ id: 'sys-1', name: 'web-1', status: 'reachable', pendingUpdates: 0 }),
     ]
-    vi.stubGlobal('fetch', (input: RequestInfo | URL) => {
-      const url = String(input)
-      if (url === '/api/health') return Promise.resolve(jsonResponse({ status: 'ok' }))
-      if (url === '/api/systems') return Promise.resolve(jsonResponse(systems))
-      if (url.includes('/api/metrics/query_range?')) return Promise.resolve(emptyMatrix())
-      if (url.includes('/api/metrics/query?')) return Promise.resolve(emptyVector())
-      return Promise.resolve(jsonResponse({}, 500))
-    })
+    stubFetch({ systems, layoutStore: { value: allWidgetsLayout() } })
     render(
       <MemoryRouter>
         <DashboardPage />
@@ -275,34 +300,116 @@ describe('DashboardPage', () => {
     ).toBeInTheDocument()
   })
 
-  it('renders the global trends section with time-series panels', async () => {
-    vi.stubGlobal('fetch', (input: RequestInfo | URL) => {
-      const url = String(input)
-      if (url === '/api/health') return Promise.resolve(jsonResponse({ status: 'ok' }))
-      if (url === '/api/systems') return Promise.resolve(jsonResponse([]))
-      if (url.includes('/api/metrics/query_range?')) return Promise.resolve(emptyMatrix())
-      if (url.includes('/api/metrics/query?')) return Promise.resolve(emptyVector())
-      return Promise.resolve(jsonResponse({}, 500))
+  it('renders each global trend widget with its own time-range picker', async () => {
+    stubFetch({ systems: [], layoutStore: { value: allWidgetsLayout() } })
+    render(
+      <MemoryRouter>
+        <DashboardPage />
+      </MemoryRouter>,
+    )
+    expect(await screen.findByText('CPU busy (%)')).toBeInTheDocument()
+    expect(screen.getByText('Memory used (%)')).toBeInTheDocument()
+    expect(screen.getByText('Worst filesystem usage (%)')).toBeInTheDocument()
+    expect(screen.getByText('Network IO (bytes/sec)')).toBeInTheDocument()
+    expect(screen.getByText('Disk IO (bytes/sec)')).toBeInTheDocument()
+    // One picker per trend widget — five trends defaults on.
+    expect(
+      screen.getAllByRole('group', { name: /Time range presets/i }),
+    ).toHaveLength(5)
+  })
+
+  it('opens the customize modal and toggling a widget off hides it', async () => {
+    stubFetch({ systems: [], layoutStore: { value: allWidgetsLayout() } })
+    render(
+      <MemoryRouter>
+        <DashboardPage />
+      </MemoryRouter>,
+    )
+    await screen.findByText('Busiest CPU')
+    fireEvent.click(
+      screen.getByRole('button', { name: /Customize dashboard/i }),
+    )
+    const checkbox = await screen.findByRole('checkbox', {
+      name: /Show Busiest CPU/i,
+    })
+    fireEvent.click(checkbox)
+    fireEvent.click(screen.getByRole('button', { name: 'Apply' }))
+    await waitFor(() => {
+      expect(screen.queryByText('Busiest CPU')).not.toBeInTheDocument()
+    })
+  })
+
+  it('reset restores hidden widgets from inside the modal', async () => {
+    stubFetch({
+      systems: [],
+      // Seed with all widgets visible (matches the legacy default
+      // layout). One row (busiest-cpu) is disabled so we can verify
+      // Reset re-enables it. After reset, the layout falls back to the
+      // brand-new-user shape (system-health + backend-health only), so
+      // we assert visibility of system-health instead of busiest-cpu.
+      layoutStore: {
+        value: allWidgetsLayout().map((e) =>
+          e.widgetId === 'busiest-cpu' ? { ...e, enabled: false } : e,
+        ),
+      },
     })
     render(
       <MemoryRouter>
         <DashboardPage />
       </MemoryRouter>,
     )
-    expect(
-      await screen.findByRole('heading', { name: /Global trends/i, level: 2 }),
-    ).toBeInTheDocument()
-    expect(screen.getByText('CPU busy (%)')).toBeInTheDocument()
-    expect(screen.getByText('Memory used (%)')).toBeInTheDocument()
-    expect(screen.getByText('Worst filesystem usage (%)')).toBeInTheDocument()
-    expect(
-      screen.getByText('Network IO (bytes/sec, all systems)'),
-    ).toBeInTheDocument()
-    expect(
-      screen.getByText('Disk IO (bytes/sec, all systems)'),
-    ).toBeInTheDocument()
-    expect(
-      screen.getByRole('group', { name: /Time range presets/i }),
-    ).toBeInTheDocument()
+    await waitFor(() => {
+      expect(screen.queryByText('Busiest CPU')).not.toBeInTheDocument()
+    })
+    fireEvent.click(
+      screen.getByRole('button', { name: /Customize dashboard/i }),
+    )
+    fireEvent.click(
+      await screen.findByRole('button', { name: /Reset to defaults/i }),
+    )
+    fireEvent.click(screen.getByRole('button', { name: 'Apply' }))
+    // After Reset → Apply the layout falls back to the brand-new-user
+    // shape: system-health + backend-health only. Verify those are
+    // present and the previously-disabled busiest-cpu is gone (it's
+    // not in the default-enabled set anymore).
+    await waitFor(() => {
+      expect(screen.getByText('System health')).toBeInTheDocument()
+      expect(screen.getByText('Backend health')).toBeInTheDocument()
+    })
+    expect(screen.queryByText('Busiest CPU')).not.toBeInTheDocument()
+  })
+
+  it('persists layout changes to the server across mounts', async () => {
+    const layoutStore = stubFetch({ systems: [] })
+    const { unmount } = render(
+      <MemoryRouter>
+        <DashboardPage />
+      </MemoryRouter>,
+    )
+    await screen.findByText('Backend health')
+    fireEvent.click(
+      screen.getByRole('button', { name: /Customize dashboard/i }),
+    )
+    fireEvent.click(
+      await screen.findByRole('checkbox', { name: /Show Backend health/i }),
+    )
+    fireEvent.click(screen.getByRole('button', { name: 'Apply' }))
+    await waitFor(() => {
+      expect(screen.queryByText('Backend health')).not.toBeInTheDocument()
+    })
+    // The hook debounces the PUT — wait for the saved state to update.
+    await waitFor(() => {
+      expect(layoutStore.value).not.toBeNull()
+    })
+    unmount()
+    render(
+      <MemoryRouter>
+        <DashboardPage />
+      </MemoryRouter>,
+    )
+    // System health is still default-enabled; Backend health stays
+    // hidden because the persisted layout disabled it.
+    await screen.findByText('System health')
+    expect(screen.queryByText('Backend health')).not.toBeInTheDocument()
   })
 })
