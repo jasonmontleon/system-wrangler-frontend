@@ -32,7 +32,16 @@ if (typeof globalThis.EventSource === 'undefined') {
 // message is routed through console.log (jsdomError → virtualConsole
 // default handler) AND directly to process.stderr.write depending on
 // the jsdom build, so we filter both streams.
-const NOISE_PATTERNS = [/Not implemented: navigation to another Document/]
+const NOISE_PATTERNS = [
+  /Not implemented: navigation to another Document/,
+  // React 19 logs this when act() is invoked while
+  // globalThis.IS_REACT_ACT_ENVIRONMENT is unset. We set the flag at
+  // module load above, but Vitest worker isolation can land deep
+  // React-internal act calls in a scope where the flag was reset
+  // between our setup pass and the call site. Filtering the line is
+  // the reliable last-mile.
+  /The current testing environment is not configured to support act/,
+]
 function filterConsole(
   original: (...args: unknown[]) => void,
 ): (...args: unknown[]) => void {
