@@ -197,7 +197,7 @@ export default function BulkLabelModal({
                 </button>
               </div>
               <Content component="small">
-                Applies fleet-wide to every chip with the typed key.
+                Applies globally to every chip with the typed key.
                 <strong> Don&apos;t change</strong> leaves any existing
                 override alone; <strong>Auto</strong> clears the
                 override and falls back to the deterministic hash.

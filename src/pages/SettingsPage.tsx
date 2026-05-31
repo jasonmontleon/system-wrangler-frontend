@@ -275,7 +275,7 @@ function UpdateConcurrencyLimitCard({
               <HelperText>
                 <HelperTextItem>
                   Cap on how many Check or Update tasks run at once across
-                  the fleet. Extras queue in arrival order and start as
+                  every system. Extras queue in arrival order and start as
                   earlier runs finish. Range 1–100; default 4.
                 </HelperTextItem>
               </HelperText>
