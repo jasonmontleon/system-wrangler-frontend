@@ -42,6 +42,7 @@ import SystemsPage from './pages/SystemsPage'
 import UpdatersPage from './pages/UpdatersPage'
 import ExclusionsPage from './pages/ExclusionsPage'
 import ExportersPage from './pages/ExportersPage'
+import SchedulesPage from './pages/SchedulesPage'
 import SystemsOverviewPage from './pages/SystemsOverviewPage'
 import SystemGraphsPage from './pages/SystemGraphsPage'
 import UsersPage from './pages/UsersPage'
@@ -221,6 +222,7 @@ export default function App() {
         <Route path="/groups/:groupId" element={<GroupDetailPage />} />
         <Route path="/users" element={<UsersPage currentUserId={user.id} />} />
         <Route path="/audit" element={<AuditPage />} />
+        <Route path="/schedules" element={<SchedulesPage />} />
         <Route
           path="/backup"
           element={
@@ -297,6 +299,7 @@ function Sidebar({ isGlobalAdmin }: { isGlobalAdmin: boolean }) {
   const adminPaths = [
     '/users',
     '/audit',
+    '/schedules',
     '/credentials',
     '/updaters',
     '/exporters',
@@ -363,6 +366,7 @@ function Sidebar({ isGlobalAdmin }: { isGlobalAdmin: boolean }) {
             >
               <RouterNavItem to="/users">Users</RouterNavItem>
               <RouterNavItem to="/audit">Audit</RouterNavItem>
+              <RouterNavItem to="/schedules">Schedules</RouterNavItem>
               {isGlobalAdmin && (
                 <RouterNavItem to="/credentials">Credentials</RouterNavItem>
               )}
