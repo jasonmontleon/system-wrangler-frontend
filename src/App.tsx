@@ -199,10 +199,10 @@ export default function App() {
           // The grid-template-columns rule that consumes this var
           // lives on `.pf-v6-c-page` (the Page component itself),
           // so setting it on PageSidebar has no effect — it has to
-          // be on the Page. Two-thirds frees horizontal space the
-          // primary content was feeling compressed for; the nav
-          // labels still fit comfortably in 12rem.
-          '--pf-v6-c-page__sidebar--Width--base': '12rem',
+          // be on the Page. 12.5rem gives "Systems overview" (the
+          // longest label, inside an indented NavExpandable child)
+          // room to fit on one line.
+          '--pf-v6-c-page__sidebar--Width--base': '12.5rem',
         } as React.CSSProperties
       }
     >
