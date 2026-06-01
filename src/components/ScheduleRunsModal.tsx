@@ -99,7 +99,7 @@ export default function ScheduleRunsModal({ schedule, onClose }: Props) {
                     {r.finishedAt ? new Date(r.finishedAt).toLocaleString() : '—'}
                   </Td>
                   <Td dataLabel="Status">
-                    <Label color={statusColor(r.status)}>{r.status}</Label>
+                    <Label color={statusColor(r.status)}>{statusLabel(r.status)}</Label>
                   </Td>
                   <Td dataLabel="Attempted">{r.targetsAttempted}</Td>
                   <Td dataLabel="Succeeded">{r.targetsSucceeded}</Td>
@@ -132,5 +132,20 @@ function statusColor(
       return 'red'
     default:
       return 'blue'
+  }
+}
+
+// statusLabel mirrors SchedulesPage's mapping — the wire stays
+// lowercase, the chip renders Title Case.
+function statusLabel(status: ScheduleRun['status']): string {
+  switch (status) {
+    case 'running':
+      return 'Running'
+    case 'success':
+      return 'Success'
+    case 'partial':
+      return 'Partial'
+    case 'failed':
+      return 'Failed'
   }
 }

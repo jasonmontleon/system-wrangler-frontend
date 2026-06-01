@@ -549,6 +549,21 @@ function presetLabel(p: FreqPreset): string {
   }
 }
 
+// PatternFly TextInput wraps the <input> in a 100%-width container,
+// so a flex row of "At" + TextInput collapses the "At" span to a
+// 1-column-wide ribbon if we don't pin sizes. flexShrink: 0 on the
+// labels keeps them on one line; wrapping each input in a fixed-
+// width div pins the input cluster.
+const presetRowStyle: React.CSSProperties = {
+  marginTop: '0.5rem',
+  display: 'flex',
+  gap: '0.5rem',
+  alignItems: 'center',
+  flexWrap: 'wrap',
+}
+const presetLabelStyle: React.CSSProperties = { flexShrink: 0, whiteSpace: 'nowrap' }
+const presetInputStyle: React.CSSProperties = { width: '5rem', flexShrink: 0 }
+
 function PresetTimeOfDay({
   hour,
   minute,
@@ -561,31 +576,33 @@ function PresetTimeOfDay({
   disabled: boolean
 }) {
   return (
-    <div style={{ marginTop: '0.5rem', display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
-      <span>At</span>
-      <TextInput
-        aria-label="Hour"
-        type="number"
-        value={hour}
-        onChange={(_, v) => {
-          const n = Number(v)
-          if (!Number.isNaN(n) && n >= 0 && n <= 23) onChange(n, minute)
-        }}
-        isDisabled={disabled}
-        style={{ width: '5rem' }}
-      />
-      <span>:</span>
-      <TextInput
-        aria-label="Minute"
-        type="number"
-        value={minute}
-        onChange={(_, v) => {
-          const n = Number(v)
-          if (!Number.isNaN(n) && n >= 0 && n <= 59) onChange(hour, n)
-        }}
-        isDisabled={disabled}
-        style={{ width: '5rem' }}
-      />
+    <div style={presetRowStyle}>
+      <span style={presetLabelStyle}>At</span>
+      <div style={presetInputStyle}>
+        <TextInput
+          aria-label="Hour"
+          type="number"
+          value={hour}
+          onChange={(_, v) => {
+            const n = Number(v)
+            if (!Number.isNaN(n) && n >= 0 && n <= 23) onChange(n, minute)
+          }}
+          isDisabled={disabled}
+        />
+      </div>
+      <span style={presetLabelStyle}>:</span>
+      <div style={presetInputStyle}>
+        <TextInput
+          aria-label="Minute"
+          type="number"
+          value={minute}
+          onChange={(_, v) => {
+            const n = Number(v)
+            if (!Number.isNaN(n) && n >= 0 && n <= 59) onChange(hour, n)
+          }}
+          isDisabled={disabled}
+        />
+      </div>
     </div>
   )
 }
@@ -600,19 +617,20 @@ function PresetMinute({
   disabled: boolean
 }) {
   return (
-    <div style={{ marginTop: '0.5rem', display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
-      <span>At minute</span>
-      <TextInput
-        aria-label="Minute"
-        type="number"
-        value={minute}
-        onChange={(_, v) => {
-          const n = Number(v)
-          if (!Number.isNaN(n) && n >= 0 && n <= 59) onChange(n)
-        }}
-        isDisabled={disabled}
-        style={{ width: '5rem' }}
-      />
+    <div style={presetRowStyle}>
+      <span style={presetLabelStyle}>At minute</span>
+      <div style={presetInputStyle}>
+        <TextInput
+          aria-label="Minute"
+          type="number"
+          value={minute}
+          onChange={(_, v) => {
+            const n = Number(v)
+            if (!Number.isNaN(n) && n >= 0 && n <= 59) onChange(n)
+          }}
+          isDisabled={disabled}
+        />
+      </div>
     </div>
   )
 }
@@ -628,8 +646,8 @@ function PresetDayOfWeek({
 }) {
   const names = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']
   return (
-    <div style={{ marginTop: '0.5rem', display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
-      <span>On</span>
+    <div style={presetRowStyle}>
+      <span style={presetLabelStyle}>On</span>
       <select
         aria-label="Day of week"
         value={dow}

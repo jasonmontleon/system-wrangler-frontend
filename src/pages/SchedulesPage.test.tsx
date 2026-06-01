@@ -60,7 +60,7 @@ describe('SchedulesPage', () => {
     render(<SchedulesPage />)
     expect(await screen.findByText('Nightly check')).toBeInTheDocument()
     expect(screen.getByText('0 3 * * *')).toBeInTheDocument()
-    expect(screen.getByText(/every system/i)).toBeInTheDocument()
+    expect(screen.getByText(/All Systems/)).toBeInTheDocument()
   })
 
   it('shows the empty-state alert when there are no schedules', async () => {
@@ -163,10 +163,29 @@ describe('SchedulesPage', () => {
     })
   })
 
-  it('describes a group target', async () => {
-    installFetch(async () => jsonResponse([{ ...sample, targetKind: 'group', targetValue: 'grp-1' }]))
+  it('shows the group name for a group target once groups have loaded', async () => {
+    installFetch(async (input) => {
+      const url = typeof input === 'string' ? input : input.toString()
+      if (url === '/api/schedules')
+        return jsonResponse([{ ...sample, targetKind: 'group', targetValue: 'grp-1' }])
+      if (url === '/api/groups')
+        return jsonResponse([{ id: 'grp-1', name: 'prod', createdAt: 't', systemCount: 0 }])
+      return jsonResponse({}, { status: 500 })
+    })
     render(<SchedulesPage />)
-    expect(await screen.findByText('grp-1')).toBeInTheDocument()
+    expect(await screen.findByText(/prod Group/)).toBeInTheDocument()
+  })
+
+  it('falls back to the group id when the groups lookup has not resolved', async () => {
+    installFetch(async (input) => {
+      const url = typeof input === 'string' ? input : input.toString()
+      if (url === '/api/schedules')
+        return jsonResponse([{ ...sample, targetKind: 'group', targetValue: 'grp-missing' }])
+      if (url === '/api/groups') return jsonResponse([])
+      return jsonResponse({}, { status: 500 })
+    })
+    render(<SchedulesPage />)
+    expect(await screen.findByText(/grp-missing/i)).toBeInTheDocument()
   })
 
   it('describes a selector target', async () => {
@@ -180,27 +199,27 @@ describe('SchedulesPage', () => {
   it('renders the partial-status label color', async () => {
     installFetch(async () => jsonResponse([{ ...sample, lastStatus: 'partial' }]))
     render(<SchedulesPage />)
-    expect(await screen.findByText('partial')).toBeInTheDocument()
+    expect(await screen.findByText('Partial')).toBeInTheDocument()
   })
 
   it('renders the failed-status label color', async () => {
     installFetch(async () => jsonResponse([{ ...sample, lastStatus: 'failed' }]))
     render(<SchedulesPage />)
-    expect(await screen.findByText('failed')).toBeInTheDocument()
+    expect(await screen.findByText('Failed')).toBeInTheDocument()
   })
 
   it('renders the running-status label color', async () => {
     installFetch(async () => jsonResponse([{ ...sample, lastStatus: 'running' }]))
     render(<SchedulesPage />)
-    expect(await screen.findByText('running')).toBeInTheDocument()
+    expect(await screen.findByText('Running')).toBeInTheDocument()
   })
 
-  it('renders "never" when the schedule has never run', async () => {
+  it('renders "Never" when the schedule has never run', async () => {
     installFetch(async () =>
       jsonResponse([{ ...sample, lastRunAt: undefined, lastStatus: undefined, nextRunAt: undefined }]),
     )
     render(<SchedulesPage />)
-    expect(await screen.findByText(/never/i)).toBeInTheDocument()
+    expect(await screen.findByText(/Never/)).toBeInTheDocument()
   })
 
   it('describes a pinned systems list count', async () => {
@@ -208,7 +227,7 @@ describe('SchedulesPage', () => {
       jsonResponse([{ ...sample, targetKind: 'systems', targetValue: '["a","b","c"]' }]),
     )
     render(<SchedulesPage />)
-    expect(await screen.findByText('3 systems')).toBeInTheDocument()
+    expect(await screen.findByText('3 Systems')).toBeInTheDocument()
   })
 
   it('reports a delete failure as an inline error', async () => {

@@ -62,7 +62,7 @@ describe('ScheduleRunsModal', () => {
     installFetch(async () => jsonResponse([sampleRun]))
     render(<ScheduleRunsModal schedule={sample} onClose={() => {}} />)
     expect(await screen.findByText('3/3 hosts ok')).toBeInTheDocument()
-    expect(screen.getByText('success')).toBeInTheDocument()
+    expect(screen.getByText('Success')).toBeInTheDocument()
   })
 
   it('shows the empty-state alert when no runs exist yet', async () => {
@@ -85,6 +85,6 @@ describe('ScheduleRunsModal', () => {
     )
     render(<ScheduleRunsModal schedule={sample} onClose={() => {}} />)
     expect(await screen.findByText('1/2 hosts ok')).toBeInTheDocument()
-    expect(screen.getByText('partial')).toBeInTheDocument()
+    expect(screen.getByText('Partial')).toBeInTheDocument()
   })
 })

@@ -24,6 +24,7 @@ import {
   updateSchedule,
 } from '../api/schedules'
 import { ApiError } from '../api/systems'
+import { type Group, listGroups } from '../api/groups'
 import ScheduleModal from '../components/ScheduleModal'
 import ScheduleRunsModal from '../components/ScheduleRunsModal'
 
@@ -43,6 +44,10 @@ export default function SchedulesPage() {
   const [actionError, setActionError] = useState<string | null>(null)
   const [edit, setEdit] = useState<Schedule | 'new' | null>(null)
   const [runsFor, setRunsFor] = useState<Schedule | null>(null)
+  // Groups are looked up by id so the Target column can render a
+  // human name instead of the raw uuid. Failures are swallowed —
+  // the row falls back to the id, which is still operator-readable.
+  const [groupsById, setGroupsById] = useState<Record<string, Group>>({})
 
   const refresh = useCallback(() => {
     listSchedules()
@@ -57,6 +62,13 @@ export default function SchedulesPage() {
 
   useEffect(() => {
     refresh()
+    listGroups()
+      .then((gs) => {
+        const map: Record<string, Group> = {}
+        for (const g of gs) map[g.id] = g
+        setGroupsById(map)
+      })
+      .catch(() => setGroupsById({}))
   }, [refresh])
 
   const handleDelete = async (sch: Schedule) => {
@@ -146,13 +158,13 @@ export default function SchedulesPage() {
         <Table aria-label="Schedules">
           <Thead>
             <Tr>
-              <Th>Name</Th>
-              <Th>Cron</Th>
-              <Th>Target</Th>
-              <Th>Actions</Th>
-              <Th>Enabled</Th>
-              <Th>Last run</Th>
-              <Th>Next run</Th>
+              <Th width={15}>Name</Th>
+              <Th width={10}>Schedule</Th>
+              <Th width={10}>Target</Th>
+              <Th width={15}>Actions</Th>
+              <Th width={10}>Enabled</Th>
+              <Th width={20}>Last run</Th>
+              <Th width={20}>Next run</Th>
               <Th screenReaderText="Row actions" />
             </Tr>
           </Thead>
@@ -160,7 +172,7 @@ export default function SchedulesPage() {
             {state.schedules.map((s) => (
               <Tr key={s.id}>
                 <Td dataLabel="Name">{s.name}</Td>
-                <Td dataLabel="Cron">
+                <Td dataLabel="Schedule">
                   <code>{s.cronExpr}</code>
                   {s.timezone && s.timezone !== 'UTC' && (
                     <Badge style={{ marginInlineStart: '0.5rem' }}>
@@ -168,11 +180,11 @@ export default function SchedulesPage() {
                     </Badge>
                   )}
                 </Td>
-                <Td dataLabel="Target">{describeTarget(s)}</Td>
+                <Td dataLabel="Target">{describeTarget(s, groupsById)}</Td>
                 <Td dataLabel="Actions">
-                  {s.runCheck && <Label color="blue" style={{ marginRight: '0.25rem' }}>check</Label>}
-                  {s.runApply && <Label color="purple" style={{ marginRight: '0.25rem' }}>apply</Label>}
-                  {s.rebootAfterApply && <Label color="orange">reboot</Label>}
+                  {s.runCheck && <Label color="blue" style={{ marginRight: '0.25rem' }}>Check</Label>}
+                  {s.runApply && <Label color="purple" style={{ marginRight: '0.25rem' }}>Apply</Label>}
+                  {s.rebootAfterApply && <Label color="orange">Reboot</Label>}
                 </Td>
                 <Td dataLabel="Enabled">
                   <Switch
@@ -223,37 +235,40 @@ export default function SchedulesPage() {
   )
 }
 
-function describeTarget(s: Schedule): React.ReactNode {
+function describeTarget(
+  s: Schedule,
+  groupsById: Record<string, Group>,
+): React.ReactNode {
   switch (s.targetKind) {
     case 'global':
-      return <em>every system</em>
-    case 'group':
-      return (
-        <>
-          group <code>{s.targetValue}</code>
-        </>
-      )
+      return 'All Systems'
+    case 'group': {
+      const g = groupsById[s.targetValue]
+      // Fall back to the raw id when the groups lookup hasn't
+      // resolved yet (or the group has been deleted).
+      return <>{g ? g.name : <code>{s.targetValue}</code>} Group</>
+    }
     case 'systems': {
       let count = 0
       try {
         const ids = JSON.parse(s.targetValue) as string[]
         count = ids.length
       } catch {
-        // ignore — table cell falls back to "systems list"
+        // ignore — table cell falls back to "0 Systems"
       }
-      return `${count} system${count === 1 ? '' : 's'}`
+      return `${count} System${count === 1 ? '' : 's'}`
     }
     case 'selector':
       return (
         <>
-          selector <code>{s.targetValue}</code>
+          Selector <code>{s.targetValue}</code>
         </>
       )
   }
 }
 
 function describeRunOutcome(s: Schedule): React.ReactNode {
-  if (!s.lastRunAt) return <em>never</em>
+  if (!s.lastRunAt) return 'Never'
   return (
     <>
       {formatTimestamp(s.lastRunAt)}
@@ -263,11 +278,26 @@ function describeRunOutcome(s: Schedule): React.ReactNode {
           color={statusColor(s.lastStatus)}
           style={{ marginInlineStart: '0.5rem' }}
         >
-          {s.lastStatus}
+          {statusLabel(s.lastStatus)}
         </Label>
       )}
     </>
   )
+}
+
+// statusLabel maps the backend's lowercase enum to user-facing Title
+// Case. The wire stays lowercase; only the display capitalises.
+function statusLabel(status: NonNullable<Schedule['lastStatus']>): string {
+  switch (status) {
+    case 'running':
+      return 'Running'
+    case 'success':
+      return 'Success'
+    case 'partial':
+      return 'Partial'
+    case 'failed':
+      return 'Failed'
+  }
 }
 
 function statusColor(
