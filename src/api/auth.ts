@@ -48,6 +48,18 @@ export type TrustedDevice = {
   expiresAt: string
 }
 
+export type Session = {
+  id: string
+  label: string
+  ip?: string
+  createdAt: string
+  lastSeenAt: string
+  expiresAt: string
+  // current is true for the session the requesting cookie belongs to.
+  // Always false on the admin list (the admin isn't the session owner).
+  current: boolean
+}
+
 async function parseError(resp: Response): Promise<string> {
   try {
     const body = (await resp.json()) as { error?: string }
@@ -197,5 +209,54 @@ export async function revokeTrustedDevice(id: string): Promise<void> {
   const resp = await apiFetch(`/api/auth/devices/${encodeURIComponent(id)}`, {
     method: 'DELETE',
   })
+  if (!resp.ok) throw new ApiError(resp.status, await parseError(resp))
+}
+
+// listSessions returns the caller's own active login sessions, with the
+// current one flagged.
+export async function listSessions(): Promise<Session[]> {
+  const resp = await apiFetch('/api/auth/sessions')
+  if (!resp.ok) throw new ApiError(resp.status, await parseError(resp))
+  return (await resp.json()) as Session[]
+}
+
+// revokeSession revokes one of the caller's own sessions. Revoking the
+// current session clears the cookie server-side (an effective logout).
+export async function revokeSession(id: string): Promise<void> {
+  const resp = await apiFetch(`/api/auth/sessions/${encodeURIComponent(id)}`, {
+    method: 'DELETE',
+  })
+  if (!resp.ok) throw new ApiError(resp.status, await parseError(resp))
+}
+
+// revokeOtherSessions signs the caller out of every session except the
+// current one; returns the count revoked.
+export async function revokeOtherSessions(): Promise<number> {
+  const resp = await apiFetch('/api/auth/sessions/revoke-others', {
+    method: 'POST',
+  })
+  if (!resp.ok) throw new ApiError(resp.status, await parseError(resp))
+  const body = (await resp.json()) as { revoked: number }
+  return body.revoked
+}
+
+// listUserSessions is the admin view of another user's active sessions.
+export async function listUserSessions(userId: string): Promise<Session[]> {
+  const resp = await apiFetch(
+    `/api/admin/users/${encodeURIComponent(userId)}/sessions`,
+  )
+  if (!resp.ok) throw new ApiError(resp.status, await parseError(resp))
+  return (await resp.json()) as Session[]
+}
+
+// revokeUserSession revokes one of another user's sessions (admin).
+export async function revokeUserSession(
+  userId: string,
+  sessionId: string,
+): Promise<void> {
+  const resp = await apiFetch(
+    `/api/admin/users/${encodeURIComponent(userId)}/sessions/${encodeURIComponent(sessionId)}`,
+    { method: 'DELETE' },
+  )
   if (!resp.ok) throw new ApiError(resp.status, await parseError(resp))
 }

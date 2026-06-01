@@ -32,6 +32,10 @@ function routedFetch(routes: RouteMap): ReturnType<typeof vi.fn> {
     for (const [substr, fn] of Object.entries(routes)) {
       if (url.includes(substr)) return Promise.resolve(fn())
     }
+    // SessionsCard mounts on every ProfilePage render and expects an
+    // array; default any unrouted /sessions GET to empty so per-test
+    // maps don't each have to declare it.
+    if (url.includes('/sessions')) return Promise.resolve(jsonResponse([]))
     return Promise.resolve(jsonResponse({}))
   })
 }

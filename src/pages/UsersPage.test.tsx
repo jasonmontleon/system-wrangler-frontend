@@ -179,6 +179,45 @@ describe('UsersPage', () => {
     expect(patchCall![1]!.body).toBe(JSON.stringify({ disabled: true }))
   })
 
+  it('opens the sessions modal and lists the user\'s sessions via the row kebab', async () => {
+    fetchMock.mockImplementation((input: FetchInput) => {
+      const url = String(input)
+      if (url.includes('/sessions')) {
+        return Promise.resolve(
+          jsonResponse([
+            {
+              id: 'sid-1',
+              label: 'Chrome on Windows',
+              ip: '10.0.0.9',
+              createdAt: '2026-05-30T12:00:00Z',
+              lastSeenAt: '2026-05-31T12:00:00Z',
+              expiresAt: '2026-06-29T12:00:00Z',
+              current: false,
+            },
+          ]),
+        )
+      }
+      return Promise.resolve(
+        jsonResponse({
+          users: [
+            userRow({ id: 'u1', username: 'alice' }),
+            userRow({ id: 'u2', username: 'bob' }),
+          ],
+        }),
+      )
+    })
+    render(<UsersPage currentUserId="u1" />)
+    const bobRow = (await screen.findByText('bob')).closest('tr')!
+    clickRowKebab(bobRow, /view sessions for bob/i)
+
+    const dialog = await screen.findByRole('dialog')
+    expect(within(dialog).getByText('Chrome on Windows')).toBeInTheDocument()
+    const sessionsCall = (
+      fetchMock.mock.calls as Array<[FetchInput, FetchInit]>
+    ).find((c) => String(c[0]).includes('/sessions'))
+    expect(sessionsCall![0]).toBe('/api/admin/users/u2/sessions')
+  })
+
   it('shows an action error if disable fails', async () => {
     fetchMock
       .mockResolvedValueOnce(

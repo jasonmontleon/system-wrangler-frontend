@@ -1,6 +1,16 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import '@testing-library/jest-dom/vitest'
+import { configure } from '@testing-library/react'
+
+// Raise React Testing Library's async ceiling above its 1 s default.
+// Under the pre-commit hook's parallel run on a constrained machine,
+// a correct `findBy*` / `waitFor` assertion can take longer than a
+// second to settle while workers contend; the suite is green in
+// serial, so the extra headroom removes load-induced false failures
+// without masking real ones (a genuinely-stuck assertion still fails,
+// just later).
+configure({ asyncUtilTimeout: 5000 })
 
 // React 19 emits "The current testing environment is not configured to
 // support act(...)" any time act() is called with the env flag unset.

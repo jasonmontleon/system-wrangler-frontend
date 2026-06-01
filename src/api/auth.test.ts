@@ -5,10 +5,15 @@ import { ApiError } from './systems'
 import {
   changePassword,
   getAuthStatus,
+  listSessions,
   listTrustedDevices,
+  listUserSessions,
   login,
   logout,
+  revokeOtherSessions,
+  revokeSession,
   revokeTrustedDevice,
+  revokeUserSession,
   setupAdmin,
   totpConfirm,
   totpDisable,
@@ -277,5 +282,85 @@ describe('api/auth', () => {
   it('revokeTrustedDevice throws on 404', async () => {
     fetchMock.mockResolvedValueOnce(jsonResponse({ error: 'not found' }, 404))
     await expect(revokeTrustedDevice('x')).rejects.toBeInstanceOf(ApiError)
+  })
+
+  it('listSessions returns the array with the current flag', async () => {
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse([
+        {
+          id: 's1',
+          label: 'Firefox on Linux',
+          ip: '10.0.0.5',
+          createdAt: 't',
+          lastSeenAt: 't',
+          expiresAt: 't',
+          current: true,
+        },
+      ]),
+    )
+    const got = await listSessions()
+    expect(got).toHaveLength(1)
+    expect(got[0].current).toBe(true)
+    expect(fetchMock.mock.calls[0][0]).toBe('/api/auth/sessions')
+  })
+
+  it('listSessions throws on backend error', async () => {
+    fetchMock.mockResolvedValueOnce(jsonResponse({ error: 'no' }, 500))
+    await expect(listSessions()).rejects.toBeInstanceOf(ApiError)
+  })
+
+  it('revokeSession DELETEs the encoded id', async () => {
+    fetchMock.mockResolvedValueOnce(new Response(null, { status: 204 }))
+    await expect(revokeSession('a/b')).resolves.toBeUndefined()
+    const url = fetchMock.mock.calls[0][0] as string
+    const init = fetchMock.mock.calls[0][1] as RequestInit
+    expect(url).toBe('/api/auth/sessions/a%2Fb')
+    expect(init.method).toBe('DELETE')
+  })
+
+  it('revokeSession throws on 404', async () => {
+    fetchMock.mockResolvedValueOnce(jsonResponse({ error: 'not found' }, 404))
+    await expect(revokeSession('x')).rejects.toBeInstanceOf(ApiError)
+  })
+
+  it('revokeOtherSessions posts and returns the revoked count', async () => {
+    fetchMock.mockResolvedValueOnce(jsonResponse({ revoked: 3 }))
+    const n = await revokeOtherSessions()
+    expect(n).toBe(3)
+    expect(fetchMock).toHaveBeenCalledWith(
+      '/api/auth/sessions/revoke-others',
+      expect.objectContaining({ method: 'POST' }),
+    )
+  })
+
+  it('revokeOtherSessions throws on backend error', async () => {
+    fetchMock.mockResolvedValueOnce(jsonResponse({ error: 'no' }, 500))
+    await expect(revokeOtherSessions()).rejects.toBeInstanceOf(ApiError)
+  })
+
+  it('listUserSessions hits the admin path for the user', async () => {
+    fetchMock.mockResolvedValueOnce(jsonResponse([]))
+    await listUserSessions('user 1')
+    const url = fetchMock.mock.calls[0][0] as string
+    expect(url).toBe('/api/admin/users/user%201/sessions')
+  })
+
+  it('listUserSessions throws on backend error', async () => {
+    fetchMock.mockResolvedValueOnce(jsonResponse({ error: 'no' }, 403))
+    await expect(listUserSessions('u')).rejects.toBeInstanceOf(ApiError)
+  })
+
+  it('revokeUserSession DELETEs the encoded admin path', async () => {
+    fetchMock.mockResolvedValueOnce(new Response(null, { status: 204 }))
+    await expect(revokeUserSession('u1', 's/2')).resolves.toBeUndefined()
+    const url = fetchMock.mock.calls[0][0] as string
+    const init = fetchMock.mock.calls[0][1] as RequestInit
+    expect(url).toBe('/api/admin/users/u1/sessions/s%2F2')
+    expect(init.method).toBe('DELETE')
+  })
+
+  it('revokeUserSession throws on 404', async () => {
+    fetchMock.mockResolvedValueOnce(jsonResponse({ error: 'not found' }, 404))
+    await expect(revokeUserSession('u', 's')).rejects.toBeInstanceOf(ApiError)
   })
 })

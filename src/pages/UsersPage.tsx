@@ -43,6 +43,7 @@ import {
   type User,
 } from '../api/users'
 import UserRolesCard from '../components/UserRolesCard'
+import UserSessionsCard from '../components/UserSessionsCard'
 
 type Props = {
   currentUserId: string
@@ -74,6 +75,7 @@ export default function UsersPage({ currentUserId }: Props) {
   const [confirm, setConfirm] = useState<Confirm | null>(null)
   const [resetTarget, setResetTarget] = useState<ResetPasswordTarget>(null)
   const [rolesTarget, setRolesTarget] = useState<User | null>(null)
+  const [sessionsTarget, setSessionsTarget] = useState<User | null>(null)
 
   const [filters, setFilters] = useState<Record<string, string>>({
     username: '',
@@ -506,6 +508,10 @@ export default function UsersPage({ currentUserId }: Props) {
                             onClick: () => setRolesTarget(u),
                           },
                           {
+                            title: `View sessions for ${u.username}`,
+                            onClick: () => setSessionsTarget(u),
+                          },
+                          {
                             title: `Reset 2FA for ${u.username}`,
                             isDisabled: !u.totpEnabled,
                             onClick: () =>
@@ -622,6 +628,35 @@ export default function UsersPage({ currentUserId }: Props) {
         </ModalBody>
         <ModalFooter>
           <Button variant="link" onClick={() => setRolesTarget(null)}>
+            Close
+          </Button>
+        </ModalFooter>
+      </Modal>
+
+      <Modal
+        variant="medium"
+        isOpen={sessionsTarget !== null}
+        onClose={() => setSessionsTarget(null)}
+        aria-labelledby="user-sessions-title"
+      >
+        <ModalHeader
+          title={
+            sessionsTarget
+              ? `Sessions for ${sessionsTarget.username}`
+              : 'Sessions'
+          }
+          labelId="user-sessions-title"
+        />
+        <ModalBody>
+          {sessionsTarget && (
+            <UserSessionsCard
+              userId={sessionsTarget.id}
+              username={sessionsTarget.username}
+            />
+          )}
+        </ModalBody>
+        <ModalFooter>
+          <Button variant="link" onClick={() => setSessionsTarget(null)}>
             Close
           </Button>
         </ModalFooter>

@@ -23,6 +23,7 @@ import {
 import MyRolesCard from '../components/MyRolesCard'
 import TwoFactorCard from '../components/TwoFactorCard'
 import TrustedDevicesCard from '../components/TrustedDevicesCard'
+import SessionsCard from '../components/SessionsCard'
 
 const MIN_PASSWORD = 8
 
@@ -64,6 +65,9 @@ export default function ProfilePage({
       </PageSection>
       <PageSection>
         <TrustedDevicesCard />
+      </PageSection>
+      <PageSection>
+        <SessionsCard />
       </PageSection>
       <PageSection>
         <MyRolesCard />
