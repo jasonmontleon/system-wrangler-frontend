@@ -31,6 +31,7 @@ const KEY_UPDATE_CONCURRENCY_LIMIT = 'update_concurrency_limit'
 const KEY_PROBE_INTERVAL_SECONDS = 'probe_interval_seconds'
 const KEY_PROBE_FAILURE_THRESHOLD = 'probe_failure_threshold'
 const KEY_PROBE_SUCCESS_THRESHOLD = 'probe_success_threshold'
+const KEY_SCHEDULE_MISFIRE_GRACE_SECONDS = 'schedule_misfire_grace_seconds'
 
 type LoadState =
   | { kind: 'loading' }
@@ -105,6 +106,12 @@ export default function SettingsPage() {
             <StackItem>
               <ProbeSuccessThresholdCard
                 value={state.settings[KEY_PROBE_SUCCESS_THRESHOLD] ?? ''}
+                onSaved={() => void refresh()}
+              />
+            </StackItem>
+            <StackItem>
+              <ScheduleMisfireGraceCard
+                value={state.settings[KEY_SCHEDULE_MISFIRE_GRACE_SECONDS] ?? ''}
                 onSaved={() => void refresh()}
               />
             </StackItem>
@@ -461,6 +468,27 @@ function ProbeSuccessThresholdCard({
       helper="Number of probe successes in a row before a system flips back to Reachable after being Unreachable. Higher values dampen flapping at the cost of slower recovery. Range 1–10; default 1 (flip immediately)."
       min={1}
       max={10}
+      value={value}
+      onSaved={onSaved}
+    />
+  )
+}
+
+function ScheduleMisfireGraceCard({
+  value,
+  onSaved,
+}: {
+  value: string
+  onSaved: () => void
+}) {
+  return (
+    <BoundedIntCard
+      settingKey={KEY_SCHEDULE_MISFIRE_GRACE_SECONDS}
+      title="Schedule misfire grace"
+      label="Seconds a run may slip before it is skipped"
+      helper="How late a scheduled run may fire before it is treated as missed and rescheduled to its next occurrence instead of running. This stops a spike of catch-up runs when the server returns from an outage; a run delayed less than this (tick jitter, a quick restart) still fires. Range 60–3600; default 120 (2 minutes)."
+      min={60}
+      max={3600}
       value={value}
       onSaved={onSaved}
     />

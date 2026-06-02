@@ -311,6 +311,96 @@ describe('SettingsPage', () => {
     expect(input.value).toBe('1')
   })
 
+  it('renders the schedule misfire grace value', async () => {
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse({
+        settings: {
+          run_history_limit: '100',
+          update_concurrency_limit: '4',
+          schedule_misfire_grace_seconds: '300',
+        },
+      }),
+    )
+    render(<SettingsPage />)
+    const grace = (await screen.findByLabelText(
+      /Seconds a run may slip before it is skipped/i,
+    )) as HTMLInputElement
+    expect(grace.value).toBe('300')
+  })
+
+  it('PUTs schedule_misfire_grace_seconds on Save', async () => {
+    fetchMock
+      .mockResolvedValueOnce(
+        jsonResponse({
+          settings: {
+            run_history_limit: '100',
+            update_concurrency_limit: '4',
+            schedule_misfire_grace_seconds: '120',
+          },
+        }),
+      )
+      .mockResolvedValueOnce(new Response(null, { status: 204 }))
+      .mockResolvedValueOnce(
+        jsonResponse({
+          settings: {
+            run_history_limit: '100',
+            update_concurrency_limit: '4',
+            schedule_misfire_grace_seconds: '600',
+          },
+        }),
+      )
+    render(<SettingsPage />)
+    const input = (await screen.findByLabelText(
+      /Seconds a run may slip before it is skipped/i,
+    )) as HTMLInputElement
+    fireEvent.change(input, { target: { value: '600' } })
+    fireEvent.submit(input.closest('form')!)
+
+    await waitFor(() => {
+      const put = fetchMock.mock.calls.find(
+        (c) => (c[1] as RequestInit | undefined)?.method === 'PUT',
+      )
+      expect(put?.[0]).toBe(
+        '/api/admin/settings/schedule_misfire_grace_seconds',
+      )
+      expect(JSON.parse((put?.[1] as RequestInit).body as string)).toEqual({
+        value: '600',
+      })
+    })
+    expect(await screen.findByText(/^Saved$/i)).toBeInTheDocument()
+  })
+
+  it('surfaces a 400 error from the misfire grace save without losing input', async () => {
+    fetchMock
+      .mockResolvedValueOnce(
+        jsonResponse({
+          settings: {
+            run_history_limit: '100',
+            update_concurrency_limit: '4',
+            schedule_misfire_grace_seconds: '120',
+          },
+        }),
+      )
+      .mockResolvedValueOnce(
+        jsonResponse(
+          { error: 'schedule_misfire_grace_seconds must be between 60 and 3600' },
+          400,
+        ),
+      )
+    render(<SettingsPage />)
+    const input = (await screen.findByLabelText(
+      /Seconds a run may slip before it is skipped/i,
+    )) as HTMLInputElement
+    fireEvent.change(input, { target: { value: '30' } })
+    fireEvent.submit(input.closest('form')!)
+    expect(
+      await screen.findByText(
+        /schedule_misfire_grace_seconds must be between 60 and 3600/i,
+      ),
+    ).toBeInTheDocument()
+    expect(input.value).toBe('30')
+  })
+
   it('shows a load error if /api/admin/settings fails', async () => {
     fetchMock.mockResolvedValueOnce(jsonResponse({ error: 'boom' }, 500))
     render(<SettingsPage />)
