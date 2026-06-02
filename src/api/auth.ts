@@ -22,6 +22,10 @@ export type AuthStatus = {
   setupRequired: boolean
   authenticated: boolean
   user?: AuthUser
+  // Present when the backend has OpenID Connect single sign-on enabled.
+  // oidcDisplayName is the provider label shown on the SSO button.
+  oidcEnabled?: boolean
+  oidcDisplayName?: string
 }
 
 // Discriminated result of the first step of login: either we got a session

@@ -105,7 +105,14 @@ export default function App() {
   }
 
   if (!status.authenticated || !status.user) {
-    return <LoginForm onLogin={auth.login} onTotpComplete={auth.refresh} />
+    return (
+      <LoginForm
+        onLogin={auth.login}
+        onTotpComplete={auth.refresh}
+        oidcEnabled={status.oidcEnabled}
+        oidcDisplayName={status.oidcDisplayName}
+      />
+    )
   }
 
   const user = status.user

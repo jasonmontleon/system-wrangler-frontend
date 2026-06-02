@@ -209,6 +209,68 @@ describe('LoginForm TOTP step', () => {
   })
 })
 
+describe('LoginForm OIDC', () => {
+  afterEach(() => {
+    window.history.replaceState({}, '', '/')
+    vi.restoreAllMocks()
+  })
+
+  it('does not render the SSO button when OIDC is disabled', () => {
+    render(<LoginForm onLogin={vi.fn()} />)
+    expect(
+      screen.queryByRole('button', { name: /sign in with/i }),
+    ).not.toBeInTheDocument()
+  })
+
+  it('renders the SSO button with the provider name when enabled', () => {
+    render(
+      <LoginForm onLogin={vi.fn()} oidcEnabled oidcDisplayName="Acme SSO" />,
+    )
+    expect(
+      screen.getByRole('button', { name: /sign in with acme sso/i }),
+    ).toBeInTheDocument()
+  })
+
+  it('falls back to "SSO" when no display name is provided', () => {
+    render(<LoginForm onLogin={vi.fn()} oidcEnabled />)
+    expect(
+      screen.getByRole('button', { name: /sign in with sso/i }),
+    ).toBeInTheDocument()
+  })
+
+  it('navigates to the OIDC login endpoint on click', () => {
+    // jsdom marks window.location.assign non-configurable, so spying on it
+    // fails; swap the whole location object for the duration of the test.
+    const assign = vi.fn()
+    const orig = window.location
+    Object.defineProperty(window, 'location', {
+      configurable: true,
+      value: { ...orig, assign },
+    })
+    try {
+      render(<LoginForm onLogin={vi.fn()} oidcEnabled oidcDisplayName="SSO" />)
+      fireEvent.click(
+        screen.getByRole('button', { name: /sign in with sso/i }),
+      )
+      expect(assign).toHaveBeenCalledWith('/api/auth/oidc/login')
+    } finally {
+      Object.defineProperty(window, 'location', {
+        configurable: true,
+        value: orig,
+      })
+    }
+  })
+
+  it('shows an alert and strips the param when returning with ?error=oidc', async () => {
+    window.history.pushState({}, '', '/?error=oidc')
+    render(<LoginForm onLogin={vi.fn()} />)
+    expect(
+      await screen.findByText(/single sign-on failed/i),
+    ).toBeInTheDocument()
+    expect(window.location.search).toBe('')
+  })
+})
+
 describe('LoginForm build footer', () => {
   const fetchBuildInfoMock = vi.mocked(fetchBuildInfo)
 

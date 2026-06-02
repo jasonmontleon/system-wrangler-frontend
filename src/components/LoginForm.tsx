@@ -7,6 +7,7 @@ import {
   Card,
   CardBody,
   CardTitle,
+  Divider,
   Form,
   FormGroup,
   TextInput,
@@ -30,9 +31,18 @@ type Props = {
   // the second-factor step issues a session cookie. Optional so simple
   // (non-TOTP) callers stay typeable.
   onTotpComplete?: () => Promise<void> | void
+  // oidcEnabled gates the single sign-on button; oidcDisplayName is the
+  // provider label shown on it. Both come from /api/auth/status.
+  oidcEnabled?: boolean
+  oidcDisplayName?: string
 }
 
-export default function LoginForm({ onLogin, onTotpComplete }: Props) {
+export default function LoginForm({
+  onLogin,
+  onTotpComplete,
+  oidcEnabled,
+  oidcDisplayName,
+}: Props) {
   // No authenticated user yet, so useTheme falls back to the
   // project default; matches the wordmark choice the masthead
   // uses once the user is signed in.
@@ -49,6 +59,24 @@ export default function LoginForm({ onLogin, onTotpComplete }: Props) {
   // land on a locked account. Resets when the user re-edits the form.
   const [lockedUntil, setLockedUntil] = useState<string | null>(null)
   const [buildInfo, setBuildInfo] = useState<BuildInfo | null>(null)
+  // The OIDC callback bounces failures back to the SPA as ?error=oidc.
+  // Surface a banner once, then strip the param so a refresh doesn't
+  // re-show it.
+  const [ssoError, setSsoError] = useState(false)
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search)
+    if (params.get('error') === 'oidc') {
+      setSsoError(true)
+      params.delete('error')
+      const q = params.toString()
+      window.history.replaceState(
+        {},
+        '',
+        window.location.pathname + (q ? `?${q}` : ''),
+      )
+    }
+  }, [])
 
   useEffect(() => {
     let cancelled = false
@@ -142,6 +170,17 @@ export default function LoginForm({ onLogin, onTotpComplete }: Props) {
       <Card style={{ width: CARD_WIDTH }}>
         <CardTitle>Sign in</CardTitle>
         <CardBody>
+          {ssoError && (
+            <Alert
+              variant="danger"
+              title="Single sign-on failed"
+              isInline
+              style={{ marginBottom: 16 }}
+            >
+              Could not complete single sign-on. Try again, or sign in with
+              your username and password.
+            </Alert>
+          )}
           <Form onSubmit={onSubmit}>
             <FormGroup label="Username" fieldId="login-username" isRequired>
               <TextInput
@@ -180,6 +219,20 @@ export default function LoginForm({ onLogin, onTotpComplete }: Props) {
               Sign in
             </Button>
           </Form>
+          {oidcEnabled && (
+            <>
+              <Divider style={{ margin: '16px 0' }} />
+              <Button
+                variant="secondary"
+                isBlock
+                onClick={() =>
+                  window.location.assign('/api/auth/oidc/login')
+                }
+              >
+                Sign in with {oidcDisplayName || 'SSO'}
+              </Button>
+            </>
+          )}
         </CardBody>
       </Card>
       {buildInfo && <BuildFooter info={buildInfo} />}

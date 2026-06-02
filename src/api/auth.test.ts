@@ -49,6 +49,18 @@ describe('api/auth', () => {
     expect(got).toEqual(want)
   })
 
+  it('getAuthStatus parses the OIDC fields when present', async () => {
+    const want: AuthStatus = {
+      setupRequired: false,
+      authenticated: false,
+      oidcEnabled: true,
+      oidcDisplayName: 'Acme SSO',
+    }
+    fetchMock.mockResolvedValueOnce(jsonResponse(want))
+    const got = await getAuthStatus()
+    expect(got).toEqual(want)
+  })
+
   it('getAuthStatus throws ApiError on non-ok', async () => {
     fetchMock.mockResolvedValueOnce(jsonResponse({ error: 'oops' }, 500))
     await expect(getAuthStatus()).rejects.toBeInstanceOf(ApiError)
