@@ -43,6 +43,7 @@ import UpdatersPage from './pages/UpdatersPage'
 import ExclusionsPage from './pages/ExclusionsPage'
 import ExportersPage from './pages/ExportersPage'
 import SchedulesPage from './pages/SchedulesPage'
+import AlertsPage from './pages/AlertsPage'
 import SystemsOverviewPage from './pages/SystemsOverviewPage'
 import SystemGraphsPage from './pages/SystemGraphsPage'
 import UsersPage from './pages/UsersPage'
@@ -262,6 +263,7 @@ export default function App() {
         />
         <Route path="/monitoring/systems-overview" element={<SystemsOverviewPage />} />
         <Route path="/monitoring/system-graphs" element={<SystemGraphsPage />} />
+        <Route path="/monitoring/alerts" element={<AlertsPage />} />
         <Route
           path="/settings"
           element={
@@ -364,6 +366,7 @@ function Sidebar({ isGlobalAdmin }: { isGlobalAdmin: boolean }) {
               <RouterNavItem to="/monitoring/system-graphs">
                 System graphs
               </RouterNavItem>
+              <RouterNavItem to="/monitoring/alerts">Alerts</RouterNavItem>
             </NavExpandable>
             <NavExpandable
               title="Administration"
