@@ -54,7 +54,8 @@ import {
   formatPendingUpdates,
 } from '../components/systemsTableHelpers'
 import { listGroups, type Group } from '../api/groups'
-import { needsReboot, queryRebootRequiredSet } from '../util/rebootSignal'
+import { needsReboot } from '../util/rebootSignal'
+import { useRebootRequiredSet } from '../hooks/useRebootRequiredSet'
 import { useEventStream } from '../hooks/useEventStream'
 import { useMediaQuery } from '../hooks/useMediaQuery'
 import {
@@ -148,7 +149,7 @@ export default function SystemsPage() {
   const [sizeOpen, setSizeOpen] = useState(false)
   const [actionsOpen, setActionsOpen] = useState(false)
   const [selected, setSelected] = useState<Set<string>>(new Set())
-  const [rebootMetricSet, setRebootMetricSet] = useState<Set<string>>(new Set())
+  const rebootMetricSet = useRebootRequiredSet()
   // bulkLabelMode toggles the Add/Remove label modal. Null means the
   // modal is closed. labelOutcome carries the summary banner shown
   // after a bulk label run completes.
@@ -509,12 +510,6 @@ export default function SystemsPage() {
     } catch (e) {
       setLoadError(e instanceof Error ? e.message : String(e))
     }
-    queryRebootRequiredSet()
-      .then(setRebootMetricSet)
-      .catch(() => {
-        // Prometheus may be unreachable; column-only signal still
-        // drives the chip on the rows we have.
-      })
   }, [])
 
   // Group names are loaded once on mount, decoupled from the systems

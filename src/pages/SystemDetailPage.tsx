@@ -47,7 +47,8 @@ import {
 import { PlatformIcon } from '../components/systemsTable'
 import { Link, useParams } from 'react-router-dom'
 import { ApiError, getSystem, type System } from '../api/systems'
-import { needsReboot, queryRebootRequiredSet } from '../util/rebootSignal'
+import { needsReboot } from '../util/rebootSignal'
+import { useRebootRequiredSet } from '../hooks/useRebootRequiredSet'
 import {
   applyUpdater,
   checkUpdater,
@@ -124,7 +125,7 @@ export default function SystemDetailPage() {
   const [actionError, setActionError] = useState<string | null>(null)
   const [busy, setBusy] = useState<string | null>(null)
   const [activeTab, setActiveTab] = useState<TabKey>('overview')
-  const [rebootMetricSet, setRebootMetricSet] = useState<Set<string>>(new Set())
+  const rebootMetricSet = useRebootRequiredSet()
 
   const refresh = useCallback(async () => {
     if (!systemId) {
@@ -161,21 +162,6 @@ export default function SystemDetailPage() {
   useEffect(() => {
     void refresh()
   }, [refresh])
-
-  useEffect(() => {
-    let cancelled = false
-    queryRebootRequiredSet()
-      .then((s) => {
-        if (!cancelled) setRebootMetricSet(s)
-      })
-      .catch(() => {
-        // Prometheus may be unreachable on a fresh install; the
-        // column-only signal still drives the chip.
-      })
-    return () => {
-      cancelled = true
-    }
-  }, [systemId])
 
   // Subscribe to `systems.changed` so a run that ends in another tab
   // (or against another system) flips this page's running flag and

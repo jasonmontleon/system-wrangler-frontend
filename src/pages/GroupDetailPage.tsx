@@ -51,7 +51,8 @@ import {
   type System,
 } from '../api/systems'
 import { ApiError } from '../api/systems'
-import { needsReboot, queryRebootRequiredSet } from '../util/rebootSignal'
+import { needsReboot } from '../util/rebootSignal'
+import { useRebootRequiredSet } from '../hooks/useRebootRequiredSet'
 import { getGroup, setSystemGroup, type Group } from '../api/groups'
 import {
   deleteGroupSlot,
@@ -199,7 +200,7 @@ export default function GroupDetailPage() {
   const [sizeOpen, setSizeOpen] = useState(false)
   const [actionsOpen, setActionsOpen] = useState(false)
   const [selected, setSelected] = useState<Set<string>>(new Set())
-  const [rebootMetricSet, setRebootMetricSet] = useState<Set<string>>(new Set())
+  const rebootMetricSet = useRebootRequiredSet()
   const [bulkLabelMode, setBulkLabelMode] = useState<'add' | 'remove' | null>(
     null,
   )
@@ -249,12 +250,6 @@ export default function GroupDetailPage() {
     } catch (e) {
       setLoadError(e instanceof Error ? e.message : String(e))
     }
-    queryRebootRequiredSet()
-      .then(setRebootMetricSet)
-      .catch(() => {
-        // Prometheus may be unreachable; column-only signal still
-        // drives the chip on the rows we have.
-      })
   }, [])
 
   // runOnRow fires fanOut against a single system from the row
