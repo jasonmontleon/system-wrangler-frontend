@@ -67,7 +67,14 @@ export function useAuth(): UseAuth {
   )
 
   const logout = useCallback(async () => {
-    await logoutApi()
+    const { logoutUrl } = await logoutApi()
+    if (logoutUrl) {
+      // RP-initiated (single) logout: navigate to the IdP to end its
+      // session — it redirects back to the app login afterward. We're
+      // leaving the page, so don't refresh status.
+      window.location.assign(logoutUrl)
+      return
+    }
     await refresh()
   }, [refresh])
 

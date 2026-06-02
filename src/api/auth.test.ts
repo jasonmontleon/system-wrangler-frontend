@@ -122,13 +122,22 @@ describe('api/auth', () => {
     await expect(login('a', 'b')).rejects.toThrow(/Server Error|HTTP 500/)
   })
 
-  it('logout sends POST and resolves on 2xx', async () => {
+  it('logout sends POST and resolves with no logoutUrl on 204', async () => {
     fetchMock.mockResolvedValueOnce(new Response(null, { status: 204 }))
-    await expect(logout()).resolves.toBeUndefined()
+    await expect(logout()).resolves.toEqual({})
     expect(fetchMock).toHaveBeenCalledWith(
       '/api/auth/logout',
       expect.objectContaining({ method: 'POST' }),
     )
+  })
+
+  it('logout returns the logoutUrl on a 200 (OIDC session)', async () => {
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse({ logoutUrl: 'https://idp.example.com/logout?client_id=x' }),
+    )
+    await expect(logout()).resolves.toEqual({
+      logoutUrl: 'https://idp.example.com/logout?client_id=x',
+    })
   })
 
   it('logout throws on non-ok', async () => {

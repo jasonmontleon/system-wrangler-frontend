@@ -116,6 +116,39 @@ describe('useAuth', () => {
     expect(calls).toContain('/api/auth/logout')
   })
 
+  it('logout navigates to the IdP when given a logoutUrl', async () => {
+    fetchMock
+      .mockResolvedValueOnce(
+        jsonResponse({ setupRequired: false, authenticated: false }),
+      )
+      .mockResolvedValueOnce(jsonResponse({ logoutUrl: 'https://idp/logout' }))
+
+    const assign = vi.fn()
+    const orig = window.location
+    Object.defineProperty(window, 'location', {
+      configurable: true,
+      value: { ...orig, assign },
+    })
+    try {
+      const { result } = renderHook(() => useAuth())
+      await waitFor(() => {
+        expect(result.current.state.kind).toBe('ready')
+      })
+      await act(async () => {
+        await result.current.logout()
+      })
+      expect(assign).toHaveBeenCalledWith('https://idp/logout')
+      // No status refresh after an IdP redirect: status + logout only.
+      const calls = fetchMock.mock.calls.map((c) => String(c[0]))
+      expect(calls.filter((u) => u.endsWith('/api/auth/status'))).toHaveLength(1)
+    } finally {
+      Object.defineProperty(window, 'location', {
+        configurable: true,
+        value: orig,
+      })
+    }
+  })
+
   it('login skips refresh when totp is required', async () => {
     fetchMock
       .mockResolvedValueOnce(

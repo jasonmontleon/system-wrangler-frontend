@@ -114,9 +114,15 @@ export async function login(
   return { kind: 'authenticated', user: body as AuthUser }
 }
 
-export async function logout(): Promise<void> {
+// logout clears the server session. For an OIDC (single sign-on) session
+// the backend replies 200 with a logoutUrl the caller should navigate to,
+// so the upstream IdP session is ended too; a local session replies 204
+// (no body) and logoutUrl is undefined.
+export async function logout(): Promise<{ logoutUrl?: string }> {
   const resp = await apiFetch('/api/auth/logout', { method: 'POST' })
   if (!resp.ok) throw new ApiError(resp.status, await parseError(resp))
+  if (resp.status === 204) return {}
+  return (await resp.json()) as { logoutUrl?: string }
 }
 
 export async function updateProfile(update: ProfileUpdate): Promise<AuthUser> {
