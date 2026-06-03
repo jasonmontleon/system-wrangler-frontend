@@ -51,6 +51,7 @@ function baseHandler(
     deliveries?: NotificationDelivery[]
     rules?: unknown[]
     routing?: unknown[]
+    policy?: unknown
   } = {},
   extra?: (url: string, init?: RequestInit) => Response | null,
 ) {
@@ -70,6 +71,10 @@ function baseHandler(
     }
     if (url === '/api/notifications/routing' && (init?.method ?? 'GET') === 'GET') {
       return jsonResponse(opts.routing ?? [])
+    }
+    // DeliveryPolicyCard (mounted on the page) fetches the policy.
+    if (url === '/api/notifications/policy' && (init?.method ?? 'GET') === 'GET') {
+      return jsonResponse(opts.policy ?? { timezone: 'UTC', windows: [], severities: {} })
     }
     const e = extra?.(url, init)
     if (e) return e

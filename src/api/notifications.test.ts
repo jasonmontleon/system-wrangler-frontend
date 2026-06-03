@@ -4,14 +4,17 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import {
   createChannel,
   deleteChannel,
+  getPolicy,
   getRouting,
   listChannels,
   listDeliveries,
+  setPolicy,
   setRouting,
   testChannel,
   updateChannel,
   type NotificationChannel,
   type NotificationChannelInput,
+  type NotificationPolicy,
 } from './notifications'
 import { ApiError } from './systems'
 
@@ -167,5 +170,36 @@ describe('notifications api', () => {
     await expect(setRouting('r1', { mode: 'selected', channelIds: [] })).rejects.toBeInstanceOf(
       ApiError,
     )
+  })
+
+  const policy: NotificationPolicy = {
+    timezone: 'UTC',
+    windows: [{ days: [1, 2], start: '22:00', end: '08:00' }],
+    severities: { warning: 'always' },
+  }
+
+  it('getPolicy returns the policy', async () => {
+    fetchMock.mockResolvedValueOnce(jsonResponse(policy))
+    const got = await getPolicy()
+    expect(fetchMock.mock.calls[0][0]).toBe('/api/notifications/policy')
+    expect(got.severities.warning).toBe('always')
+  })
+
+  it('getPolicy throws on 403', async () => {
+    fetchMock.mockResolvedValueOnce(jsonResponse({ error: 'no' }, { status: 403 }))
+    await expect(getPolicy()).rejects.toBeInstanceOf(ApiError)
+  })
+
+  it('setPolicy PUTs the policy', async () => {
+    fetchMock.mockResolvedValueOnce(jsonResponse(policy))
+    await setPolicy(policy)
+    expect(fetchMock.mock.calls[0][0]).toBe('/api/notifications/policy')
+    expect(fetchMock.mock.calls[0][1]).toMatchObject({ method: 'PUT' })
+    expect(JSON.parse(fetchMock.mock.calls[0][1].body)).toMatchObject({ timezone: 'UTC' })
+  })
+
+  it('setPolicy throws on 400', async () => {
+    fetchMock.mockResolvedValueOnce(jsonResponse({ error: 'bad tz' }, { status: 400 }))
+    await expect(setPolicy(policy)).rejects.toBeInstanceOf(ApiError)
   })
 })

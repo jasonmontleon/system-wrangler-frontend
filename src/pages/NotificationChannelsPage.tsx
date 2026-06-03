@@ -27,6 +27,7 @@ import {
 } from '../api/notifications'
 import { ApiError } from '../api/systems'
 import ChannelModal from '../components/ChannelModal'
+import DeliveryPolicyCard from '../components/DeliveryPolicyCard'
 import RoutingMatrix from '../components/RoutingMatrix'
 
 type PageState =
@@ -216,6 +217,13 @@ export default function NotificationChannelsPage() {
           </Tbody>
         </Table>
       )}
+
+      <Title headingLevel="h2" style={{ marginTop: '2rem' }}>
+        Delivery policy
+      </Title>
+      <div style={{ marginTop: '1rem', marginBottom: '1rem' }}>
+        <DeliveryPolicyCard />
+      </div>
 
       <Title headingLevel="h2" style={{ marginTop: '2rem' }}>
         Routing

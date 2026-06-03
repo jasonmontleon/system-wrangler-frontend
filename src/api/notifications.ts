@@ -67,6 +67,25 @@ export type ChannelTestResult = {
   error?: string
 }
 
+export type DeliveryMode = 'dashboard' | 'quiet' | 'always'
+
+// QuietWindow is one recurring quiet interval. days are weekday numbers
+// (0=Sunday); empty = every day. start/end are "HH:MM" in the policy
+// timezone; an end earlier than start wraps past midnight.
+export type QuietWindow = {
+  days: number[]
+  start: string
+  end: string
+}
+
+export type NotificationPolicy = {
+  timezone: string
+  windows: QuietWindow[]
+  severities: Record<string, DeliveryMode>
+}
+
+export type NotificationPolicyInput = NotificationPolicy
+
 export type RouteMode = 'all' | 'selected'
 
 // RuleRouting is a rule's channel routing. A rule absent from the routing
@@ -146,6 +165,24 @@ export async function listDeliveries(limit?: number): Promise<NotificationDelive
   const resp = await apiFetch(path)
   if (!resp.ok) throw new ApiError(resp.status, await parseError(resp))
   return (await resp.json()) as NotificationDelivery[]
+}
+
+export async function getPolicy(): Promise<NotificationPolicy> {
+  const resp = await apiFetch('/api/notifications/policy')
+  if (!resp.ok) throw new ApiError(resp.status, await parseError(resp))
+  return (await resp.json()) as NotificationPolicy
+}
+
+export async function setPolicy(
+  input: NotificationPolicyInput,
+): Promise<NotificationPolicy> {
+  const resp = await apiFetch('/api/notifications/policy', {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(input),
+  })
+  if (!resp.ok) throw new ApiError(resp.status, await parseError(resp))
+  return (await resp.json()) as NotificationPolicy
 }
 
 export async function getRouting(): Promise<RuleRouting[]> {
