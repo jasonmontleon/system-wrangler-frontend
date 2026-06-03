@@ -51,6 +51,12 @@ const NOISE_PATTERNS = [
   // between our setup pass and the call site. Filtering the line is
   // the reliable last-mile.
   /The current testing environment is not configured to support act/,
+  // PatternFly v6 NavExpandable renders `inert=''` (an empty string) on
+  // its collapsed nav <section>; React 19 warns that an empty string for
+  // a boolean attribute is treated as false. It's third-party — we only
+  // consume NavExpandable — so filter the line until PatternFly passes a
+  // real boolean.
+  /Received an empty string for a boolean attribute/,
 ]
 function filterConsole(
   original: (...args: unknown[]) => void,
