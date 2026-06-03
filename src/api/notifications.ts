@@ -67,6 +67,21 @@ export type ChannelTestResult = {
   error?: string
 }
 
+export type RouteMode = 'all' | 'selected'
+
+// RuleRouting is a rule's channel routing. A rule absent from the routing
+// list uses the default — 'all', meaning every enabled channel.
+export type RuleRouting = {
+  ruleId: string
+  mode: RouteMode
+  channelIds: string[] | null
+}
+
+export type RuleRoutingInput = {
+  mode: RouteMode
+  channelIds?: string[]
+}
+
 async function parseError(resp: Response): Promise<string> {
   try {
     const body = (await resp.json()) as { error?: string }
@@ -131,4 +146,23 @@ export async function listDeliveries(limit?: number): Promise<NotificationDelive
   const resp = await apiFetch(path)
   if (!resp.ok) throw new ApiError(resp.status, await parseError(resp))
   return (await resp.json()) as NotificationDelivery[]
+}
+
+export async function getRouting(): Promise<RuleRouting[]> {
+  const resp = await apiFetch('/api/notifications/routing')
+  if (!resp.ok) throw new ApiError(resp.status, await parseError(resp))
+  return (await resp.json()) as RuleRouting[]
+}
+
+export async function setRouting(
+  ruleId: string,
+  input: RuleRoutingInput,
+): Promise<RuleRouting> {
+  const resp = await apiFetch(`/api/notifications/routing/${encodeURIComponent(ruleId)}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(input),
+  })
+  if (!resp.ok) throw new ApiError(resp.status, await parseError(resp))
+  return (await resp.json()) as RuleRouting
 }

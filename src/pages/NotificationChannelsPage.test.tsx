@@ -46,7 +46,12 @@ function installFetch(handler: FetchHandler) {
 }
 
 function baseHandler(
-  opts: { channels?: NotificationChannel[]; deliveries?: NotificationDelivery[] } = {},
+  opts: {
+    channels?: NotificationChannel[]
+    deliveries?: NotificationDelivery[]
+    rules?: unknown[]
+    routing?: unknown[]
+  } = {},
   extra?: (url: string, init?: RequestInit) => Response | null,
 ) {
   return async (input: RequestInfo, init?: RequestInit) => {
@@ -56,6 +61,15 @@ function baseHandler(
     }
     if (url.startsWith('/api/notifications/deliveries')) {
       return jsonResponse(opts.deliveries ?? [delivery])
+    }
+    // RoutingMatrix (mounted on the page) fetches rules + routing; default
+    // both to empty so the matrix renders its "no rules" state quietly and
+    // doesn't disturb the channel/delivery assertions.
+    if (url === '/api/alerts' && (init?.method ?? 'GET') === 'GET') {
+      return jsonResponse(opts.rules ?? [])
+    }
+    if (url === '/api/notifications/routing' && (init?.method ?? 'GET') === 'GET') {
+      return jsonResponse(opts.routing ?? [])
     }
     const e = extra?.(url, init)
     if (e) return e

@@ -4,8 +4,10 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import {
   createChannel,
   deleteChannel,
+  getRouting,
   listChannels,
   listDeliveries,
+  setRouting,
   testChannel,
   updateChannel,
   type NotificationChannel,
@@ -133,5 +135,37 @@ describe('notifications api', () => {
   it('listDeliveries throws on 403', async () => {
     fetchMock.mockResolvedValueOnce(jsonResponse({ error: 'no' }, { status: 403 }))
     await expect(listDeliveries()).rejects.toBeInstanceOf(ApiError)
+  })
+
+  it('getRouting returns the rows', async () => {
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse([{ ruleId: 'r1', mode: 'selected', channelIds: ['c1'] }]),
+    )
+    const got = await getRouting()
+    expect(fetchMock.mock.calls[0][0]).toBe('/api/notifications/routing')
+    expect(got[0].ruleId).toBe('r1')
+  })
+
+  it('getRouting throws on 403', async () => {
+    fetchMock.mockResolvedValueOnce(jsonResponse({ error: 'no' }, { status: 403 }))
+    await expect(getRouting()).rejects.toBeInstanceOf(ApiError)
+  })
+
+  it('setRouting PUTs the input to the rule path', async () => {
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse({ ruleId: 'r 1', mode: 'all', channelIds: null }),
+    )
+    const got = await setRouting('r 1', { mode: 'all' })
+    expect(fetchMock.mock.calls[0][0]).toBe('/api/notifications/routing/r%201')
+    expect(fetchMock.mock.calls[0][1]).toMatchObject({ method: 'PUT' })
+    expect(JSON.parse(fetchMock.mock.calls[0][1].body)).toEqual({ mode: 'all' })
+    expect(got.mode).toBe('all')
+  })
+
+  it('setRouting throws on 400', async () => {
+    fetchMock.mockResolvedValueOnce(jsonResponse({ error: 'bad' }, { status: 400 }))
+    await expect(setRouting('r1', { mode: 'selected', channelIds: [] })).rejects.toBeInstanceOf(
+      ApiError,
+    )
   })
 })

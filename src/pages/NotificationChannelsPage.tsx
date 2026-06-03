@@ -27,6 +27,7 @@ import {
 } from '../api/notifications'
 import { ApiError } from '../api/systems'
 import ChannelModal from '../components/ChannelModal'
+import RoutingMatrix from '../components/RoutingMatrix'
 
 type PageState =
   | { kind: 'loading' }
@@ -215,6 +216,15 @@ export default function NotificationChannelsPage() {
           </Tbody>
         </Table>
       )}
+
+      <Title headingLevel="h2" style={{ marginTop: '2rem' }}>
+        Routing
+      </Title>
+      <p style={{ marginBottom: '1rem' }}>
+        Choose which channels each rule delivers to. Rules default to all enabled channels; the
+        dashboard shows every active alert regardless of routing.
+      </p>
+      <RoutingMatrix />
 
       <Title headingLevel="h2" style={{ marginTop: '2rem' }}>
         Recent deliveries
