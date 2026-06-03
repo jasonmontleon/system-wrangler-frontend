@@ -5,8 +5,8 @@ import { BLANK_WIDGET_IDS, isWidgetId, WIDGETS, WIDGETS_BY_ID } from './widgets'
 import { CELL_L, CELL_M, CELL_S } from './widgetSize'
 
 describe('widget registry', () => {
-  it('has 16 single-instance widgets, 13 per-group templates, and 3 blank templates', () => {
-    expect(WIDGETS.filter((w) => !w.templated)).toHaveLength(16)
+  it('has 17 single-instance widgets, 13 per-group templates, and 3 blank templates', () => {
+    expect(WIDGETS.filter((w) => !w.templated)).toHaveLength(17)
     expect(WIDGETS.filter((w) => w.templated)).toHaveLength(16)
   })
 

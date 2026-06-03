@@ -1,0 +1,137 @@
+// SPDX-License-Identifier: Apache-2.0
+
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import {
+  createChannel,
+  deleteChannel,
+  listChannels,
+  listDeliveries,
+  testChannel,
+  updateChannel,
+  type NotificationChannel,
+  type NotificationChannelInput,
+} from './notifications'
+import { ApiError } from './systems'
+
+function jsonResponse(body: unknown, init: ResponseInit = {}): Response {
+  return new Response(JSON.stringify(body), {
+    status: 200,
+    headers: { 'Content-Type': 'application/json' },
+    ...init,
+  })
+}
+
+const sample: NotificationChannel = {
+  id: 'ch-1',
+  name: 'Ops Slack',
+  type: 'slack',
+  enabled: true,
+  config: {},
+  hasSecret: true,
+  createdBy: 'u',
+  createdAt: '2026-06-02T00:00:00Z',
+  updatedAt: '2026-06-02T00:00:00Z',
+}
+
+const input: NotificationChannelInput = {
+  name: 'Ops Slack',
+  type: 'slack',
+  enabled: true,
+  config: {},
+  secret: 'https://hooks.slack.com/services/x',
+}
+
+describe('notifications api', () => {
+  let fetchMock: ReturnType<typeof vi.fn>
+  beforeEach(() => {
+    fetchMock = vi.fn()
+    vi.stubGlobal('fetch', fetchMock)
+  })
+  afterEach(() => {
+    vi.unstubAllGlobals()
+  })
+
+  it('listChannels returns the array', async () => {
+    fetchMock.mockResolvedValueOnce(jsonResponse([sample]))
+    const got = await listChannels()
+    expect(fetchMock.mock.calls[0][0]).toBe('/api/notifications/channels')
+    expect(got[0].id).toBe('ch-1')
+  })
+
+  it('listChannels throws on 403', async () => {
+    fetchMock.mockResolvedValueOnce(jsonResponse({ error: 'forbidden' }, { status: 403 }))
+    await expect(listChannels()).rejects.toBeInstanceOf(ApiError)
+  })
+
+  it('listChannels falls back to status text without an error body', async () => {
+    fetchMock.mockResolvedValueOnce(new Response('x', { status: 500 }))
+    await expect(listChannels()).rejects.toThrow(/500|Internal/)
+  })
+
+  it('createChannel POSTs the input', async () => {
+    fetchMock.mockResolvedValueOnce(jsonResponse(sample, { status: 201 }))
+    const got = await createChannel(input)
+    expect(fetchMock.mock.calls[0][0]).toBe('/api/notifications/channels')
+    expect(JSON.parse(fetchMock.mock.calls[0][1].body)).toMatchObject({ type: 'slack' })
+    expect(got.id).toBe('ch-1')
+  })
+
+  it('createChannel throws on 400', async () => {
+    fetchMock.mockResolvedValueOnce(jsonResponse({ error: 'bad' }, { status: 400 }))
+    await expect(createChannel(input)).rejects.toBeInstanceOf(ApiError)
+  })
+
+  it('updateChannel PUTs to the id path', async () => {
+    fetchMock.mockResolvedValueOnce(jsonResponse(sample))
+    await updateChannel('ch-1', input)
+    expect(fetchMock.mock.calls[0][0]).toBe('/api/notifications/channels/ch-1')
+    expect(fetchMock.mock.calls[0][1]).toMatchObject({ method: 'PUT' })
+  })
+
+  it('updateChannel throws on 404', async () => {
+    fetchMock.mockResolvedValueOnce(jsonResponse({ error: 'gone' }, { status: 404 }))
+    await expect(updateChannel('ch-1', input)).rejects.toBeInstanceOf(ApiError)
+  })
+
+  it('deleteChannel DELETEs', async () => {
+    fetchMock.mockResolvedValueOnce(new Response(null, { status: 204 }))
+    await deleteChannel('ch-1')
+    expect(fetchMock.mock.calls[0][0]).toBe('/api/notifications/channels/ch-1')
+    expect(fetchMock.mock.calls[0][1]).toMatchObject({ method: 'DELETE' })
+  })
+
+  it('deleteChannel throws on 500', async () => {
+    fetchMock.mockResolvedValueOnce(jsonResponse({ error: 'boom' }, { status: 500 }))
+    await expect(deleteChannel('ch-1')).rejects.toBeInstanceOf(ApiError)
+  })
+
+  it('testChannel POSTs to the test path', async () => {
+    fetchMock.mockResolvedValueOnce(jsonResponse({ ok: true }))
+    const got = await testChannel('ch-1')
+    expect(fetchMock.mock.calls[0][0]).toBe('/api/notifications/channels/ch-1/test')
+    expect(fetchMock.mock.calls[0][1]).toMatchObject({ method: 'POST' })
+    expect(got.ok).toBe(true)
+  })
+
+  it('testChannel throws on 503', async () => {
+    fetchMock.mockResolvedValueOnce(jsonResponse({ error: 'no runtime' }, { status: 503 }))
+    await expect(testChannel('ch-1')).rejects.toBeInstanceOf(ApiError)
+  })
+
+  it('listDeliveries returns rows and honors limit', async () => {
+    fetchMock.mockResolvedValueOnce(jsonResponse([{ id: 'd1' }]))
+    await listDeliveries(25)
+    expect(fetchMock.mock.calls[0][0]).toBe('/api/notifications/deliveries?limit=25')
+  })
+
+  it('listDeliveries without a limit hits the bare path', async () => {
+    fetchMock.mockResolvedValueOnce(jsonResponse([]))
+    await listDeliveries()
+    expect(fetchMock.mock.calls[0][0]).toBe('/api/notifications/deliveries')
+  })
+
+  it('listDeliveries throws on 403', async () => {
+    fetchMock.mockResolvedValueOnce(jsonResponse({ error: 'no' }, { status: 403 }))
+    await expect(listDeliveries()).rejects.toBeInstanceOf(ApiError)
+  })
+})

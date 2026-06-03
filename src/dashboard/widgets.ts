@@ -24,6 +24,7 @@ import {
   GlobalNetworkIoTrendWidget,
 } from './widgets/trendWidgets'
 import BlankWidget from './widgets/BlankWidget'
+import FiringAlertsWidget from './widgets/FiringAlertsWidget'
 
 // WidgetParams carries per-instance config for templated widgets. Today
 // the only template axis is groupId; future templates (per-OS, per-
@@ -39,6 +40,7 @@ export type WidgetId =
   | 'system-health-legend'
   | 'backend-health'
   | 'backend-readiness'
+  | 'firing-alerts'
   | 'busiest-cpu'
   | 'lowest-free-memory'
   | 'lowest-free-disk'
@@ -82,9 +84,9 @@ export type WidgetSpec = {
 }
 
 // WIDGETS is the source of truth for available dashboard widgets.
-// The first 13 are the single-instance widgets that ship in every
-// default layout. The remaining 12 are per-group templates the user
-// can add instances of via the Customize modal.
+// The single-instance widgets come first; the per-group templates and
+// blank spacers (the user adds instances of these via the Customize
+// modal) follow.
 export const WIDGETS: ReadonlyArray<WidgetSpec> = [
   {
     id: 'system-health',
@@ -130,6 +132,15 @@ export const WIDGETS: ReadonlyArray<WidgetSpec> = [
     cell: CELL_S,
     templated: false,
     Component: BackendReadinessWidget,
+  },
+  {
+    id: 'firing-alerts',
+    title: 'Firing alerts',
+    description: 'Alerts currently firing, refreshed live. The dashboard banner for alerting.',
+    defaultEnabled: false,
+    cell: CELL_L,
+    templated: false,
+    Component: FiringAlertsWidget,
   },
   {
     id: 'busiest-cpu',

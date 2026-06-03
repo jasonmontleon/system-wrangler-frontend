@@ -44,6 +44,7 @@ import ExclusionsPage from './pages/ExclusionsPage'
 import ExportersPage from './pages/ExportersPage'
 import SchedulesPage from './pages/SchedulesPage'
 import AlertsPage from './pages/AlertsPage'
+import NotificationChannelsPage from './pages/NotificationChannelsPage'
 import SystemsOverviewPage from './pages/SystemsOverviewPage'
 import SystemGraphsPage from './pages/SystemGraphsPage'
 import UsersPage from './pages/UsersPage'
@@ -265,6 +266,12 @@ export default function App() {
         <Route path="/monitoring/system-graphs" element={<SystemGraphsPage />} />
         <Route path="/monitoring/alerts" element={<AlertsPage />} />
         <Route
+          path="/notifications"
+          element={
+            isGlobalAdmin(scope.state) ? <NotificationChannelsPage /> : <Navigate to="/" replace />
+          }
+        />
+        <Route
           path="/settings"
           element={
             isGlobalAdmin(scope.state) ? <SettingsPage /> : <Navigate to="/" replace />
@@ -313,6 +320,7 @@ function Sidebar({ isGlobalAdmin }: { isGlobalAdmin: boolean }) {
     '/updaters',
     '/exporters',
     '/exclusions',
+    '/notifications',
     '/backup',
     '/settings',
   ]
@@ -388,6 +396,9 @@ function Sidebar({ isGlobalAdmin }: { isGlobalAdmin: boolean }) {
               )}
               {isGlobalAdmin && (
                 <RouterNavItem to="/exclusions">Exclusions</RouterNavItem>
+              )}
+              {isGlobalAdmin && (
+                <RouterNavItem to="/notifications">Notifications</RouterNavItem>
               )}
               {isGlobalAdmin && (
                 <RouterNavItem to="/backup">Backup</RouterNavItem>
