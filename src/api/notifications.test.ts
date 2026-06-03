@@ -3,15 +3,26 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import {
   createChannel,
+  createMyChannel,
   deleteChannel,
+  deleteMyChannel,
+  getMyPolicy,
+  getMySubscription,
   getPolicy,
   getRouting,
   listChannels,
   listDeliveries,
+  listMyChannels,
+  listMyDeliveries,
+  setMyPolicy,
+  setMySubscription,
   setPolicy,
   setRouting,
   testChannel,
+  testMyChannel,
   updateChannel,
+  updateMyChannel,
+  type AlertSubscription,
   type NotificationChannel,
   type NotificationChannelInput,
   type NotificationPolicy,
@@ -201,5 +212,92 @@ describe('notifications api', () => {
   it('setPolicy throws on 400', async () => {
     fetchMock.mockResolvedValueOnce(jsonResponse({ error: 'bad tz' }, { status: 400 }))
     await expect(setPolicy(policy)).rejects.toBeInstanceOf(ApiError)
+  })
+
+  // --- self-service (/me) ---
+
+  it('listMyChannels hits the me path', async () => {
+    fetchMock.mockResolvedValueOnce(jsonResponse([sample]))
+    const got = await listMyChannels()
+    expect(fetchMock.mock.calls[0][0]).toBe('/api/notifications/me/channels')
+    expect(got[0].id).toBe('ch-1')
+  })
+
+  it('createMyChannel POSTs to the me path', async () => {
+    fetchMock.mockResolvedValueOnce(jsonResponse(sample, { status: 201 }))
+    await createMyChannel(input)
+    expect(fetchMock.mock.calls[0][0]).toBe('/api/notifications/me/channels')
+    expect(fetchMock.mock.calls[0][1]).toMatchObject({ method: 'POST' })
+  })
+
+  it('updateMyChannel PUTs to the me id path', async () => {
+    fetchMock.mockResolvedValueOnce(jsonResponse(sample))
+    await updateMyChannel('ch-1', input)
+    expect(fetchMock.mock.calls[0][0]).toBe('/api/notifications/me/channels/ch-1')
+    expect(fetchMock.mock.calls[0][1]).toMatchObject({ method: 'PUT' })
+  })
+
+  it('deleteMyChannel DELETEs the me id path', async () => {
+    fetchMock.mockResolvedValueOnce(new Response(null, { status: 204 }))
+    await deleteMyChannel('ch-1')
+    expect(fetchMock.mock.calls[0][0]).toBe('/api/notifications/me/channels/ch-1')
+    expect(fetchMock.mock.calls[0][1]).toMatchObject({ method: 'DELETE' })
+  })
+
+  it('deleteMyChannel throws on 404', async () => {
+    fetchMock.mockResolvedValueOnce(jsonResponse({ error: 'gone' }, { status: 404 }))
+    await expect(deleteMyChannel('ch-1')).rejects.toBeInstanceOf(ApiError)
+  })
+
+  it('testMyChannel POSTs to the me test path', async () => {
+    fetchMock.mockResolvedValueOnce(jsonResponse({ ok: true }))
+    const got = await testMyChannel('ch-1')
+    expect(fetchMock.mock.calls[0][0]).toBe('/api/notifications/me/channels/ch-1/test')
+    expect(got.ok).toBe(true)
+  })
+
+  const sub: AlertSubscription = { enabled: true, groups: ['g1'], severities: ['critical'] }
+
+  it('getMySubscription reads the me subscription', async () => {
+    fetchMock.mockResolvedValueOnce(jsonResponse(sub))
+    const got = await getMySubscription()
+    expect(fetchMock.mock.calls[0][0]).toBe('/api/notifications/me/subscription')
+    expect(got.enabled).toBe(true)
+  })
+
+  it('setMySubscription PUTs the subscription', async () => {
+    fetchMock.mockResolvedValueOnce(jsonResponse(sub))
+    await setMySubscription(sub)
+    expect(fetchMock.mock.calls[0][0]).toBe('/api/notifications/me/subscription')
+    expect(JSON.parse(fetchMock.mock.calls[0][1].body)).toMatchObject({ enabled: true })
+  })
+
+  it('setMySubscription throws on 400', async () => {
+    fetchMock.mockResolvedValueOnce(jsonResponse({ error: 'bad' }, { status: 400 }))
+    await expect(setMySubscription(sub)).rejects.toBeInstanceOf(ApiError)
+  })
+
+  it('getMyPolicy / setMyPolicy hit the me policy path', async () => {
+    fetchMock.mockResolvedValueOnce(jsonResponse(policy))
+    await getMyPolicy()
+    expect(fetchMock.mock.calls[0][0]).toBe('/api/notifications/me/policy')
+    fetchMock.mockResolvedValueOnce(jsonResponse(policy))
+    await setMyPolicy(policy)
+    expect(fetchMock.mock.calls[1][0]).toBe('/api/notifications/me/policy')
+    expect(fetchMock.mock.calls[1][1]).toMatchObject({ method: 'PUT' })
+  })
+
+  it('listMyDeliveries honors a limit', async () => {
+    fetchMock.mockResolvedValueOnce(jsonResponse([]))
+    await listMyDeliveries(20)
+    expect(fetchMock.mock.calls[0][0]).toBe('/api/notifications/me/deliveries?limit=20')
+    fetchMock.mockResolvedValueOnce(jsonResponse([]))
+    await listMyDeliveries()
+    expect(fetchMock.mock.calls[1][0]).toBe('/api/notifications/me/deliveries')
+  })
+
+  it('listMyChannels throws on 401', async () => {
+    fetchMock.mockResolvedValueOnce(jsonResponse({ error: 'no' }, { status: 401 }))
+    await expect(listMyChannels()).rejects.toBeInstanceOf(ApiError)
   })
 })

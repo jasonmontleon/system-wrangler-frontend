@@ -24,6 +24,9 @@ import MyRolesCard from '../components/MyRolesCard'
 import TwoFactorCard from '../components/TwoFactorCard'
 import TrustedDevicesCard from '../components/TrustedDevicesCard'
 import SessionsCard from '../components/SessionsCard'
+import NotificationPreferencesCard from '../components/NotificationPreferencesCard'
+import DeliveryPolicyCard from '../components/DeliveryPolicyCard'
+import { getMyPolicy, setMyPolicy } from '../api/notifications'
 
 const MIN_PASSWORD = 8
 
@@ -71,6 +74,16 @@ export default function ProfilePage({
       </PageSection>
       <PageSection>
         <MyRolesCard />
+      </PageSection>
+      <PageSection>
+        <NotificationPreferencesCard />
+      </PageSection>
+      <PageSection>
+        <DeliveryPolicyCard
+          load={getMyPolicy}
+          save={setMyPolicy}
+          title="My Quiet Hours & Severity"
+        />
       </PageSection>
     </>
   )

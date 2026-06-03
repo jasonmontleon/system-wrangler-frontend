@@ -24,6 +24,7 @@ import {
   type DeliveryMode,
   getPolicy,
   type NotificationPolicy,
+  type NotificationPolicyInput,
   type QuietWindow,
   setPolicy,
 } from '../api/notifications'
@@ -48,11 +49,22 @@ const MODE_OPTIONS: { value: DeliveryMode; label: string }[] = [
 ]
 const WEEKDAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
 
-// DeliveryPolicyCard edits the global delivery policy: the per-severity
-// delivery mode plus the quiet-hours schedule. Global Admin only; RBAC is
-// enforced server-side and 403s surface as inline errors. The dashboard
-// always shows active alerts regardless of this policy.
-export default function DeliveryPolicyCard() {
+type Props = {
+  // load/save default to the global policy endpoints; the personal
+  // preferences card passes the /me variants to reuse this editor.
+  load?: () => Promise<NotificationPolicy>
+  save?: (input: NotificationPolicyInput) => Promise<NotificationPolicy>
+  title?: string
+}
+
+// DeliveryPolicyCard edits a delivery policy — the per-severity delivery
+// mode plus the quiet-hours schedule. By default it edits the global policy
+// (Global Admin); with load/save props it edits the caller's personal
+// policy. RBAC is enforced server-side and errors surface inline. The
+// dashboard always shows active alerts regardless of this policy.
+export default function DeliveryPolicyCard({ load: loadProp, save: saveProp, title }: Props = {}) {
+  const loadPolicy = loadProp ?? getPolicy
+  const savePolicy = saveProp ?? setPolicy
   const [loading, setLoading] = useState(true)
   const [loadError, setLoadError] = useState<string | null>(null)
   const [timezone, setTimezone] = useState('UTC')
@@ -63,7 +75,7 @@ export default function DeliveryPolicyCard() {
   const [saveError, setSaveError] = useState<string | null>(null)
 
   const load = useCallback(() => {
-    getPolicy()
+    loadPolicy()
       .then((p: NotificationPolicy) => {
         setTimezone(p.timezone || 'UTC')
         setWindows(p.windows ?? [])
@@ -74,7 +86,7 @@ export default function DeliveryPolicyCard() {
         setLoadError(err instanceof Error ? err.message : String(err))
         setLoading(false)
       })
-  }, [])
+  }, [loadPolicy])
 
   useEffect(() => load(), [load])
 
@@ -111,7 +123,7 @@ export default function DeliveryPolicyCard() {
     setSaveError(null)
     setSaved(false)
     try {
-      const stored = await setPolicy({ timezone, windows, severities })
+      const stored = await savePolicy({ timezone, windows, severities })
       setTimezone(stored.timezone)
       setWindows(stored.windows ?? [])
       setSeverities(stored.severities ?? {})
@@ -125,7 +137,7 @@ export default function DeliveryPolicyCard() {
 
   return (
     <Card>
-      <CardTitle>Delivery Policy</CardTitle>
+      <CardTitle>{title ?? 'Delivery Policy'}</CardTitle>
       <CardBody>
         {loading ? (
           <Bullseye>

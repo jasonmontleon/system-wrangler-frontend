@@ -36,6 +36,18 @@ function routedFetch(routes: RouteMap): ReturnType<typeof vi.fn> {
     // array; default any unrouted /sessions GET to empty so per-test
     // maps don't each have to declare it.
     if (url.includes('/sessions')) return Promise.resolve(jsonResponse([]))
+    // NotificationPreferencesCard + the personal DeliveryPolicyCard also
+    // mount on every render; default their reads to valid empty shapes so
+    // per-test maps don't each have to declare them.
+    if (url.includes('/me/subscription')) {
+      return Promise.resolve(jsonResponse({ enabled: false, groups: [], severities: [] }))
+    }
+    if (url.includes('/me/policy')) {
+      return Promise.resolve(jsonResponse({ timezone: 'UTC', windows: [], severities: {} }))
+    }
+    if (url.includes('/me/channels') || url.includes('/me/deliveries') || url.includes('/api/groups')) {
+      return Promise.resolve(jsonResponse([]))
+    }
     return Promise.resolve(jsonResponse({}))
   })
 }

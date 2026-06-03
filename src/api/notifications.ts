@@ -86,6 +86,15 @@ export type NotificationPolicy = {
 
 export type NotificationPolicyInput = NotificationPolicy
 
+// AlertSubscription is a user's opt-in to personal alert delivery. enabled
+// is the master switch; empty groups = every group the user can see; empty
+// severities = all.
+export type AlertSubscription = {
+  enabled: boolean
+  groups: string[]
+  severities: string[]
+}
+
 export type RouteMode = 'all' | 'selected'
 
 // RuleRouting is a rule's channel routing. A rule absent from the routing
@@ -183,6 +192,95 @@ export async function setPolicy(
   })
   if (!resp.ok) throw new ApiError(resp.status, await parseError(resp))
   return (await resp.json()) as NotificationPolicy
+}
+
+// --- Self-service per-user (personal) delivery preferences ---
+
+const ME = '/api/notifications/me'
+
+export async function listMyChannels(): Promise<NotificationChannel[]> {
+  const resp = await apiFetch(`${ME}/channels`)
+  if (!resp.ok) throw new ApiError(resp.status, await parseError(resp))
+  return (await resp.json()) as NotificationChannel[]
+}
+
+export async function createMyChannel(
+  input: NotificationChannelInput,
+): Promise<NotificationChannel> {
+  const resp = await apiFetch(`${ME}/channels`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(input),
+  })
+  if (!resp.ok) throw new ApiError(resp.status, await parseError(resp))
+  return (await resp.json()) as NotificationChannel
+}
+
+export async function updateMyChannel(
+  id: string,
+  input: NotificationChannelInput,
+): Promise<NotificationChannel> {
+  const resp = await apiFetch(`${ME}/channels/${encodeURIComponent(id)}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(input),
+  })
+  if (!resp.ok) throw new ApiError(resp.status, await parseError(resp))
+  return (await resp.json()) as NotificationChannel
+}
+
+export async function deleteMyChannel(id: string): Promise<void> {
+  const resp = await apiFetch(`${ME}/channels/${encodeURIComponent(id)}`, { method: 'DELETE' })
+  if (!resp.ok) throw new ApiError(resp.status, await parseError(resp))
+}
+
+export async function testMyChannel(id: string): Promise<ChannelTestResult> {
+  const resp = await apiFetch(`${ME}/channels/${encodeURIComponent(id)}/test`, { method: 'POST' })
+  if (!resp.ok) throw new ApiError(resp.status, await parseError(resp))
+  return (await resp.json()) as ChannelTestResult
+}
+
+export async function getMySubscription(): Promise<AlertSubscription> {
+  const resp = await apiFetch(`${ME}/subscription`)
+  if (!resp.ok) throw new ApiError(resp.status, await parseError(resp))
+  return (await resp.json()) as AlertSubscription
+}
+
+export async function setMySubscription(
+  input: AlertSubscription,
+): Promise<AlertSubscription> {
+  const resp = await apiFetch(`${ME}/subscription`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(input),
+  })
+  if (!resp.ok) throw new ApiError(resp.status, await parseError(resp))
+  return (await resp.json()) as AlertSubscription
+}
+
+export async function getMyPolicy(): Promise<NotificationPolicy> {
+  const resp = await apiFetch(`${ME}/policy`)
+  if (!resp.ok) throw new ApiError(resp.status, await parseError(resp))
+  return (await resp.json()) as NotificationPolicy
+}
+
+export async function setMyPolicy(
+  input: NotificationPolicyInput,
+): Promise<NotificationPolicy> {
+  const resp = await apiFetch(`${ME}/policy`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(input),
+  })
+  if (!resp.ok) throw new ApiError(resp.status, await parseError(resp))
+  return (await resp.json()) as NotificationPolicy
+}
+
+export async function listMyDeliveries(limit?: number): Promise<NotificationDelivery[]> {
+  const path = limit ? `${ME}/deliveries?limit=${limit}` : `${ME}/deliveries`
+  const resp = await apiFetch(path)
+  if (!resp.ok) throw new ApiError(resp.status, await parseError(resp))
+  return (await resp.json()) as NotificationDelivery[]
 }
 
 export async function getRouting(): Promise<RuleRouting[]> {

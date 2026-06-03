@@ -38,6 +38,10 @@ type Props = {
   target: NotificationChannel | 'new' | null
   onClose: () => void
   onSaved: () => void
+  // create/update default to the global (admin) channel endpoints; the
+  // personal preferences card passes the /me variants to reuse this modal.
+  create?: (input: NotificationChannelInput) => Promise<NotificationChannel>
+  update?: (id: string, input: NotificationChannelInput) => Promise<NotificationChannel>
 }
 
 const TYPES: { value: ChannelType; label: string }[] = [
@@ -61,7 +65,9 @@ function toList(text: string): string[] {
     .filter((s) => s.length > 0)
 }
 
-export default function ChannelModal({ target, onClose, onSaved }: Props) {
+export default function ChannelModal({ target, onClose, onSaved, create, update }: Props) {
+  const createFn = create ?? createChannel
+  const updateFn = update ?? updateChannel
   const isOpen = target !== null
   const editing = target !== 'new' && target !== null ? target : null
 
@@ -177,9 +183,9 @@ export default function ChannelModal({ target, onClose, onSaved }: Props) {
     }
     try {
       if (editing) {
-        await updateChannel(editing.id, input)
+        await updateFn(editing.id, input)
       } else {
-        await createChannel(input)
+        await createFn(input)
       }
       onSaved()
     } catch (err) {
