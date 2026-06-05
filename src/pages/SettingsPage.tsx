@@ -8,9 +8,12 @@ import {
   Card,
   CardBody,
   CardTitle,
+  Content,
   Form,
   FormGroup,
   FormHelperText,
+  FormSelect,
+  FormSelectOption,
   HelperText,
   HelperTextItem,
   PageSection,
@@ -32,6 +35,76 @@ const KEY_PROBE_INTERVAL_SECONDS = 'probe_interval_seconds'
 const KEY_PROBE_FAILURE_THRESHOLD = 'probe_failure_threshold'
 const KEY_PROBE_SUCCESS_THRESHOLD = 'probe_success_threshold'
 const KEY_SCHEDULE_MISFIRE_GRACE_SECONDS = 'schedule_misfire_grace_seconds'
+
+// The subsystems whose log verbosity is independently adjustable. Each
+// maps to a log_level_<component> setting key; the component name also
+// appears as the `component` field on that subsystem's JSON log lines,
+// so an operator can both turn one down here and grep for it. The first
+// five are background loops; Prometheus Scrape is the request-path proxy
+// Prometheus drives on every scrape.
+const LOG_LEVEL_COMPONENTS: {
+  key: string
+  label: string
+  description: string
+}[] = [
+  {
+    key: 'log_level_probe',
+    label: 'Reachability Probe',
+    description: 'Dials each system to check whether it is reachable.',
+  },
+  {
+    key: 'log_level_alert',
+    label: 'Alert Evaluation',
+    description:
+      'Evaluates alert rules against metrics and reachability each cycle.',
+  },
+  {
+    key: 'log_level_schedule',
+    label: 'Schedule Runner',
+    description: 'Fires scheduled check, apply, and reboot runs when due.',
+  },
+  {
+    key: 'log_level_notification',
+    label: 'Notification Delivery',
+    description: 'Releases deferred notifications once quiet hours end.',
+  },
+  {
+    key: 'log_level_promtargets',
+    label: 'Prometheus Targets',
+    description:
+      'Rewrites the Prometheus discovery file on every inventory change.',
+  },
+  {
+    key: 'log_level_scrape',
+    label: 'Prometheus Scrape',
+    description:
+      'Proxies each Prometheus scrape to the host over SSH; warns when an exporter is unreachable — the busiest line on a large install.',
+  },
+  {
+    key: 'log_level_request',
+    label: 'HTTP Requests',
+    description:
+      'Per-request access log (method, path, status). API and UI requests log at Info; the high-volume internal Prometheus scrape requests are hidden. Set to Debug to also log scrape requests, or Warn to silence the access log entirely.',
+  },
+]
+
+// LOG_LEVELS are the selectable verbosities, most to least chatty.
+const LOG_LEVELS = ['debug', 'info', 'warn', 'error'] as const
+
+function logLevelDisplay(level: string): string {
+  switch (level) {
+    case 'debug':
+      return 'Debug'
+    case 'info':
+      return 'Info'
+    case 'warn':
+      return 'Warn'
+    case 'error':
+      return 'Error'
+    default:
+      return level
+  }
+}
 
 type LoadState =
   | { kind: 'loading' }
@@ -112,6 +185,12 @@ export default function SettingsPage() {
             <StackItem>
               <ScheduleMisfireGraceCard
                 value={state.settings[KEY_SCHEDULE_MISFIRE_GRACE_SECONDS] ?? ''}
+                onSaved={() => void refresh()}
+              />
+            </StackItem>
+            <StackItem>
+              <LogLevelCard
+                settings={state.settings}
                 onSaved={() => void refresh()}
               />
             </StackItem>
@@ -492,5 +571,119 @@ function ScheduleMisfireGraceCard({
       value={value}
       onSaved={onSaved}
     />
+  )
+}
+
+// LogLevelCard groups the per-subsystem verbosity selectors. Each
+// change saves on its own and takes effect on the running server
+// immediately — no restart required — so an admin can quieten a noisy
+// subsystem or turn one up to debug while diagnosing an issue.
+function LogLevelCard({
+  settings,
+  onSaved,
+}: {
+  settings: Settings
+  onSaved: () => void
+}) {
+  return (
+    <Card>
+      <CardTitle>Logging</CardTitle>
+      <CardBody>
+        <Content component="p">
+          Set how much each background loop and the Prometheus scrape proxy
+          logs. Lines carry a <code>component</code> field matching the
+          subsystem, so you can filter the JSON log stream (for example{' '}
+          <code>jq &apos;select(.component==&quot;scrape&quot;)&apos;</code>).
+          Changes apply immediately, no restart required. Default is Info; pick
+          Warn or Error to quieten a subsystem, or Debug for per-cycle detail.
+        </Content>
+        <Form>
+          {LOG_LEVEL_COMPONENTS.map((component) => (
+            <LogLevelSelect
+              key={component.key}
+              component={component}
+              value={settings[component.key] ?? 'info'}
+              onSaved={onSaved}
+            />
+          ))}
+        </Form>
+      </CardBody>
+    </Card>
+  )
+}
+
+function LogLevelSelect({
+  component,
+  value,
+  onSaved,
+}: {
+  component: { key: string; label: string; description: string }
+  value: string
+  onSaved: () => void
+}) {
+  const [current, setCurrent] = useState(value)
+  const [save, setSave] = useState<SaveState>({ kind: 'idle' })
+  const inputId = `${component.key}-select`
+
+  useEffect(() => {
+    if (value !== current) {
+      setCurrent(value)
+      setSave({ kind: 'idle' })
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [value])
+
+  const onChange = async (
+    _e: React.FormEvent<HTMLSelectElement>,
+    level: string,
+  ) => {
+    setCurrent(level)
+    setSave({ kind: 'saving' })
+    try {
+      await setSetting(component.key, level)
+      setSave({ kind: 'saved' })
+      onSaved()
+    } catch (err) {
+      const msg =
+        err instanceof ApiError
+          ? err.message
+          : err instanceof Error
+            ? err.message
+            : String(err)
+      setSave({ kind: 'error', message: msg })
+    }
+  }
+
+  return (
+    <FormGroup label={component.label} fieldId={inputId}>
+      <FormSelect
+        id={inputId}
+        value={current}
+        onChange={onChange}
+        isDisabled={save.kind === 'saving'}
+        aria-label={`${component.label} log level`}
+      >
+        {LOG_LEVELS.map((level) => (
+          <FormSelectOption
+            key={level}
+            value={level}
+            label={logLevelDisplay(level)}
+          />
+        ))}
+      </FormSelect>
+      <FormHelperText>
+        <HelperText>
+          <HelperTextItem
+            variant={save.kind === 'error' ? 'error' : 'default'}
+          >
+            {save.kind === 'error'
+              ? `Could not save: ${save.message}`
+              : save.kind === 'saved'
+                ? `${component.description} Saved.`
+                : component.description}
+          </HelperTextItem>
+        </HelperText>
+      </FormHelperText>
+    </FormGroup>
   )
 }

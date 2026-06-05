@@ -401,6 +401,130 @@ describe('SettingsPage', () => {
     expect(input.value).toBe('30')
   })
 
+  it('renders the per-loop log level selects with their stored values', async () => {
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse({
+        settings: {
+          run_history_limit: '100',
+          update_concurrency_limit: '4',
+          log_level_probe: 'debug',
+          log_level_promtargets: 'warn',
+        },
+      }),
+    )
+    render(<SettingsPage />)
+    const probe = (await screen.findByLabelText(
+      /Reachability Probe log level/i,
+    )) as HTMLSelectElement
+    expect(probe.value).toBe('debug')
+    const targets = screen.getByLabelText(
+      /Prometheus Targets log level/i,
+    ) as HTMLSelectElement
+    expect(targets.value).toBe('warn')
+    // A key the backend didn't send falls back to the info default.
+    const alert = screen.getByLabelText(
+      /Alert Evaluation log level/i,
+    ) as HTMLSelectElement
+    expect(alert.value).toBe('info')
+  })
+
+  it('PUTs the scrape proxy log level when its select changes', async () => {
+    fetchMock
+      .mockResolvedValueOnce(
+        jsonResponse({ settings: { log_level_scrape: 'info' } }),
+      )
+      .mockResolvedValueOnce(new Response(null, { status: 204 }))
+      .mockResolvedValueOnce(
+        jsonResponse({ settings: { log_level_scrape: 'error' } }),
+      )
+    render(<SettingsPage />)
+    const select = (await screen.findByLabelText(
+      /Prometheus Scrape log level/i,
+    )) as HTMLSelectElement
+    fireEvent.change(select, { target: { value: 'error' } })
+
+    await waitFor(() => {
+      const put = fetchMock.mock.calls.find(
+        (c) => (c[1] as RequestInit | undefined)?.method === 'PUT',
+      )
+      expect(put?.[0]).toBe('/api/admin/settings/log_level_scrape')
+      expect(JSON.parse((put?.[1] as RequestInit).body as string)).toEqual({
+        value: 'error',
+      })
+    })
+  })
+
+  it('PUTs the HTTP request log level when its select changes', async () => {
+    fetchMock
+      .mockResolvedValueOnce(
+        jsonResponse({ settings: { log_level_request: 'info' } }),
+      )
+      .mockResolvedValueOnce(new Response(null, { status: 204 }))
+      .mockResolvedValueOnce(
+        jsonResponse({ settings: { log_level_request: 'debug' } }),
+      )
+    render(<SettingsPage />)
+    const select = (await screen.findByLabelText(
+      /HTTP Requests log level/i,
+    )) as HTMLSelectElement
+    fireEvent.change(select, { target: { value: 'debug' } })
+
+    await waitFor(() => {
+      const put = fetchMock.mock.calls.find(
+        (c) => (c[1] as RequestInit | undefined)?.method === 'PUT',
+      )
+      expect(put?.[0]).toBe('/api/admin/settings/log_level_request')
+      expect(JSON.parse((put?.[1] as RequestInit).body as string)).toEqual({
+        value: 'debug',
+      })
+    })
+  })
+
+  it('PUTs the new log level when a loop select changes', async () => {
+    fetchMock
+      .mockResolvedValueOnce(
+        jsonResponse({ settings: { log_level_schedule: 'info' } }),
+      )
+      .mockResolvedValueOnce(new Response(null, { status: 204 }))
+      .mockResolvedValueOnce(
+        jsonResponse({ settings: { log_level_schedule: 'warn' } }),
+      )
+    render(<SettingsPage />)
+    const select = (await screen.findByLabelText(
+      /Schedule Runner log level/i,
+    )) as HTMLSelectElement
+    fireEvent.change(select, { target: { value: 'warn' } })
+
+    await waitFor(() => {
+      const put = fetchMock.mock.calls.find(
+        (c) => (c[1] as RequestInit | undefined)?.method === 'PUT',
+      )
+      expect(put?.[0]).toBe('/api/admin/settings/log_level_schedule')
+      expect(JSON.parse((put?.[1] as RequestInit).body as string)).toEqual({
+        value: 'warn',
+      })
+    })
+  })
+
+  it('surfaces an error from a log level save', async () => {
+    fetchMock
+      .mockResolvedValueOnce(
+        jsonResponse({ settings: { log_level_probe: 'info' } }),
+      )
+      .mockResolvedValueOnce(
+        jsonResponse(
+          { error: 'log level must be one of debug, info, warn, error' },
+          400,
+        ),
+      )
+    render(<SettingsPage />)
+    const select = (await screen.findByLabelText(
+      /Reachability Probe log level/i,
+    )) as HTMLSelectElement
+    fireEvent.change(select, { target: { value: 'error' } })
+    expect(await screen.findByText(/Could not save:/i)).toBeInTheDocument()
+  })
+
   it('shows a load error if /api/admin/settings fails', async () => {
     fetchMock.mockResolvedValueOnce(jsonResponse({ error: 'boom' }, 500))
     render(<SettingsPage />)
