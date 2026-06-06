@@ -16,6 +16,7 @@ import {
   Spinner,
 } from '@patternfly/react-core'
 import { ChartDonut, ChartLabel } from '@patternfly/react-charts/victory'
+import { useNavigate } from 'react-router'
 import { useDashboardData } from '../dashboardContext'
 import type { WidgetParams } from '../widgets'
 import { BUCKETS, type HealthBucket, tally } from './systemHealthShared'
@@ -27,22 +28,16 @@ const DONUT_SIZE: Record<Variant, number> = {
   compact: 240,
 }
 
-// Victory's ChartDonut paints the title (the big center number) and
-// subtitle ("Systems") via inline SVG `fill`, which sidesteps the
-// .pf-v6-theme-dark class on <html>. Without an explicit fill the
-// title ends up nearly invisible in dark mode. Threading the
-// PatternFly regular-text token through ChartLabel.style[0] (title)
-// + style[1] (subtitle) lets the SVG resolve the right color per
-// theme. Same trick MetricsPanel uses for its axis labels.
+// Victory's ChartDonut paints the center number (title) and the
+// "Systems" caption (subtitle) via inline SVG `fill`, which sidesteps
+// the .pf-v6-theme-dark class on <html>. Without an explicit fill the
+// text ends up nearly invisible in dark mode. Threading the PatternFly
+// regular-text token through ChartLabel.style lets the SVG resolve the
+// right color per theme. Same trick MetricsPanel uses for its axis
+// labels. Passing a separate subTitleComponent (below) also makes
+// Victory render the caption as its own <text> element, so we can wire
+// a click handler to the center number and the "Systems" word.
 const DONUT_LABEL_FILL = 'var(--pf-t--global--text--color--regular)'
-const donutTitleComponent = (
-  <ChartLabel
-    style={[
-      { fill: DONUT_LABEL_FILL, fontSize: 28, fontWeight: 600 },
-      { fill: DONUT_LABEL_FILL, fontSize: 14 },
-    ]}
-  />
-)
 
 export default function SystemHealthWidget({
   params,
@@ -52,6 +47,7 @@ export default function SystemHealthWidget({
   variant?: Variant
 } = {}) {
   const { systems, systemsError, rebootMetricSet, groups } = useDashboardData()
+  const navigate = useNavigate()
   const groupId = params?.groupId
   const filtered = useMemo(() => {
     if (!systems) return null
@@ -72,6 +68,43 @@ export default function SystemHealthWidget({
     : 'Add a system from the Systems page to start seeing health data here.'
   const donutSize = DONUT_SIZE[variant]
   const showLegend = variant === 'full'
+
+  // The donut center (the count and the "Systems" caption) links to
+  // wherever those systems live: the group's page for a group donut, the
+  // Inventory → Systems list for the all-systems donut. Both lines carry
+  // the click handler; the caption is the single keyboard tab stop so we
+  // don't expose two stops to the same destination.
+  const navTarget = groupId ? `/groups/${groupId}` : '/systems'
+  const navLabel = groupName
+    ? `Go to the ${groupName} group`
+    : 'Go to all systems'
+  const donutTitleComponent = (
+    <ChartLabel
+      style={{
+        fill: DONUT_LABEL_FILL,
+        fontSize: 28,
+        fontWeight: 600,
+        cursor: 'pointer',
+      }}
+      events={{ onClick: () => navigate(navTarget) }}
+    />
+  )
+  const donutSubTitleComponent = (
+    <ChartLabel
+      style={{ fill: DONUT_LABEL_FILL, fontSize: 14, cursor: 'pointer' }}
+      ariaLabel={navLabel}
+      tabIndex={0}
+      events={{
+        onClick: () => navigate(navTarget),
+        onKeyDown: (e) => {
+          if (e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault()
+            navigate(navTarget)
+          }
+        },
+      }}
+    />
+  )
 
   return (
     <Card style={{ height: '100%', overflow: 'hidden' }}>
@@ -118,6 +151,7 @@ export default function SystemHealthWidget({
                   title={String(total)}
                   subTitle={total === 1 ? 'System' : 'Systems'}
                   titleComponent={donutTitleComponent}
+                  subTitleComponent={donutSubTitleComponent}
                 />
               </div>
             </FlexItem>
