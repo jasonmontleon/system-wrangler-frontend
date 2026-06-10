@@ -36,6 +36,7 @@ const KEY_PROBE_FAILURE_THRESHOLD = 'probe_failure_threshold'
 const KEY_PROBE_SUCCESS_THRESHOLD = 'probe_success_threshold'
 const KEY_SCHEDULE_MISFIRE_GRACE_SECONDS = 'schedule_misfire_grace_seconds'
 const KEY_REBOOT_GRACE_SECONDS = 'reboot_grace_seconds'
+const KEY_SHUTDOWN_GRACE_SECONDS = 'shutdown_grace_seconds'
 
 // The subsystems whose log verbosity is independently adjustable. Each
 // maps to a log_level_<component> setting key; the component name also
@@ -192,6 +193,12 @@ export default function SettingsPage() {
             <StackItem>
               <RebootGraceCard
                 value={state.settings[KEY_REBOOT_GRACE_SECONDS] ?? ''}
+                onSaved={() => void refresh()}
+              />
+            </StackItem>
+            <StackItem>
+              <ShutdownGraceCard
+                value={state.settings[KEY_SHUTDOWN_GRACE_SECONDS] ?? ''}
                 onSaved={() => void refresh()}
               />
             </StackItem>
@@ -595,6 +602,27 @@ function RebootGraceCard({
       label="Seconds the apply stamp stays authoritative"
       helper="How long a freshly-applied system shows 'reboot required' from the apply itself before the sw_reboot_required metric takes over as the source of truth. It bridges the metric's catch-up lag (≈105s in a default setup: 60s textfile collector + 15s scrape + 30s SPA poll) so there's no flicker after an update, then hands off so the indicator clears within about a minute of an actual reboot. Lower it if your scrape is faster, raise it if slower. Range 10–1800; default 120 (2 minutes)."
       min={10}
+      max={1800}
+      value={value}
+      onSaved={onSaved}
+    />
+  )
+}
+
+function ShutdownGraceCard({
+  value,
+  onSaved,
+}: {
+  value: string
+  onSaved: () => void
+}) {
+  return (
+    <BoundedIntCard
+      settingKey={KEY_SHUTDOWN_GRACE_SECONDS}
+      title="Shutdown drain grace"
+      label="Seconds to drain in-flight runs before exiting"
+      helper="On a shutdown signal the server stops accepting new check/apply/install runs (they return 503) and keeps draining the runs already in progress for up to this long before exiting. Runs that don't finish in time are abandoned and marked failed on the next start, which also clears the host lock so the system isn't stuck. Set the container or orchestrator stop timeout (podman --stop-timeout, Kubernetes terminationGracePeriodSeconds, systemd TimeoutStopSec) to at least this value, or the runtime will SIGKILL mid-drain. Range 60–1800; default 300 (5 minutes)."
+      min={60}
       max={1800}
       value={value}
       onSaved={onSaved}
