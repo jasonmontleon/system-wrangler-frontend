@@ -23,21 +23,41 @@ function sys(overrides: Partial<System> = {}): System {
 }
 
 describe('needsReboot', () => {
-  it('is true when rebootRequiredAt is a non-empty string', () => {
-    expect(needsReboot(sys({ rebootRequiredAt: '2026-05-28T14:30:00Z' }), new Set())).toBe(true)
+  const GRACE = 120_000
+  const NOW = Date.parse('2026-06-10T12:00:00Z')
+  // 60s ago is inside the 120s window; 200s ago is past it.
+  const fresh = new Date(NOW - 60_000).toISOString()
+  const stale = new Date(NOW - 200_000).toISOString()
+
+  it('is true when the metric set contains the system id, regardless of the column', () => {
+    expect(needsReboot(sys(), new Set(['sys-1']), GRACE, NOW)).toBe(true)
   })
 
-  it('is true when the metric set contains the system id even with no column stamp', () => {
-    expect(needsReboot(sys(), new Set(['sys-1']))).toBe(true)
+  it('is true while the apply-stamped column is within the grace window', () => {
+    expect(needsReboot(sys({ rebootRequiredAt: fresh }), new Set(), GRACE, NOW)).toBe(true)
+  })
+
+  it('is false once the column ages past the grace window and the metric is silent', () => {
+    // The post-reboot self-expiry: a stamp that outlived a reboot no
+    // longer signals once the metric (which dropped to 0) takes over.
+    expect(needsReboot(sys({ rebootRequiredAt: stale }), new Set(), GRACE, NOW)).toBe(false)
+  })
+
+  it('keeps the metric authoritative even when the column stamp is stale', () => {
+    expect(needsReboot(sys({ rebootRequiredAt: stale }), new Set(['sys-1']), GRACE, NOW)).toBe(true)
   })
 
   it('is false when neither source signals', () => {
-    expect(needsReboot(sys(), new Set())).toBe(false)
+    expect(needsReboot(sys(), new Set(), GRACE, NOW)).toBe(false)
   })
 
-  it('is true if either source signals (column XOR metric)', () => {
-    expect(needsReboot(sys({ rebootRequiredAt: undefined }), new Set(['sys-1']))).toBe(true)
-    expect(needsReboot(sys({ id: 'sys-2', rebootRequiredAt: '2026-05-28T00:00:00Z' }), new Set(['sys-1']))).toBe(true)
+  it('is false for an unparseable column stamp', () => {
+    expect(needsReboot(sys({ rebootRequiredAt: 'not-a-date' }), new Set(), GRACE, NOW)).toBe(false)
+  })
+
+  it('defaults now to the current time when not supplied', () => {
+    const oneSecAgo = new Date(Date.now() - 1000).toISOString()
+    expect(needsReboot(sys({ rebootRequiredAt: oneSecAgo }), new Set(), GRACE)).toBe(true)
   })
 })
 

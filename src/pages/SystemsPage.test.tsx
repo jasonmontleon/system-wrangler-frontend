@@ -101,6 +101,10 @@ describe('SystemsPage', () => {
       if (url.startsWith('/api/metrics/query'))
         return Promise.resolve(jsonResponse({ status: 'success', data: { resultType: 'vector', result: [] } }))
       if (url === '/api/systems/bulk-event') return Promise.resolve(new Response(null, { status: 204 }))
+      // useRebootGraceMs fetches this on mount; short-circuit it so the
+      // mockResolvedValueOnce queue for /api/systems stays aligned.
+      if (url === '/api/reboot-grace-seconds')
+        return Promise.resolve(jsonResponse({ seconds: 120 }))
       // useScope mounts inside SystemsPage for the operate-action
       // gating. Short-circuit it to an empty scope so the existing
       // mockResolvedValueOnce queues stay aligned. Individual tests

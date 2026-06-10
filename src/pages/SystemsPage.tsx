@@ -56,6 +56,7 @@ import {
 import { listGroups, type Group } from '../api/groups'
 import { needsReboot } from '../util/rebootSignal'
 import { useRebootRequiredSet } from '../hooks/useRebootRequiredSet'
+import { useRebootGraceMs } from '../hooks/useRebootGraceMs'
 import { useEventStream } from '../hooks/useEventStream'
 import { useMediaQuery } from '../hooks/useMediaQuery'
 import {
@@ -150,6 +151,7 @@ export default function SystemsPage() {
   const [actionsOpen, setActionsOpen] = useState(false)
   const [selected, setSelected] = useState<Set<string>>(new Set())
   const rebootMetricSet = useRebootRequiredSet()
+  const rebootGraceMs = useRebootGraceMs()
   // bulkLabelMode toggles the Add/Remove label modal. Null means the
   // modal is closed. labelOutcome carries the summary banner shown
   // after a bulk label run completes.
@@ -1240,7 +1242,7 @@ export default function SystemsPage() {
                             status={s.status}
                             pendingUpdates={s.pendingUpdates}
                             lastRunFailed={s.lastRunFailed}
-                            rebootRequired={needsReboot(s, rebootMetricSet)}
+                            rebootRequired={needsReboot(s, rebootMetricSet, rebootGraceMs)}
                           />
                         )}
                         <Link to={`/systems/${encodeURIComponent(s.id)}`}>

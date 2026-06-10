@@ -49,6 +49,7 @@ import { Link, useParams } from 'react-router-dom'
 import { ApiError, getSystem, type System } from '../api/systems'
 import { needsReboot } from '../util/rebootSignal'
 import { useRebootRequiredSet } from '../hooks/useRebootRequiredSet'
+import { useRebootGraceMs } from '../hooks/useRebootGraceMs'
 import {
   applyUpdater,
   checkUpdater,
@@ -126,6 +127,7 @@ export default function SystemDetailPage() {
   const [busy, setBusy] = useState<string | null>(null)
   const [activeTab, setActiveTab] = useState<TabKey>('overview')
   const rebootMetricSet = useRebootRequiredSet()
+  const rebootGraceMs = useRebootGraceMs()
 
   const refresh = useCallback(async () => {
     if (!systemId) {
@@ -341,7 +343,7 @@ export default function SystemDetailPage() {
                     status={state.system.status}
                     pendingUpdates={state.system.pendingUpdates}
                     lastRunFailed={state.system.lastRunFailed}
-                    rebootRequired={needsReboot(state.system, rebootMetricSet)}
+                    rebootRequired={needsReboot(state.system, rebootMetricSet, rebootGraceMs)}
                   />
                   {state.system.name}
                 </span>
@@ -349,7 +351,7 @@ export default function SystemDetailPage() {
               <small>
                 {state.system.hostname} ·{' '}
                 <StatusBadge status={state.system.status} />
-                {needsReboot(state.system, rebootMetricSet) && (
+                {needsReboot(state.system, rebootMetricSet, rebootGraceMs) && (
                   <>
                     {' '}
                     <RebootRequiredBadge at={state.system.rebootRequiredAt} />
@@ -413,6 +415,7 @@ export default function SystemDetailPage() {
                   <SystemInfoCard
                     system={state.system}
                     rebootMetricSet={rebootMetricSet}
+                    rebootGraceMs={rebootGraceMs}
                   />
                 </StackItem>
                 <StackItem>
@@ -620,7 +623,11 @@ type HealthSummary =
   | { kind: 'healthy' }
   | null
 
-function healthSummaryFor(system: System, rebootMetricSet: Set<string>): HealthSummary {
+function healthSummaryFor(
+  system: System,
+  rebootMetricSet: Set<string>,
+  rebootGraceMs: number,
+): HealthSummary {
   if (system.status === 'unreachable') {
     return { kind: 'attention', reason: 'Unreachable' }
   }
@@ -632,7 +639,7 @@ function healthSummaryFor(system: System, rebootMetricSet: Set<string>): HealthS
         : 'Last run failed',
     }
   }
-  if (needsReboot(system, rebootMetricSet)) {
+  if (needsReboot(system, rebootMetricSet, rebootGraceMs)) {
     return { kind: 'reboot' }
   }
   if (system.status === 'reachable' && system.pendingUpdates !== undefined) {
@@ -646,11 +653,13 @@ function healthSummaryFor(system: System, rebootMetricSet: Set<string>): HealthS
 function HealthSummaryLine({
   system,
   rebootMetricSet,
+  rebootGraceMs,
 }: {
   system: System
   rebootMetricSet: Set<string>
+  rebootGraceMs: number
 }) {
-  const summary = healthSummaryFor(system, rebootMetricSet)
+  const summary = healthSummaryFor(system, rebootMetricSet, rebootGraceMs)
   if (!summary) return null
   if (summary.kind === 'attention') {
     return (
@@ -1082,13 +1091,15 @@ function extractActionError(err: unknown): string {
 function SystemInfoCard({
   system,
   rebootMetricSet,
+  rebootGraceMs,
 }: {
   system: System
   rebootMetricSet: Set<string>
+  rebootGraceMs: number
 }) {
   const lastSeen = formatDateOrFallback(system.lastSeen, 'Never')
   const createdAt = formatDateOrFallback(system.createdAt, '—')
-  const health = healthSummaryFor(system, rebootMetricSet)
+  const health = healthSummaryFor(system, rebootMetricSet, rebootGraceMs)
   return (
     <Card>
       <CardTitle>System information</CardTitle>
@@ -1098,7 +1109,11 @@ function SystemInfoCard({
             <DescriptionListGroup>
               <DescriptionListTerm>Health</DescriptionListTerm>
               <DescriptionListDescription>
-                <HealthSummaryLine system={system} rebootMetricSet={rebootMetricSet} />
+                <HealthSummaryLine
+                  system={system}
+                  rebootMetricSet={rebootMetricSet}
+                  rebootGraceMs={rebootGraceMs}
+                />
               </DescriptionListDescription>
             </DescriptionListGroup>
           )}

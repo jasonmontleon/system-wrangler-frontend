@@ -25,6 +25,7 @@ import { listSystems, type System } from '../api/systems'
 import { listGroups, type Group } from '../api/groups'
 import { query } from '../api/metrics'
 import { needsReboot, queryRebootRequiredSet } from '../util/rebootSignal'
+import { useRebootGraceMs } from '../hooks/useRebootGraceMs'
 import { cpuBusyPct, fsUsedPctMax, memUsedPct } from '../api/promql'
 import { SystemStatusIcon, PendingUpdatesCell } from '../components/systemsTable'
 import {
@@ -105,6 +106,7 @@ export default function SystemsOverviewPage() {
   })
   const [lastRefreshedAt, setLastRefreshedAt] = useState<Date | null>(null)
   const [rebootMetricSet, setRebootMetricSet] = useState<Set<string>>(new Set())
+  const rebootGraceMs = useRebootGraceMs()
 
   useEffect(() => {
     let cancelled = false
@@ -392,7 +394,7 @@ export default function SystemsOverviewPage() {
                               status={sys.status}
                               pendingUpdates={sys.pendingUpdates}
                               lastRunFailed={sys.lastRunFailed}
-                              rebootRequired={needsReboot(sys, rebootMetricSet)}
+                              rebootRequired={needsReboot(sys, rebootMetricSet, rebootGraceMs)}
                             />
                           </Td>
                           <Td

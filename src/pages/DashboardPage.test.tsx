@@ -160,11 +160,13 @@ describe('DashboardPage', () => {
       sys({ status: 'unreachable' }), // unreachable (precedence)
       // lastRunFailed must win over pending > 0:
       sys({ status: 'reachable', pendingUpdates: 5, lastRunFailed: true }),
-      // rebootRequiredAt must win over a pending=0 "healthy" classification:
+      // rebootRequiredAt must win over a pending=0 "healthy" classification.
+      // Fresh stamp so it sits inside the grace window the donut now
+      // applies to the apply-stamped column.
       sys({
         status: 'reachable',
         pendingUpdates: 0,
-        rebootRequiredAt: '2026-05-28T14:30:00Z',
+        rebootRequiredAt: new Date().toISOString(),
       }),
       sys({ status: 'unprobed' }), // unknown
     ]

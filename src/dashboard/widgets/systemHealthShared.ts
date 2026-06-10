@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import type { System } from '../../api/systems'
+import { needsReboot } from '../../util/rebootSignal'
 
 // HealthBucket is one of six mutually exclusive states each system
 // rolls up to. Precedence matches SystemStatusIcon so the donut on
@@ -33,10 +34,14 @@ export const BUCKETS: BucketSpec[] = [
   { key: 'unknown', label: 'Unknown', color: '#8A8D90' },
 ]
 
-export function classify(s: System, rebootMetricSet: Set<string>): HealthBucket {
+export function classify(
+  s: System,
+  rebootMetricSet: Set<string>,
+  rebootGraceMs: number,
+): HealthBucket {
   if (s.status === 'unreachable') return 'unreachable'
   if (s.lastRunFailed) return 'failed'
-  if (s.rebootRequiredAt || rebootMetricSet.has(s.id)) return 'reboot'
+  if (needsReboot(s, rebootMetricSet, rebootGraceMs)) return 'reboot'
   if (s.status === 'reachable' && s.pendingUpdates !== undefined) {
     return s.pendingUpdates === 0 ? 'healthy' : 'updates'
   }
@@ -46,6 +51,7 @@ export function classify(s: System, rebootMetricSet: Set<string>): HealthBucket 
 export function tally(
   systems: System[],
   rebootMetricSet: Set<string>,
+  rebootGraceMs: number,
 ): Record<HealthBucket, number> {
   const out: Record<HealthBucket, number> = {
     healthy: 0,
@@ -56,7 +62,7 @@ export function tally(
     unknown: 0,
   }
   for (const s of systems) {
-    out[classify(s, rebootMetricSet)] += 1
+    out[classify(s, rebootMetricSet, rebootGraceMs)] += 1
   }
   return out
 }

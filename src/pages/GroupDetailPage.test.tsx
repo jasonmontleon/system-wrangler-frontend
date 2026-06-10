@@ -91,6 +91,9 @@ describe('GroupDetailPage', () => {
           jsonResponse({ status: 'success', data: { resultType: 'vector', result: [] } }),
         )
       }
+      if (url === '/api/reboot-grace-seconds') {
+        return Promise.resolve(jsonResponse({ seconds: 120 }))
+      }
       if (url === '/api/systems/bulk-event') {
         return Promise.resolve(new Response(null, { status: 204 }))
       }
@@ -487,6 +490,9 @@ describe('GroupDetailPage', () => {
         return Promise.resolve(
           jsonResponse({ status: 'success', data: { resultType: 'vector', result: [] } }),
         )
+      }
+      if (url === '/api/reboot-grace-seconds') {
+        return Promise.resolve(jsonResponse({ seconds: 120 }))
       }
       if (url === '/api/systems/bulk-event') {
         return Promise.resolve(new Response(null, { status: 204 }))

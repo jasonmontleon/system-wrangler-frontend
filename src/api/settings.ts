@@ -25,6 +25,17 @@ export async function listSettings(): Promise<Settings> {
   return body.settings
 }
 
+// getRebootGraceSeconds reads the effective reboot-required grace
+// window. Unlike listSettings, this endpoint is readable by any
+// authenticated user, so the reboot-required handoff works for
+// non-admin operators too.
+export async function getRebootGraceSeconds(): Promise<number> {
+  const resp = await apiFetch('/api/reboot-grace-seconds')
+  if (!resp.ok) throw new ApiError(resp.status, await parseError(resp))
+  const body = (await resp.json()) as { seconds: number }
+  return body.seconds
+}
+
 export async function setSetting(key: string, value: string): Promise<void> {
   const resp = await apiFetch(`/api/admin/settings/${encodeURIComponent(key)}`, {
     method: 'PUT',

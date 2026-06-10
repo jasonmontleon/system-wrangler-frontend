@@ -20,13 +20,24 @@ export async function queryRebootRequiredSet(): Promise<Set<string>> {
   return out
 }
 
-// needsReboot is true when the system is in needs-reboot state from
-// either source: the SW-stamped rebootRequiredAt column (fast-path,
-// flips immediately after apply) or the steady-state exporter metric
-// (sw_reboot_required gauge from the textfile collector pipeline).
-// Either alone is enough — the apply-time column covers the
-// sub-1-minute UX gap; the metric covers reboots needed from any
-// source, including manual dnf upgrade or dnf-automatic.
-export function needsReboot(s: System, metricSet: Set<string>): boolean {
-  return Boolean(s.rebootRequiredAt) || metricSet.has(s.id)
+// needsReboot is true when the system is in needs-reboot state. The
+// sw_reboot_required metric is authoritative whenever it signals, so a
+// host in the metric set always reads true. The SW-stamped
+// rebootRequiredAt column is a fast-path that covers the metric's
+// catch-up lag after an apply, but only for a bounded grace window:
+// past graceMs the metric takes over as the sole source of truth, so a
+// stamp that outlives a reboot self-expires instead of sticking on a
+// host that has already rebooted. graceMs comes from the
+// reboot_grace_seconds setting; now is injected for testability.
+export function needsReboot(
+  s: System,
+  metricSet: Set<string>,
+  graceMs: number,
+  now: number = Date.now(),
+): boolean {
+  if (metricSet.has(s.id)) return true
+  if (!s.rebootRequiredAt) return false
+  const stamped = Date.parse(s.rebootRequiredAt)
+  if (Number.isNaN(stamped)) return false
+  return now - stamped < graceMs
 }

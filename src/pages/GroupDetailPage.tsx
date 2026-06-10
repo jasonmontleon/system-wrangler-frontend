@@ -53,6 +53,7 @@ import {
 import { ApiError } from '../api/systems'
 import { needsReboot } from '../util/rebootSignal'
 import { useRebootRequiredSet } from '../hooks/useRebootRequiredSet'
+import { useRebootGraceMs } from '../hooks/useRebootGraceMs'
 import { getGroup, setSystemGroup, type Group } from '../api/groups'
 import {
   deleteGroupSlot,
@@ -201,6 +202,7 @@ export default function GroupDetailPage() {
   const [actionsOpen, setActionsOpen] = useState(false)
   const [selected, setSelected] = useState<Set<string>>(new Set())
   const rebootMetricSet = useRebootRequiredSet()
+  const rebootGraceMs = useRebootGraceMs()
   const [bulkLabelMode, setBulkLabelMode] = useState<'add' | 'remove' | null>(
     null,
   )
@@ -1271,7 +1273,7 @@ export default function GroupDetailPage() {
                             status={s.status}
                             pendingUpdates={s.pendingUpdates}
                             lastRunFailed={s.lastRunFailed}
-                            rebootRequired={needsReboot(s, rebootMetricSet)}
+                            rebootRequired={needsReboot(s, rebootMetricSet, rebootGraceMs)}
                           />
                         )}
                         <Link to={`/systems/${encodeURIComponent(s.id)}`}>

@@ -674,7 +674,9 @@ describe('SystemDetailPage', () => {
         status: 'reachable',
         pendingUpdates: 0,
         lastCheckedAt: '2026-05-28T14:30:00Z',
-        rebootRequiredAt: '2026-05-28T14:30:00Z',
+        // Fresh stamp so it sits inside the grace window the SPA now
+        // applies to the apply-stamped column.
+        rebootRequiredAt: new Date().toISOString(),
       },
     })
     renderRoute()

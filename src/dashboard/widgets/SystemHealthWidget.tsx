@@ -18,6 +18,7 @@ import {
 import { ChartDonut, ChartLabel } from '@patternfly/react-charts/victory'
 import { useNavigate } from 'react-router'
 import { useDashboardData } from '../dashboardContext'
+import { useRebootGraceMs } from '../../hooks/useRebootGraceMs'
 import type { WidgetParams } from '../widgets'
 import { BUCKETS, type HealthBucket, tally } from './systemHealthShared'
 
@@ -47,6 +48,7 @@ export default function SystemHealthWidget({
   variant?: Variant
 } = {}) {
   const { systems, systemsError, rebootMetricSet, groups } = useDashboardData()
+  const rebootGraceMs = useRebootGraceMs()
   const navigate = useNavigate()
   const groupId = params?.groupId
   const filtered = useMemo(() => {
@@ -55,8 +57,8 @@ export default function SystemHealthWidget({
     return systems.filter((s) => s.groupId === groupId)
   }, [systems, groupId])
   const counts = useMemo(
-    () => (filtered ? tally(filtered, rebootMetricSet) : null),
-    [filtered, rebootMetricSet],
+    () => (filtered ? tally(filtered, rebootMetricSet, rebootGraceMs) : null),
+    [filtered, rebootMetricSet, rebootGraceMs],
   )
   const total = filtered?.length ?? 0
   const groupName = groupId

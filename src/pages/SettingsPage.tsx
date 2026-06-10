@@ -35,6 +35,7 @@ const KEY_PROBE_INTERVAL_SECONDS = 'probe_interval_seconds'
 const KEY_PROBE_FAILURE_THRESHOLD = 'probe_failure_threshold'
 const KEY_PROBE_SUCCESS_THRESHOLD = 'probe_success_threshold'
 const KEY_SCHEDULE_MISFIRE_GRACE_SECONDS = 'schedule_misfire_grace_seconds'
+const KEY_REBOOT_GRACE_SECONDS = 'reboot_grace_seconds'
 
 // The subsystems whose log verbosity is independently adjustable. Each
 // maps to a log_level_<component> setting key; the component name also
@@ -185,6 +186,12 @@ export default function SettingsPage() {
             <StackItem>
               <ScheduleMisfireGraceCard
                 value={state.settings[KEY_SCHEDULE_MISFIRE_GRACE_SECONDS] ?? ''}
+                onSaved={() => void refresh()}
+              />
+            </StackItem>
+            <StackItem>
+              <RebootGraceCard
+                value={state.settings[KEY_REBOOT_GRACE_SECONDS] ?? ''}
                 onSaved={() => void refresh()}
               />
             </StackItem>
@@ -568,6 +575,27 @@ function ScheduleMisfireGraceCard({
       helper="How late a scheduled run may fire before it is treated as missed and rescheduled to its next occurrence instead of running. This stops a spike of catch-up runs when the server returns from an outage; a run delayed less than this (tick jitter, a quick restart) still fires. Range 60–3600; default 120 (2 minutes)."
       min={60}
       max={3600}
+      value={value}
+      onSaved={onSaved}
+    />
+  )
+}
+
+function RebootGraceCard({
+  value,
+  onSaved,
+}: {
+  value: string
+  onSaved: () => void
+}) {
+  return (
+    <BoundedIntCard
+      settingKey={KEY_REBOOT_GRACE_SECONDS}
+      title="Reboot-required grace"
+      label="Seconds the apply stamp stays authoritative"
+      helper="How long a freshly-applied system shows 'reboot required' from the apply itself before the sw_reboot_required metric takes over as the source of truth. It bridges the metric's catch-up lag (≈105s in a default setup: 60s textfile collector + 15s scrape + 30s SPA poll) so there's no flicker after an update, then hands off so the indicator clears within about a minute of an actual reboot. Lower it if your scrape is faster, raise it if slower. Range 10–1800; default 120 (2 minutes)."
+      min={10}
+      max={1800}
       value={value}
       onSaved={onSaved}
     />
