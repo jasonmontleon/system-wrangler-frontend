@@ -273,6 +273,9 @@ export default function GroupDetailPage() {
     targets: System[],
   ) => {
     if (targets.length === 0) return
+    // Refuse the whole batch if any target still has work in flight,
+    // rather than firing a partial run against the idle subset.
+    if (targets.some((s) => rowBusy.has(s.id) || s.running)) return
     setUpdaterOutcomes(null)
     const skipped: FanOutOutcome[] = []
     const operable: System[] = []
@@ -338,6 +341,9 @@ export default function GroupDetailPage() {
     selections: TargetedSelection[],
   ) => {
     if (targets.length === 0 || selections.length === 0) return
+    // Refuse the whole batch if any target still has work in flight,
+    // rather than firing a partial run against the idle subset.
+    if (targets.some((s) => rowBusy.has(s.id) || s.running)) return
     setUpdaterOutcomes(null)
     const skipped: FanOutOutcome[] = []
     const operable: System[] = []
@@ -735,6 +741,16 @@ export default function GroupDetailPage() {
   )
 
   const selectionCount = selected.size
+  // selectedBusyCount is how many selected systems have work in flight.
+  // Bulk actions gate on this rather than the global busyCount: a
+  // long-running task on an unselected host no longer blocks acting on
+  // a fresh selection, but a bulk run refuses outright if any system in
+  // the selection is still busy.
+  const selectedBusyCount = (systems ?? []).reduce(
+    (n, s) =>
+      n + (selected.has(s.id) && (rowBusy.has(s.id) || s.running) ? 1 : 0),
+    0,
+  )
 
   if (groupError) {
     return (
@@ -896,7 +912,7 @@ export default function GroupDetailPage() {
                   <DropdownItem
                     value="check-bulk"
                     key="check-bulk"
-                    isDisabled={selectionCount === 0 || busyCount > 0}
+                    isDisabled={selectionCount === 0 || selectedBusyCount > 0}
                   >
                     Check selected
                     {selectionCount > 0 ? ` (${selectionCount})` : ''}
@@ -904,7 +920,7 @@ export default function GroupDetailPage() {
                   <DropdownItem
                     value="apply-bulk"
                     key="apply-bulk"
-                    isDisabled={selectionCount === 0 || busyCount > 0}
+                    isDisabled={selectionCount === 0 || selectedBusyCount > 0}
                   >
                     Update selected
                     {selectionCount > 0 ? ` (${selectionCount})` : ''}
@@ -912,7 +928,7 @@ export default function GroupDetailPage() {
                   <DropdownItem
                     value="update-package"
                     key="update-package"
-                    isDisabled={selectionCount === 0 || busyCount > 0}
+                    isDisabled={selectionCount === 0 || selectedBusyCount > 0}
                   >
                     Update package…
                     {selectionCount > 0 ? ` (${selectionCount})` : ''}

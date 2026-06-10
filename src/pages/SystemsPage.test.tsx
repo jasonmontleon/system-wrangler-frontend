@@ -1043,6 +1043,119 @@ describe('SystemsPage', () => {
     expect(within(card).getByText(/Ran check on 2 systems/i)).toBeInTheDocument()
   })
 
+  it('allows a bulk Check on an idle selection while an unselected system is busy', async () => {
+    vi.unstubAllGlobals()
+    const checkCalls: string[] = []
+    const wrapped = (input: FetchInput, init?: FetchInit) => {
+      const url = typeof input === 'string' ? input : input.toString()
+      const method = init?.method ?? 'GET'
+      if (url === '/api/me/scope')
+        return Promise.resolve(jsonResponse({ global: 'admin', groups: {} }))
+      if (url.startsWith('/api/groups')) return Promise.resolve(jsonResponse([]))
+      if (url.startsWith('/api/label-styles')) return Promise.resolve(jsonResponse({}))
+      if (url.startsWith('/api/metrics/query'))
+        return Promise.resolve(jsonResponse({ status: 'success', data: { resultType: 'vector', result: [] } }))
+      if (url === '/api/systems/bulk-event') return Promise.resolve(new Response(null, { status: 204 }))
+      if (url === '/api/systems' && method === 'GET') {
+        return Promise.resolve(
+          jsonResponse([
+            // host-a has a run in flight started elsewhere (running:true);
+            // host-b is idle. host-a is never selected.
+            system({ id: 'a', name: 'host-a', hostname: 'a.example', running: true }),
+            system({ id: 'b', name: 'host-b', hostname: 'b.example' }),
+          ]),
+        )
+      }
+      if (url.match(/\/api\/systems\/[^/]+\/updaters$/)) {
+        return Promise.resolve(
+          jsonResponse({
+            updaters: [
+              {
+                updaterId: 'builtin.dnf',
+                source: 'builtin',
+                displayName: 'dnf',
+                installed: true,
+                enabled: true,
+              },
+            ],
+          }),
+        )
+      }
+      if (url.endsWith('/check') && method === 'POST') {
+        checkCalls.push(url)
+        return Promise.resolve(
+          jsonResponse({
+            runId: 'r',
+            updaterId: 'builtin.dnf',
+            kind: 'check',
+            status: 'success',
+            exitCode: 0,
+            affectedCount: 0,
+            durationMs: 1,
+          }),
+        )
+      }
+      return Promise.resolve(jsonResponse({}, 500))
+    }
+    vi.stubGlobal('fetch', wrapped)
+    vi.stubGlobal('EventSource', FakeEventSource)
+
+    render(<SystemsPage />)
+    // The busy host elsewhere surfaces the global pill, but it must not
+    // disable a bulk action scoped to an idle selection.
+    const rowB = (await screen.findByText('host-b')).closest('tr')!
+    fireEvent.click(within(rowB).getByRole('checkbox'))
+    fireEvent.click(screen.getByRole('button', { name: /^Actions$/i }))
+    const checkItem = screen.getByRole('menuitem', { name: /Check selected/i })
+    expect(checkItem).not.toBeDisabled()
+    fireEvent.click(checkItem)
+    await waitFor(() => expect(checkCalls).toHaveLength(1))
+    // Only the selected idle host is acted on; the busy one is untouched.
+    expect(checkCalls.every((u) => u.includes('/systems/b/'))).toBe(true)
+  })
+
+  it('refuses a bulk Check when a selected system is still busy', async () => {
+    vi.unstubAllGlobals()
+    const checkCalls: string[] = []
+    const wrapped = (input: FetchInput, init?: FetchInit) => {
+      const url = typeof input === 'string' ? input : input.toString()
+      const method = init?.method ?? 'GET'
+      if (url === '/api/me/scope')
+        return Promise.resolve(jsonResponse({ global: 'admin', groups: {} }))
+      if (url.startsWith('/api/groups')) return Promise.resolve(jsonResponse([]))
+      if (url.startsWith('/api/label-styles')) return Promise.resolve(jsonResponse({}))
+      if (url.startsWith('/api/metrics/query'))
+        return Promise.resolve(jsonResponse({ status: 'success', data: { resultType: 'vector', result: [] } }))
+      if (url === '/api/systems/bulk-event') return Promise.resolve(new Response(null, { status: 204 }))
+      if (url === '/api/systems' && method === 'GET') {
+        return Promise.resolve(
+          jsonResponse([
+            system({ id: 'a', name: 'host-a', hostname: 'a.example', running: true }),
+          ]),
+        )
+      }
+      if (url.endsWith('/check') && method === 'POST') {
+        checkCalls.push(url)
+        return Promise.resolve(jsonResponse({}))
+      }
+      return Promise.resolve(jsonResponse({}, 500))
+    }
+    vi.stubGlobal('fetch', wrapped)
+    vi.stubGlobal('EventSource', FakeEventSource)
+
+    render(<SystemsPage />)
+    const rowA = (await screen.findByText('host-a')).closest('tr')!
+    fireEvent.click(within(rowA).getByRole('checkbox'))
+    fireEvent.click(screen.getByRole('button', { name: /^Actions$/i }))
+    const checkItem = screen.getByRole('menuitem', { name: /Check selected/i })
+    // The selected host is busy, so the bulk action is disabled and a
+    // click must not fan out a check.
+    expect(checkItem).toBeDisabled()
+    fireEvent.click(checkItem)
+    await Promise.resolve()
+    expect(checkCalls).toHaveLength(0)
+  })
+
   it('bulk Update selected opens a confirm modal and fires apply on confirm', async () => {
     vi.unstubAllGlobals()
     const applyCalls: string[] = []

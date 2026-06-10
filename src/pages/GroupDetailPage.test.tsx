@@ -265,6 +265,76 @@ describe('GroupDetailPage', () => {
     expect(within(idleRow).queryByLabelText(/Run in progress/i)).toBeNull()
   })
 
+  it('gates a bulk Check on the selected members, not on an unselected busy one', async () => {
+    const checks: string[] = []
+    vi.unstubAllGlobals()
+    vi.stubGlobal('fetch', (input: FetchInput, init?: FetchInit) => {
+      const url = String(input)
+      const method = init?.method ?? 'GET'
+      if (url.startsWith('/api/me/scope'))
+        return Promise.resolve(jsonResponse({ global: 'admin', groups: {} }))
+      if (url === '/api/groups/g-1') return Promise.resolve(jsonResponse(sampleGroup))
+      if (url.startsWith('/api/label-styles')) return Promise.resolve(jsonResponse({}))
+      if (url === '/api/systems/bulk-event') return Promise.resolve(new Response(null, { status: 204 }))
+      if (url === '/api/systems' && method === 'GET')
+        return Promise.resolve(
+          jsonResponse([
+            // s-busy has a run in flight from elsewhere; s-idle is free.
+            system({ id: 's-busy', name: 'busy', groupId: 'g-1', running: true }),
+            system({ id: 's-idle', name: 'idle', groupId: 'g-1' }),
+          ]),
+        )
+      if (url.match(/\/api\/systems\/[^/]+\/updaters$/))
+        return Promise.resolve(
+          jsonResponse({
+            updaters: [
+              {
+                updaterId: 'builtin.dnf',
+                source: 'builtin',
+                displayName: 'dnf',
+                installed: true,
+                enabled: true,
+              },
+            ],
+          }),
+        )
+      if (url.endsWith('/check') && method === 'POST') {
+        checks.push(url)
+        return Promise.resolve(
+          jsonResponse({
+            runId: 'r',
+            updaterId: 'builtin.dnf',
+            kind: 'check',
+            status: 'success',
+            exitCode: 0,
+            affectedCount: 0,
+            durationMs: 1,
+          }),
+        )
+      }
+      return Promise.resolve(jsonResponse({}, 500))
+    })
+    vi.stubGlobal('EventSource', FakeEventSource)
+    renderRoute()
+    // Select only the idle member; the busy one stays unselected.
+    const idleRow = (await screen.findByText('idle')).closest('tr')!
+    fireEvent.click(within(idleRow).getByRole('checkbox'))
+    fireEvent.click(screen.getByRole('button', { name: /^Actions$/i }))
+    const checkItem = screen.getByRole('menuitem', { name: /Check selected/i })
+    expect(checkItem).not.toBeDisabled()
+    fireEvent.click(checkItem)
+    await waitFor(() => expect(checks).toHaveLength(1))
+    expect(checks.every((u) => u.includes('/systems/s-idle/'))).toBe(true)
+
+    // Now also select the busy member: the action must disable.
+    const busyRow = screen.getByText('busy').closest('tr')!
+    fireEvent.click(within(busyRow).getByRole('checkbox'))
+    fireEvent.click(screen.getByRole('button', { name: /^Actions$/i }))
+    expect(
+      screen.getByRole('menuitem', { name: /Check selected/i }),
+    ).toBeDisabled()
+  })
+
   it('skips unreachable members in a bulk Check selected', async () => {
     const checks: string[] = []
     vi.unstubAllGlobals()
