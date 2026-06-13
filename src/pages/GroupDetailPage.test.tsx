@@ -323,7 +323,9 @@ describe('GroupDetailPage', () => {
     const idleRow = (await screen.findByText('idle')).closest('tr')!
     fireEvent.click(within(idleRow).getByRole('checkbox'))
     fireEvent.click(screen.getByRole('button', { name: /^Actions$/i }))
-    const checkItem = screen.getByRole('menuitem', { name: /Check selected/i })
+    // findBy lets the menu's Popper positioning settle inside act before
+    // we assert, instead of leaking the update past the test.
+    const checkItem = await screen.findByRole('menuitem', { name: /Check selected/i })
     expect(checkItem).not.toBeDisabled()
     fireEvent.click(checkItem)
     await waitFor(() => expect(checks).toHaveLength(1))
@@ -334,7 +336,7 @@ describe('GroupDetailPage', () => {
     fireEvent.click(within(busyRow).getByRole('checkbox'))
     fireEvent.click(screen.getByRole('button', { name: /^Actions$/i }))
     expect(
-      screen.getByRole('menuitem', { name: /Check selected/i }),
+      await screen.findByRole('menuitem', { name: /Check selected/i }),
     ).toBeDisabled()
   })
 

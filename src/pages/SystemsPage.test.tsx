@@ -1151,7 +1151,9 @@ describe('SystemsPage', () => {
     const rowA = (await screen.findByText('host-a')).closest('tr')!
     fireEvent.click(within(rowA).getByRole('checkbox'))
     fireEvent.click(screen.getByRole('button', { name: /^Actions$/i }))
-    const checkItem = screen.getByRole('menuitem', { name: /Check selected/i })
+    // findBy lets the menu's Popper positioning settle inside act before
+    // we assert, instead of leaking the update past the test.
+    const checkItem = await screen.findByRole('menuitem', { name: /Check selected/i })
     // The selected host is busy, so the bulk action is disabled and a
     // click must not fan out a check.
     expect(checkItem).toBeDisabled()
