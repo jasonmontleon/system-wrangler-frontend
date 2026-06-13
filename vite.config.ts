@@ -11,6 +11,13 @@ export default defineConfig({
       '/api': 'http://localhost:8080',
     },
   },
+  build: {
+    // Vite 8 defaults CSS minification to Lightning CSS, whose native
+    // binary has no ppc64le/s390x build — the bundle is built on those
+    // arches, so route CSS minification through esbuild (a direct
+    // devDependency) instead, which rolldown-vite already bundles.
+    cssMinify: 'esbuild',
+  },
   test: {
     environment: 'jsdom',
     globals: true,
