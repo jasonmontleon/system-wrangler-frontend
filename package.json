@@ -12,6 +12,10 @@
     "format": "prettier --write .",
     "test": "vitest"
   },
+  "overrides": {
+    "minimatch": "10.2.5",
+    "brace-expansion": "5.0.8"
+  },
   "dependencies": {
     "@patternfly/react-charts": "^8.4.1",
     "@patternfly/react-core": "^6.0.0",
