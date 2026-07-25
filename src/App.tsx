@@ -27,7 +27,7 @@ import {
   ToolbarContent,
   ToolbarItem,
 } from '@patternfly/react-core'
-import { Navigate, Route, Routes, useLocation, useNavigate } from 'react-router-dom'
+import { Navigate, Route, Routes, useLocation, useNavigate } from 'react-router'
 import AuditPage from './pages/AuditPage'
 import BackupPage from './pages/BackupPage'
 import SettingsPage from './pages/SettingsPage'

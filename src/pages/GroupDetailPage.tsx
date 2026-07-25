@@ -34,7 +34,7 @@ import {
   ToolbarContent,
   ToolbarItem,
 } from '@patternfly/react-core'
-import { Link, useParams, useSearchParams } from 'react-router-dom'
+import { Link, useParams, useSearchParams } from 'react-router'
 import GroupRolesTab from '../components/GroupRolesTab'
 import GroupExclusionsTab from '../components/GroupExclusionsTab'
 import {

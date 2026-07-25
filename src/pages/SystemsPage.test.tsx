@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { act, fireEvent, render as rtlRender, screen, waitFor, within } from '@testing-library/react'
-import { MemoryRouter } from 'react-router-dom'
+import { MemoryRouter } from 'react-router'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { ReactElement } from 'react'
 import SystemsPage from './SystemsPage'

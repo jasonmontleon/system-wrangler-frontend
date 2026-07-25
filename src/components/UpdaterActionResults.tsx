@@ -12,7 +12,7 @@ import {
   StackItem,
 } from '@patternfly/react-core'
 import { Table, Tbody, Td, Th, Thead, Tr } from '@patternfly/react-table'
-import { Link } from 'react-router-dom'
+import { Link } from 'react-router'
 import type { FanOutOutcome } from '../util/updaterFanOut'
 
 export type Props = {

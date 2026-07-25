@@ -45,7 +45,7 @@ import {
   VirtualMachineIcon,
 } from '@patternfly/react-icons'
 import { PlatformIcon } from '../components/systemsTable'
-import { Link, useParams } from 'react-router-dom'
+import { Link, useParams } from 'react-router'
 import { ApiError, getSystem, type System } from '../api/systems'
 import { needsReboot } from '../util/rebootSignal'
 import { useRebootRequiredSet } from '../hooks/useRebootRequiredSet'

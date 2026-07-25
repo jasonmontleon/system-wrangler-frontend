@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { fireEvent, render, screen } from '@testing-library/react'
-import { MemoryRouter } from 'react-router-dom'
+import { MemoryRouter } from 'react-router'
 import { describe, expect, it, vi } from 'vitest'
 import FanOutOutcomesPanel from './FanOutOutcomesPanel'
 import type { FanOutOutcome } from '../util/updaterFanOut'

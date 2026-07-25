@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
-import { MemoryRouter } from 'react-router-dom'
+import { MemoryRouter } from 'react-router'
 import { describe, expect, it, vi, beforeEach } from 'vitest'
 import EffectiveExclusionsCard from './EffectiveExclusionsCard'
 import type { Exclusion } from '../api/exclusions'
